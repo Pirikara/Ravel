@@ -17,6 +17,7 @@ import (
 	"ravel/internal/collectors/javaarchive"
 	"ravel/internal/collectors/maven"
 	"ravel/internal/collectors/npm"
+	"ravel/internal/collectors/oci"
 	"ravel/internal/collectors/python"
 	"ravel/internal/collectors/swiftpm"
 	"ravel/internal/export"
@@ -49,7 +50,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: ravel scan PATH [--manager NAME|--all [--recursive]] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME]")
+	fmt.Fprintln(os.Stderr, "usage: ravel scan PATH [--manager NAME|--all [--recursive]] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
 	fmt.Fprintln(os.Stderr, "       ravel explain PACKAGE --input ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel diff BEFORE.ravel.json AFTER.ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel merge [--name PROJECT] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] INPUT.ravel.json...")
@@ -283,6 +284,7 @@ func runScan(args []string) int {
 	allowExec := fs.Bool("allow-exec", false, "allow a package manager command")
 	network := fs.String("network", "deny", "deny or allow")
 	configuration := fs.String("configuration", "runtimeClasspath", "Gradle configuration to resolve")
+	platform := fs.String("platform", "", "OCI image platform: os/architecture[/variant]")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -297,13 +299,13 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec; --network must be deny or allow")
 		return 2
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "dpkg" && *manager != "java-archive" && *manager != "python-wheel" {
-		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, cocoapods, pipenv, pdm, go, pub, gradle, maven, dpkg, java-archive, python-wheel")
+	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "dpkg" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
+		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, cocoapods, pipenv, pdm, go, pub, gradle, maven, dpkg, oci, java-archive, python-wheel")
 		return 2
 	}
 	if *all {
-		if *manager != "auto" || *resolve || *allowExec || *configuration != "runtimeClasspath" {
-			fmt.Fprintln(os.Stderr, "ravel: --all is static and cannot be combined with --manager, --resolve, --allow-exec, or --configuration")
+		if *manager != "auto" || *resolve || *allowExec || *configuration != "runtimeClasspath" || *platform != "" {
+			fmt.Fprintln(os.Stderr, "ravel: --all is static and cannot be combined with --manager, --resolve, --allow-exec, --configuration, or --platform")
 			return 2
 		}
 		return runScanAll(path, *format, *output, *report, *strict, *recursive)
@@ -341,6 +343,10 @@ func runScan(args []string) int {
 	}
 	if *configuration != "runtimeClasspath" && (!*resolve || selected != "gradle") {
 		fmt.Fprintln(os.Stderr, "ravel: --configuration requires Gradle --resolve")
+		return 2
+	}
+	if *platform != "" && selected != "oci" {
+		fmt.Fprintln(os.Stderr, "ravel: --platform requires an OCI image layout")
 		return 2
 	}
 	selectedInputLock := lock
@@ -447,6 +453,8 @@ func runScan(args []string) int {
 		doc, err = python.CollectWheel(lock, project)
 	case selected == "npm-archive":
 		doc, err = npm.CollectArchive(lock, project)
+	case selected == "oci":
+		doc, err = oci.Collect(filepath.Dir(lock), project, *platform)
 	default:
 		doc, err = collectStatic(selected, lock, project)
 	}
@@ -679,6 +687,12 @@ func selectLock(input string, directory bool, requested string) (string, string,
 	vendorManifest := filepath.Join(input, "vendor", "modules.txt")
 	if stat, err := os.Stat(vendorManifest); err == nil && !stat.IsDir() {
 		candidates["go"] = vendorManifest
+	}
+	ociLayout := filepath.Join(input, "oci-layout")
+	if stat, err := os.Stat(ociLayout); err == nil && stat.Mode().IsRegular() {
+		if index, err := os.Stat(filepath.Join(input, "index.json")); err == nil && index.Mode().IsRegular() {
+			candidates["oci"] = ociLayout
+		}
 	}
 	dpkgStatus := filepath.Join(input, "var", "lib", "dpkg", "status")
 	if stat, err := os.Stat(dpkgStatus); err == nil && stat.Mode().IsRegular() {

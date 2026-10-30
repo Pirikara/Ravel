@@ -20,6 +20,7 @@ import (
 	"ravel/internal/collectors/maven"
 	"ravel/internal/collectors/npm"
 	"ravel/internal/collectors/nuget"
+	"ravel/internal/collectors/oci"
 	"ravel/internal/collectors/pnpm"
 	"ravel/internal/collectors/pub"
 	"ravel/internal/collectors/python"
@@ -33,7 +34,7 @@ import (
 var staticManagers = []string{
 	"bundler", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
 	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "cocoapods",
-	"pipenv", "pdm", "go", "pub", "gradle", "maven", "dpkg",
+	"pipenv", "pdm", "go", "pub", "gradle", "maven", "dpkg", "oci",
 }
 
 // runScanAll scans static manager inputs at the directory root, and nested
@@ -268,6 +269,11 @@ func scanDirectories(root string) ([]string, error) {
 		}
 		if entry.IsDir() {
 			if path != root {
+				if entry.Name() == "blobs" {
+					if _, err := os.Stat(filepath.Join(filepath.Dir(path), "oci-layout")); err == nil {
+						return filepath.SkipDir
+					}
+				}
 				switch entry.Name() {
 				case ".git", ".hg", ".svn", "node_modules", ".pnpm-store", ".yarn", ".gradle", "target", "build", "dist", "Pods", ".venv", "venv", "__pycache__", ".cache", "testdata":
 					return filepath.SkipDir
@@ -307,7 +313,7 @@ func scanDirectories(root string) ([]string, error) {
 
 func recursiveCandidate(name string) bool {
 	switch name {
-	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift":
+	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout":
 		return true
 	}
 	return isPylockName(name) || name == "requirements.txt"
@@ -367,6 +373,8 @@ func collectStatic(manager, lock, project string) (model.Document, error) {
 		return maven.CollectTree(lock, project)
 	case "dpkg":
 		return dpkg.Collect(lock, project)
+	case "oci":
+		return oci.Collect(filepath.Dir(lock), project, "")
 	}
 	return model.Document{}, fmt.Errorf("unsupported manager %s", manager)
 }

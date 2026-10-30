@@ -55,6 +55,15 @@ func Collect(file, project string) (model.Document, error) {
 	if len(data) > maxStatusFile {
 		return model.Document{}, errors.New("dpkg status file exceeded size limit")
 	}
+	return CollectBytes(data, file, project)
+}
+
+// CollectBytes reads a status database from an already verified container
+// layer. source identifies the database bytes, rather than a host file.
+func CollectBytes(data []byte, source, project string) (model.Document, error) {
+	if len(data) > maxStatusFile {
+		return model.Document{}, errors.New("dpkg status file exceeded size limit")
+	}
 	packages, err := readStatus(data)
 	if err != nil {
 		return model.Document{}, err
@@ -62,9 +71,9 @@ func Collect(file, project string) (model.Document, error) {
 	hash := sha256.Sum256(data)
 	digest := "sha256:" + hex.EncodeToString(hash[:])
 	evidence := func(line int) model.Evidence {
-		return model.Evidence{Collector: "dpkg-status", InputPath: file, InputDigest: digest, Line: line, Method: "installed-database"}
+		return model.Evidence{Collector: "dpkg-status", InputPath: source, InputDigest: digest, Line: line, Method: "installed-database"}
 	}
-	doc := common.NewDocument(file, project, "dpkg", nil)
+	doc := common.NewDocument(source, project, "dpkg", nil)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: "dpkg status database"})
 	byName := map[string][]int{}
 	seen := map[string]bool{}
