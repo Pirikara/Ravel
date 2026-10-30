@@ -41,7 +41,7 @@ type dependency struct {
 	name, op, version string
 }
 
-// Collect reads the text (v2) APK installed database from a filesystem tree.
+// Collect reads a text (v2) or binary (v3) APK installed database.
 // A database alone does not establish its distribution or repository origin.
 func Collect(file, project string) (model.Document, error) {
 	f, err := os.Open(file)
@@ -62,17 +62,26 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 	if len(data) > maxInstalledBytes {
 		return model.Document{}, errors.New("APK installed database exceeded size limit")
 	}
-	if bytes.IndexByte(data, 0) >= 0 {
-		return model.Document{}, errors.New("binary APK installed databases are not yet supported")
+	var packages []installedPackage
+	var err error
+	collector := "apk-installed"
+	if len(data) >= 4 && bytes.Equal(data[:3], []byte("ADB")) {
+		packages, err = parseInstalledADB(data)
+		collector = "apk-installed-adb"
+	} else if strings.HasSuffix(source, "installed.adb") {
+		return model.Document{}, errors.New("invalid APK v3 installed database header")
+	} else if bytes.IndexByte(data, 0) >= 0 {
+		return model.Document{}, errors.New("unsupported binary APK installed database")
+	} else {
+		packages, err = parseInstalled(data)
 	}
-	packages, err := parseInstalled(data)
 	if err != nil {
 		return model.Document{}, err
 	}
 	hash := sha256.Sum256(data)
 	digest := "sha256:" + hex.EncodeToString(hash[:])
 	evidence := func(line int) model.Evidence {
-		return model.Evidence{Collector: "apk-installed", InputPath: source, InputDigest: digest, Line: line, Method: "installed-database"}
+		return model.Evidence{Collector: collector, InputPath: source, InputDigest: digest, Line: line, Method: "installed-database"}
 	}
 	doc := common.NewDocument(source, project, "apk", nil)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: "APK installed database"})

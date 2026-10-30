@@ -25,13 +25,18 @@ var (
 )
 
 // LinkInstalledDependencies links declared package dependencies to observed
-// manifests in the same node_modules tree. Ancestor lookup and unverified
-// version ranges remain conditional because other filesystem entries or
-// package manager layouts can alter runtime resolution.
-func LinkInstalledDependencies(doc *model.Document, records []InstalledRecord) {
+// manifests in the same node_modules tree. Aliases map final filesystem
+// symlink locations to the physical package.json they reach. Ancestor lookup
+// and unverified version ranges remain conditional.
+func LinkInstalledDependencies(doc *model.Document, records []InstalledRecord, aliases map[string]string) {
 	byPath := map[string]InstalledRecord{}
 	for _, record := range records {
 		byPath[record.MetadataPath] = record
+	}
+	for alias, target := range aliases {
+		if record, found := byPath[target]; found {
+			byPath[alias] = record
+		}
 	}
 	seen := map[string]bool{}
 	for _, record := range records {
@@ -147,11 +152,21 @@ func LinkInstalledDependencies(doc *model.Document, records []InstalledRecord) {
 func resolveInstalledNode(byPath map[string]InstalledRecord, metadataPath, name string) (InstalledRecord, bool, bool) {
 	base := path.Dir(metadataPath)
 	first := true
+	pnpmDependencyPath := ""
+	if IsPnpmStorePackagePath(metadataPath) {
+		parts := strings.Split(metadataPath, "/")
+		for i := 0; i+3 < len(parts); i++ {
+			if parts[i] == "node_modules" && parts[i+1] == ".pnpm" && parts[i+3] == "node_modules" {
+				pnpmDependencyPath = path.Join(path.Join(parts[:i+4]...), name, "package.json")
+				break
+			}
+		}
+	}
 	for {
 		if path.Base(base) != "node_modules" {
 			candidate := path.Join(base, "node_modules", name, "package.json")
 			if target, found := byPath[candidate]; found {
-				return target, first, true
+				return target, first || candidate == pnpmDependencyPath, true
 			}
 		}
 		if base == "." {

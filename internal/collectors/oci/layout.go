@@ -37,6 +37,7 @@ const (
 	maxPythonMetadataTotal = 128 << 20
 	maxNodeMetadataFiles   = 20000
 	maxNodeMetadataTotal   = 128 << 20
+	maxNodePackageLinks    = 20000
 	maxJavaArchiveFiles    = 1000
 	maxJavaArchiveTotal    = 256 << 20
 	manifestMediaType      = "application/vnd.oci.image.manifest.v1+json"
@@ -54,9 +55,10 @@ const (
 	gzipNonDistType        = "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"
 	statusPath             = "var/lib/dpkg/status"
 	apkInstalledPath       = "lib/apk/db/installed"
+	apkInstalledADBPath    = "lib/apk/db/installed.adb"
 )
 
-var databasePaths = append([]string{statusPath, apkInstalledPath}, rpm.DatabasePaths...)
+var databasePaths = append([]string{statusPath, apkInstalledPath, apkInstalledADBPath}, rpm.DatabasePaths...)
 var rpmWALPaths = []string{
 	"usr/lib/sysimage/rpm/rpmdb.sqlite-wal", "var/lib/rpm/rpmdb.sqlite-wal", "usr/share/rpm/rpmdb.sqlite-wal",
 }
@@ -197,6 +199,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	pythonMetadata := map[string]databaseState{}
 	pipVendor := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
+	nodePackageLinks := map[string]string{}
 	rubySpecs := map[string]databaseState{}
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
@@ -224,6 +227,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					if current == "." {
 						break
 					}
+				}
+			}
+		}
+		for name := range nodePackageLinks {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
 				}
 			}
 		}
@@ -259,7 +270,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				}
 			}
 		}
-		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths, project)
+		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths, nodePackageLinks, project)
 		if err != nil {
 			return model.Document{}, fmt.Errorf("OCI layer %d: %w", i, err)
 		}
@@ -273,6 +284,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for _, removed := range change.whiteouts {
+			for name := range nodePackageLinks {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(nodePackageLinks, name)
+				}
+			}
 			if removed == "." || removed == nodeRuntimeBinaryPath || strings.HasPrefix(nodeRuntimeBinaryPath, removed+"/") {
 				nodeRuntimeBinary = nil
 			}
@@ -305,6 +321,13 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 					delete(rubyRuntimes, name)
 				}
+			}
+		}
+		for name, target := range change.nodeLinks {
+			if target == "" {
+				delete(nodePackageLinks, name)
+			} else {
+				nodePackageLinks[name] = target
 			}
 		}
 		for name, data := range change.python {
@@ -356,6 +379,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if len(nodeMetadata) > maxNodeMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Node package manifests")
+		}
+		if len(nodePackageLinks) > maxNodePackageLinks {
+			return model.Document{}, errors.New("OCI image has too many Node package links")
 		}
 		nodeBytes := 0
 		for _, state := range nodeMetadata {
@@ -416,6 +442,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			installedDatabases++
 		}
 	}
+	nodeMetadataPaths := map[string]bool{}
+	for name := range nodeMetadata {
+		nodeMetadataPaths[name] = true
+	}
+	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
 	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
@@ -423,6 +454,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Coverage.GraphState = "unknown"
 		doc.Coverage.OriginState = "unknown"
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"}, model.Issue{Code: "image_language_packages_unscanned"})
+		doc.Coverage.Issues = append(doc.Coverage.Issues, nodeLinkIssues...)
 		if goScanLimited {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
 		}
@@ -439,6 +471,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	doc := common.NewDocument(layout, project, "oci", nil)
 	doc.Sources = sources
 	doc.Coverage.Platforms = []string{platform}
+	doc.Coverage.Issues = append(doc.Coverage.Issues, nodeLinkIssues...)
 	if goScanLimited {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
 	}
@@ -450,6 +483,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	}
 	if installedDatabases == 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"})
+	}
+	if _, textFound := databases[apkInstalledPath]; textFound {
+		if _, binaryFound := databases[apkInstalledADBPath]; binaryFound {
+			return model.Document{}, errors.New("OCI image has multiple APK databases; active database is ambiguous")
+		}
 	}
 	rpmDatabases := 0
 	for _, name := range rpm.DatabasePaths {
@@ -469,7 +507,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		var database model.Document
 		if name == statusPath {
 			database, err = dpkg.CollectBytes(state.data, evidencePath, project)
-		} else if name == apkInstalledPath {
+		} else if name == apkInstalledPath || name == apkInstalledADBPath {
 			database, err = apk.CollectBytes(state.data, evidencePath, project)
 		} else {
 			database, err = rpm.CollectBytes(state.data, evidencePath, project)
@@ -544,7 +582,15 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	}
 	sort.Strings(nodeNames)
 	var installedNodeRecords []npm.InstalledRecord
+	reachableStore := map[string]bool{}
+	for _, physical := range nodeAliases {
+		reachableStore[physical] = true
+	}
 	for _, name := range nodeNames {
+		if npm.IsPnpmStorePackagePath(name) && !reachableStore[name] {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_pnpm_store_unlinked", Name: name})
+			continue
+		}
 		state := nodeMetadata[name]
 		evidencePath := "oci:" + state.layer + "!/" + name
 		installed, err := npm.CollectInstalledPackage(state.data, evidencePath, project, name)
@@ -563,7 +609,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 	}
-	npm.LinkInstalledDependencies(&doc, installedNodeRecords)
+	npm.LinkInstalledDependencies(&doc, installedNodeRecords, nodeAliases)
 	rubyNames := make([]string, 0, len(rubySpecs))
 	for name := range rubySpecs {
 		rubyNames = append(rubyNames, name)
@@ -804,6 +850,7 @@ type layerChange struct {
 	python               map[string][]byte
 	pipVendor            map[string][]byte
 	node                 map[string][]byte
+	nodeLinks            map[string]string
 	rubySpecs            map[string][]byte
 	java                 map[string]javaArchiveState
 	goBinaries           map[string]goBinaryState
@@ -817,7 +864,7 @@ type layerChange struct {
 	whiteouts            []string
 }
 
-func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, project string) (layerChange, string, error) {
+func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, existingNodeLinks map[string]string, project string) (layerChange, string, error) {
 	if item.MediaType != plainLayerType && item.MediaType != gzipLayerType && item.MediaType != plainNonDistType && item.MediaType != gzipNonDistType && item.MediaType != dockerPlainLayerType && item.MediaType != dockerGzipLayerType && item.MediaType != dockerForeignLayerType {
 		return layerChange{}, "", fmt.Errorf("unsupported OCI layer media type %s", item.MediaType)
 	}
@@ -848,7 +895,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -880,6 +927,21 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		}
 		if name == "." {
 			continue
+		}
+		if _, found := existingNodeLinks[name]; found {
+			change.nodeLinks[name] = ""
+		}
+		if _, found := change.nodeLinks[name]; found {
+			change.nodeLinks[name] = ""
+		}
+		if header.Typeflag == tar.TypeSymlink && npm.IsInstalledPackageLinkPath(name) {
+			change.nodeLinks[name] = header.Linkname
+			if header.Linkname == "" {
+				change.nodeLinks[name] = "\x00" // Retain the invalid link for coverage reporting.
+			}
+			if len(change.nodeLinks) > maxNodePackageLinks {
+				return layerChange{}, "", errors.New("OCI layer has too many Node package links")
+			}
 		}
 		if header.Typeflag != tar.TypeDir {
 			nonDirectoryPaths[name] = true

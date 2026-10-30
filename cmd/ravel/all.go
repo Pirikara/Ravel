@@ -297,7 +297,7 @@ func scanDirectories(root string) ([]string, error) {
 		if name == "status" && filepath.Base(filepath.Dir(path)) == "dpkg" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "lib" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path)))) == "var" {
 			dirs[filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path))))] = true
 		}
-		if name == "installed" && filepath.Base(filepath.Dir(path)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path)))) == "lib" {
+		if (name == "installed" || name == "installed.adb") && filepath.Base(filepath.Dir(path)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path)))) == "lib" {
 			dirs[filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path))))] = true
 		}
 		if recursiveCandidate(name) {

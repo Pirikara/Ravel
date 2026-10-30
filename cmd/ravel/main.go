@@ -332,7 +332,7 @@ func runScan(args []string) int {
 		if filepath.Base(path) == "status" && project == "dpkg" {
 			project = filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path)))))
 		}
-		if filepath.Base(path) == "installed" && project == "db" {
+		if (filepath.Base(path) == "installed" || filepath.Base(path) == "installed.adb") && project == "db" {
 			project = filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path)))))
 		}
 	}
@@ -629,7 +629,7 @@ func selectLock(input string, directory bool, requested string) (string, string,
 				}
 			}
 		}
-		if filepath.Base(input) == "installed" && filepath.Base(filepath.Dir(input)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(input))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(input)))) == "lib" {
+		if (filepath.Base(input) == "installed" || filepath.Base(input) == "installed.adb") && filepath.Base(filepath.Dir(input)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(input))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(input)))) == "lib" {
 			if requested == "auto" || requested == "apk" {
 				return input, "apk", nil
 			}
@@ -724,9 +724,14 @@ func selectLock(input string, directory bool, requested string) (string, string,
 	if stat, err := os.Stat(dpkgStatus); err == nil && stat.Mode().IsRegular() {
 		candidates["dpkg"] = dpkgStatus
 	}
-	apkInstalled := filepath.Join(input, "lib", "apk", "db", "installed")
-	if stat, err := os.Stat(apkInstalled); err == nil && stat.Mode().IsRegular() {
-		candidates["apk"] = apkInstalled
+	for _, name := range []string{"installed", "installed.adb"} {
+		apkInstalled := filepath.Join(input, "lib", "apk", "db", name)
+		if stat, err := os.Stat(apkInstalled); err == nil && stat.Mode().IsRegular() {
+			if candidates["apk"] != "" {
+				return "", "", errors.New("multiple APK installed databases; active database is ambiguous")
+			}
+			candidates["apk"] = apkInstalled
+		}
 	}
 	var rpmFiles []string
 	var rpmInfos []os.FileInfo

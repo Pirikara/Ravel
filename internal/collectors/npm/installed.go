@@ -22,10 +22,9 @@ var (
 	installedNodeName      = regexp.MustCompile(`^(?:@[A-Za-z0-9_~][A-Za-z0-9._~-]*/)?[A-Za-z0-9_~][A-Za-z0-9._~-]*$`)
 )
 
-// IsInstalledPackagePath recognizes conventional node_modules package roots
-// and the versioned Yarn installation used by the official Node image.
-// The pnpm content store needs symlink resolution before it can establish an
-// installed package, so paths beneath .pnpm are excluded.
+// IsInstalledPackagePath recognizes package roots in conventional node_modules
+// trees, pnpm's virtual store, and versioned Yarn installations. A pnpm store
+// manifest still needs a reachable package symlink before it is inventoried.
 func IsInstalledPackagePath(name string) bool {
 	if path.Clean(name) != name || path.Base(name) != "package.json" {
 		return false
@@ -36,13 +35,41 @@ func IsInstalledPackagePath(name string) bool {
 	}
 	for _, part := range parts {
 		if part == ".pnpm" {
-			return false
+			return isPnpmStorePackagePath(name)
 		}
 	}
 	if len(parts) >= 3 && parts[len(parts)-3] == "node_modules" && installedNodePathToken.MatchString(parts[len(parts)-2]) {
 		return true
 	}
 	return len(parts) >= 4 && parts[len(parts)-4] == "node_modules" && strings.HasPrefix(parts[len(parts)-3], "@") && installedNodePathToken.MatchString(strings.TrimPrefix(parts[len(parts)-3], "@")) && installedNodePathToken.MatchString(parts[len(parts)-2])
+}
+
+// IsPnpmStorePackagePath reports a package root in pnpm's versioned virtual
+// store. The locator is not trusted as package identity; package.json is.
+func IsPnpmStorePackagePath(name string) bool {
+	return isPnpmStorePackagePath(name)
+}
+
+// IsInstalledPackageLinkPath reports a package directory symlink whose
+// package.json can be checked against the final image filesystem.
+func IsInstalledPackageLinkPath(name string) bool {
+	return IsInstalledPackagePath(path.Join(name, "package.json"))
+}
+
+func isPnpmStorePackagePath(name string) bool {
+	parts := strings.Split(name, "/")
+	for i := 0; i+5 < len(parts); i++ {
+		if parts[i] != "node_modules" || parts[i+1] != ".pnpm" || parts[i+2] == "" || !strings.Contains(parts[i+2], "@") || parts[i+3] != "node_modules" {
+			continue
+		}
+		if i+5 == len(parts)-1 && installedNodePathToken.MatchString(parts[i+4]) && parts[i+5] == "package.json" {
+			return true
+		}
+		if i+6 == len(parts)-1 && strings.HasPrefix(parts[i+4], "@") && installedNodePathToken.MatchString(strings.TrimPrefix(parts[i+4], "@")) && installedNodePathToken.MatchString(parts[i+5]) && parts[i+6] == "package.json" {
+			return true
+		}
+	}
+	return false
 }
 
 // CollectInstalledPackage records a package manifest found at a recognized
