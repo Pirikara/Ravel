@@ -200,6 +200,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
 	goScanLimited := false
+	pythonRuntimes := map[string]pythonRuntimeState{}
+	pythonRuntimeLimited := false
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
 		for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata} {
@@ -221,6 +223,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for name := range goBinaries {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		for name := range pythonRuntimes {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -259,6 +269,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(goBinaries, name)
 				}
 			}
+			for name := range pythonRuntimes {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(pythonRuntimes, name)
+				}
+			}
 		}
 		for name, data := range change.python {
 			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
@@ -277,6 +292,10 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			goBinaries[name] = state
 		}
 		goScanLimited = goScanLimited || change.goLimited
+		for name, state := range change.pythonRuntimes {
+			pythonRuntimes[name] = state
+		}
+		pythonRuntimeLimited = pythonRuntimeLimited || change.pythonRuntimeLimited
 		if len(pythonMetadata) > maxPythonMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Python metadata files")
 		}
@@ -313,6 +332,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if len(goBinaries) > maxGoBinaryImageFiles {
 			return model.Document{}, errors.New("OCI image has too many Go binary records")
 		}
+		if len(pythonRuntimes) > maxPythonRuntimeFiles {
+			return model.Document{}, errors.New("OCI image has too many Python runtime library records")
+		}
 		goModules := 0
 		for _, state := range goBinaries {
 			goModules += len(state.document.Components)
@@ -336,7 +358,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			installedDatabases++
 		}
 	}
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -345,6 +367,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"}, model.Issue{Code: "image_language_packages_unscanned"})
 		if goScanLimited {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
+		}
+		if pythonRuntimeLimited {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_runtime_scan_limited"})
 		}
 		common.Finalize(&doc)
 		doc.Coverage.GraphState = "unknown"
@@ -355,6 +380,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	doc.Coverage.Platforms = []string{platform}
 	if goScanLimited {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
+	}
+	if pythonRuntimeLimited {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_runtime_scan_limited"})
 	}
 	if installedDatabases == 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"})
@@ -516,6 +544,22 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Development = append(doc.Development, installed.Development...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
+	pythonRuntimeNames := make([]string, 0, len(pythonRuntimes))
+	for name := range pythonRuntimes {
+		pythonRuntimeNames = append(pythonRuntimeNames, name)
+	}
+	sort.Strings(pythonRuntimeNames)
+	for _, name := range pythonRuntimeNames {
+		state := pythonRuntimes[name]
+		if state.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_runtime_" + state.status, Name: name})
+			continue
+		}
+		installed := state.document
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_language_packages_unscanned"})
 	for i := range doc.Components {
 		doc.Components[i].Context += ";image=" + platform
@@ -635,14 +679,16 @@ type databaseChange struct {
 }
 
 type layerChange struct {
-	files      map[string]databaseChange
-	python     map[string][]byte
-	pipVendor  map[string][]byte
-	node       map[string][]byte
-	java       map[string]javaArchiveState
-	goBinaries map[string]goBinaryState
-	goLimited  bool
-	whiteouts  []string
+	files                map[string]databaseChange
+	python               map[string][]byte
+	pipVendor            map[string][]byte
+	node                 map[string][]byte
+	java                 map[string]javaArchiveState
+	goBinaries           map[string]goBinaryState
+	goLimited            bool
+	pythonRuntimes       map[string]pythonRuntimeState
+	pythonRuntimeLimited bool
+	whiteouts            []string
 }
 
 func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, project string) (layerChange, string, error) {
@@ -676,7 +722,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -687,6 +733,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	javaBytes := 0
 	goBytes := 0
 	goFiles := 0
+	pythonRuntimeBytes := 0
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -840,6 +887,31 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 				parentReplaced[target] = true
 			}
 		}
+		if isPythonRuntimeLibraryPath(name) && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			switch {
+			case header.Size > maxPythonRuntimeBytes:
+				change.pythonRuntimes[name] = pythonRuntimeState{status: "oversized"}
+			case int64(pythonRuntimeBytes)+header.Size > maxPythonRuntimeLayerBytes:
+				change.pythonRuntimeLimited = true
+			default:
+				data, err := io.ReadAll(io.LimitReader(reader, maxPythonRuntimeBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI Python runtime library entry")
+				}
+				pythonRuntimeBytes += len(data)
+				input := "oci:" + item.Digest + "!/" + name
+				runtimeDoc, recognized, err := inspectPythonRuntimeLibrary(data, input, project, name)
+				if err != nil {
+					change.pythonRuntimes[name] = pythonRuntimeState{status: "invalid"}
+				} else if recognized {
+					change.pythonRuntimes[name] = pythonRuntimeState{document: runtimeDoc}
+				}
+			}
+			if relevantLanguagePaths[name] {
+				change.whiteouts = append(change.whiteouts, name)
+			}
+			continue
+		}
 		if (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) && header.Size >= 4 && !seenDatabase[name] {
 			var magic [4]byte
 			if _, err := io.ReadFull(reader, magic[:]); err != nil {
@@ -908,6 +980,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Go binary beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	for name := range change.pythonRuntimes {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Python runtime library beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}
