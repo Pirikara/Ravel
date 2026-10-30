@@ -77,6 +77,14 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"bundler-git-scp", "bundler", 1, 1, "complete_for_scope", "complete_for_scope", []string{"gitgem"}, "", ""},
 		{"bundler-ambiguous", "bundler", 3, 1, "partial", "complete_for_scope", []string{"parent", "foo"}, "", ""},
 		{"npm-v2", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"one"}, "", ""},
+		{"npm-v1", "npm", 1, 0, "partial", "partial", []string{"alpha"}, "", ""},
+		{"npm-v1-generated-12", "npm", 3, 3, "complete_for_scope", "complete_for_scope", []string{"is-odd", "is-number"}, "", ""},
+		{"npm-v1-optional", "npm", 2, 3, "partial", "complete_for_scope", []string{"core", "native"}, "", "hidden"},
+		{"npm-v1-sources", "npm", 2, 2, "partial", "complete_for_scope", []string{"gitpkg", "archive"}, "", "hidden"},
+		{"npm-v1-incomplete", "npm", 2, 1, "partial", "complete_for_scope", []string{"parent", "child"}, "", ""},
+		{"npm-v1-stale", "npm", 2, 1, "partial", "complete_for_scope", []string{"parent", "child"}, "", ""},
+		{"npm-v1-scoped", "npm", 2, 2, "complete_for_scope", "complete_for_scope", []string{"@scope/core", "@scope/util"}, "", ""},
+		{"npm-v1-orphan", "npm", 2, 1, "partial", "complete_for_scope", []string{"used", "orphan"}, "", ""},
 		{"npm-v3", "npm", 4, 4, "complete_for_scope", "complete_for_scope", []string{"alpha", "beta", "@scope/tool"}, "", "secret"},
 		{"npm-generated-12", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
 		{"npm-optional", "npm", 3, 3, "partial", "partial", []string{"alpha", "native-addon", "peer-lib"}, "", ""},
@@ -348,6 +356,95 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		}
 		if fixture == "pnpm-generated-10" && doc.Components[0].PURL != "" {
 			t.Fatal("pnpm lock without tarball URL assumed default npm registry")
+		}
+	case "npm-v1-generated-12":
+		odd := find("is-odd", "3.0.1")
+		number6, number7 := find("is-number", "6.0.0"), find("is-number", "7.0.0")
+		if !connected("root", odd) || !connected("root", number7) || !connected(odd, number6) || connected(odd, number7) {
+			t.Fatal("npm v1 nested dependency resolved to the wrong installed version")
+		}
+		for _, component := range doc.Components {
+			if component.PURL != "pkg:npm/"+component.Name+"@"+component.Version || len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-512" {
+				t.Fatalf("npm v1 registry identity or integrity lost: %+v", component)
+			}
+		}
+	case "npm-v1-optional":
+		core, native := find("core", "1.0.0"), find("native", "1.0.0")
+		if !connected("root", core) || !connected("root", native) || !connected(core, native) {
+			t.Fatal("npm v1 optional graph lost")
+		}
+		for _, edge := range doc.Edges {
+			if edge.To == native && (edge.Kind != "optional" || edge.Condition != "optional") {
+				t.Fatalf("npm v1 optional edge exported unconditionally: %+v", edge)
+			}
+		}
+		for _, c := range doc.Components {
+			if c.Name == "core" && c.PURL != "pkg:npm/core@1.0.0" || c.Name == "native" && c.PURL != "" {
+				t.Fatalf("npm v1 private package assigned registry identity: %+v", c)
+			}
+		}
+		if len(doc.Origins) != 2 {
+			t.Fatal("npm v1 optional origin missing")
+		}
+		var bom struct {
+			Dependencies []struct {
+				DependsOn []string `json:"dependsOn"`
+			} `json:"dependencies"`
+		}
+		if err := json.Unmarshal(bomData, &bom); err != nil {
+			t.Fatal(err)
+		}
+		for _, dependency := range bom.Dependencies {
+			if slices.Contains(dependency.DependsOn, native) {
+				t.Fatal("npm v1 optional dependency exported as unconditional CycloneDX edge")
+			}
+		}
+	case "npm-v1-sources":
+		if strings.Contains(string(bomData), "secret") || strings.Contains(string(bomData), "hidden") {
+			t.Fatal("npm v1 source credentials leaked into CycloneDX")
+		}
+		if !connected("root", find("gitpkg", "")) || !connected("root", find("archive", "")) {
+			t.Fatal("npm v1 URL dependencies missing")
+		}
+		for _, c := range doc.Components {
+			if c.PURL != "" || c.Version != "" {
+				t.Fatalf("npm v1 URL source mistaken for package version: %+v", c)
+			}
+		}
+		origins := map[string]model.Origin{}
+		for _, o := range doc.Origins {
+			origins[o.Kind] = o
+		}
+		if origins["vcs"].SafeURL != "https://github.com/team/gitpkg.git" || origins["vcs"].Revision != "0123456789abcdef0123456789abcdef01234567" || origins["download_url"].SafeURL != "https://packages.example.test/archive.tgz" {
+			t.Fatalf("npm v1 URL origins missing or unsafe: %+v", doc.Origins)
+		}
+	case "npm-v1-incomplete":
+		parent, child := find("parent", "1.0.0"), find("child", "1.0.0")
+		if !connected("root", parent) || connected(parent, child) || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "transitive_graph_unavailable" }) {
+			t.Fatal("npm v1 inferred a transitive edge absent from requires")
+		}
+	case "npm-v1-stale":
+		parent, child := find("parent", "1.0.0"), find("child", "1.0.0")
+		if !connected("root", parent) || connected("root", child) || connected(parent, child) || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "unresolved_dependency" && issue.Name == "child" }) {
+			t.Fatal("npm v1 connected a package to a version outside its declared range")
+		}
+	case "npm-v1-scoped":
+		core, util := find("@scope/core", "1.0.0"), find("@scope/util", "2.1.0")
+		if !connected("root", core) || !connected(core, util) || connected("root", util) {
+			t.Fatal("npm v1 scoped package graph missing")
+		}
+		for _, component := range doc.Components {
+			if component.PURL != "pkg:npm/%40scope/"+strings.TrimPrefix(component.Name, "@scope/")+"@"+component.Version {
+				t.Fatalf("npm v1 scoped package identity missing: %+v", component)
+			}
+		}
+	case "npm-v1-orphan":
+		if !connected("root", find("used", "1.0.0")) || connected("root", find("orphan", "2.0.0")) || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "unreachable_graph" && issue.Name == "orphan" }) {
+			t.Fatal("npm v1 orphan package was presented as part of a complete graph")
+		}
+	case "npm-v1":
+		if len(doc.Edges) != 0 || doc.Components[0].PURL != "" {
+			t.Fatal("npm v1 missing manifest or source was guessed")
 		}
 	case "requirements-basic":
 		if !connected("root", find("requests", "2.32.3")) || !connected("root", find("idna", "3.7")) || len(doc.Sources) != 1 {
@@ -1565,7 +1662,7 @@ func TestManagerSelectionAndUnsupportedFormats(t *testing.T) {
 	if yarnCoverage.Manager != "yarn" {
 		t.Fatal("packageManager yarn hint ignored")
 	}
-	for _, name := range []string{"npm-v1", "bun-legacy", "uv-unsupported", "pylock-unsupported", "nuget-assets-unsupported", "pnpm-unsupported", "poetry-unsupported", "yarn-unsupported", "cargo-unsupported", "composer-unsupported", "cocoapods-unsupported", "pipenv-unsupported", "pdm-unsupported", "go-vendor-unsupported", "pub-unsupported", "gradle-unsupported", "maven-unsupported", "maven-option-unsupported"} {
+	for _, name := range []string{"bun-legacy", "uv-unsupported", "pylock-unsupported", "nuget-assets-unsupported", "pnpm-unsupported", "poetry-unsupported", "yarn-unsupported", "cargo-unsupported", "composer-unsupported", "cocoapods-unsupported", "pipenv-unsupported", "pdm-unsupported", "go-vendor-unsupported", "pub-unsupported", "gradle-unsupported", "maven-unsupported", "maven-option-unsupported"} {
 		cmd := exec.Command(executable, "scan", filepath.Join("..", "testdata", "fixtures", name), "--output", filepath.Join(t.TempDir(), "sbom.json"))
 		if err := cmd.Run(); err == nil {
 			t.Fatalf("unsupported format %s unexpectedly succeeded", name)

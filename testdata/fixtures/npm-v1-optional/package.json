@@ -1,0 +1,10 @@
+{
+  "name": "ravel-npm-v1-optional",
+  "version": "1.0.0",
+  "dependencies": {
+    "core": "1.0.0"
+  },
+  "optionalDependencies": {
+    "native": "1.0.0"
+  }
+}

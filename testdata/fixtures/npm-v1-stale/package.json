@@ -1,0 +1,8 @@
+{
+  "name": "ravel-npm-v1-stale",
+  "version": "1.0.0",
+  "dependencies": {
+    "parent": "^1.0.0",
+    "child": "^2.0.0"
+  }
+}

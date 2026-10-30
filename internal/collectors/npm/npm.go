@@ -3,8 +3,10 @@ package npm
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 
 	"ravel/internal/collectors/common"
@@ -35,8 +37,9 @@ type item struct {
 	ref      string
 }
 
-// Collect supports npm lockfile versions 2 and 3. npm v1 has a different tree
-// structure and is rejected rather than producing an incomplete graph as if complete.
+var gitCommit = regexp.MustCompile(`^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$`)
+
+// Collect supports npm lockfile versions 1, 2, and 3.
 func Collect(file, project string) (model.Document, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -45,6 +48,9 @@ func Collect(file, project string) (model.Document, error) {
 	var lock lockfile
 	if err := json.Unmarshal(data, &lock); err != nil {
 		return model.Document{}, fmt.Errorf("invalid npm lockfile: %w", err)
+	}
+	if lock.LockfileVersion == 1 {
+		return collectV1(file, project, data)
 	}
 	if lock.LockfileVersion != 2 && lock.LockfileVersion != 3 || lock.Packages == nil {
 		return model.Document{}, fmt.Errorf("unsupported npm lockfile version or missing packages map")
@@ -176,16 +182,20 @@ func addOrigin(doc *model.Document, ref, raw string, ev model.Evidence) {
 		return
 	}
 	kind := "download_url"
+	revision := ""
 	if strings.HasPrefix(raw, "git+") {
 		kind = "vcs"
 		raw = strings.TrimPrefix(raw, "git+")
+		if parsed, err := url.Parse(raw); err == nil && gitCommit.MatchString(parsed.Fragment) {
+			revision = strings.ToLower(parsed.Fragment)
+		}
 	}
 	clean := safeurl.Clean(raw)
 	if clean == "" {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: ref})
 		return
 	}
-	doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: kind, SafeURL: clean, Status: "declared", Evidence: ev})
+	doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: kind, SafeURL: clean, Revision: revision, Status: "declared", Evidence: ev})
 }
 
 func escapePointer(s string) string {

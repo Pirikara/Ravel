@@ -1,0 +1,8 @@
+{
+  "name": "ravel-npm-v1-sources",
+  "version": "1.0.0",
+  "dependencies": {
+    "gitpkg": "git+https://user:secret@github.com/team/gitpkg.git#0123456789abcdef0123456789abcdef01234567",
+    "archive": "https://user:secret@packages.example.test/archive.tgz?token=hidden"
+  }
+}

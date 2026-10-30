@@ -1,0 +1,7 @@
+{
+  "name": "ravel-npm-v1-incomplete",
+  "version": "1.0.0",
+  "dependencies": {
+    "parent": "1.0.0"
+  }
+}
