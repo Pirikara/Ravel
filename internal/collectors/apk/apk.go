@@ -116,29 +116,39 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 				continue
 			}
 			matches := map[string]bool{}
-			unverified := dep.op != "" && dep.op != "=" && dep.op != "=="
-			if unverified {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dependency_constraint_unverified", Name: raw, Line: p.dependsLine, Scope: p.name})
-				continue
+			unverified := false
+			consider := func(ref, version string) {
+				matched, verified := matchesVersion(dep.op, version, dep.version)
+				if !verified {
+					unverified = true
+				}
+				if matched {
+					matches[ref] = true
+				}
 			}
 			for _, candidate := range byName[dep.name] {
 				q := packages[candidate]
-				if dep.op == "" || q.version == dep.version {
-					matches[q.ref] = true
-				}
+				consider(q.ref, q.version)
 			}
 			for _, provided := range providers[dep.name] {
-				if dep.op == "" || provided.version == dep.version {
-					matches[packages[provided.index].ref] = true
-				}
+				consider(packages[provided.index].ref, provided.version)
+			}
+			if unverified {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dependency_constraint_unverified", Name: raw, Line: p.dependsLine, Scope: p.name})
 			}
 			if len(matches) == 0 {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: raw, Line: p.dependsLine, Scope: p.name})
+				if !unverified {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: raw, Line: p.dependsLine, Scope: p.name})
+				}
 				continue
 			}
 			condition := ""
-			if len(matches) > 1 {
-				condition = "provider=" + dep.name
+			if len(matches) > 1 || unverified {
+				if len(matches) > 1 {
+					condition = "provider=" + dep.name
+				} else {
+					condition = "constraint=" + raw
+				}
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: raw, Line: p.dependsLine, Scope: p.name})
 			}
 			for target := range matches {
