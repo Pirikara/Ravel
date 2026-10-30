@@ -191,7 +191,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 		return 1
 	}
 	if report != "" {
-		coverage, err := json.MarshalIndent(doc.Coverage, "", "  ")
+		coverage, err := coverageReport(doc, format)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ravel:", err)
 			return 1

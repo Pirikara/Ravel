@@ -47,7 +47,7 @@ A normal scan reads local files without running a package manager or making netw
 
 A lockfile registry URL is recorded as a *declared* origin, not proof of a download. A local archive proves its own bytes and metadata, but not which registry supplied it. Ravel omits a default registry PURL when that registry cannot be established. Credentials, URL queries, and fragments are removed before URLs are stored in output.
 
-Ravel JSON retains the evidence, conditional edges, and reasons for incomplete coverage. `explain` looks up a component by name, PURL, or component ID and shows its origins, development repository candidates, dependency edges, and evidence. `diff` compares two Ravel JSON documents. `merge` retains distinct occurrences and rejects duplicate input scopes. CycloneDX and SPDX contain only dependency edges that are unconditional for the scanned scope.
+Ravel JSON retains the evidence, conditional edges, and reasons for incomplete coverage. `explain` looks up a component by name, PURL, or component ID and shows its origins, development repository candidates, dependency edges, and evidence. `diff` compares two Ravel JSON documents. `merge` retains distinct occurrences and rejects duplicate input scopes. CycloneDX and SPDX contain only dependency edges that are unconditional for the scanned scope. The coverage report lists known information losses for the selected output format separately from scan issues; `--strict` applies to scan issues.
 
 ## Supported inputs
 

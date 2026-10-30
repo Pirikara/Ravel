@@ -93,7 +93,7 @@ func runEnrich(args []string) int {
 		return 1
 	}
 	if *reportPath != "" {
-		coverage, err := json.MarshalIndent(doc.Coverage, "", "  ")
+		coverage, err := coverageReport(doc, *format)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ravel:", err)
 			return 1
