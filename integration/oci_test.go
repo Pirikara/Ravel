@@ -327,3 +327,87 @@ func TestOCINestedIndexAndRecursiveScan(t *testing.T) {
 		t.Fatalf("recursive OCI scan changed package inventory: %#v", recursive.Coverage)
 	}
 }
+
+func ociTestArchive(t *testing.T, layout, name string) string {
+	t.Helper()
+	archive := filepath.Join(t.TempDir(), name)
+	file, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := tar.NewWriter(file)
+	err = filepath.WalkDir(layout, func(filePath string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() {
+			return walkErr
+		}
+		relative, err := filepath.Rel(layout, filePath)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return err
+		}
+		if err := writer.WriteHeader(&tar.Header{Name: filepath.ToSlash(relative), Mode: 0o644, Size: int64(len(data))}); err != nil {
+			return err
+		}
+		_, err = writer.Write(data)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return archive
+}
+
+func TestOCIArchiveScanAndSourceProtection(t *testing.T) {
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{gzip: true, entries: []ociTestEntry{{name: "var/lib/dpkg/status", data: ociTestStatus(t, "dpkg-basic")}}}})
+	ociTestIndex(t, layout, manifest)
+	archive := ociTestArchive(t, layout, "image.oci.tar")
+	doc, output, code := ociTestScan(t, archive)
+	if code != 0 || doc.Coverage.Packages != 4 || doc.Source != archive || len(doc.Sources) != 1 || doc.Sources[0] != archive {
+		t.Fatalf("OCI archive scan failed: code=%d output=%s doc=%#v", code, output, doc)
+	}
+	if output, err := exec.Command(executable, "scan", archive, "--output", archive).CombinedOutput(); err == nil || !strings.Contains(string(output), "cannot overwrite") {
+		t.Fatalf("OCI archive overwrite accepted: %v: %s", err, output)
+	}
+	plainName := filepath.Join(t.TempDir(), "image.tar")
+	data, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plainName, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, output, code := ociTestScan(t, plainName, "--manager", "oci"); code != 0 {
+		t.Fatalf("explicit OCI archive manager failed: code=%d output=%s", code, output)
+	}
+}
+
+func TestOCIArchiveRejectsUnsafePath(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "bad.oci.tar")
+	file, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := tar.NewWriter(file)
+	if err := writer.WriteHeader(&tar.Header{Name: "../index.json", Mode: 0o644, Size: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, output, code := ociTestScan(t, archive); code != 1 || !strings.Contains(output, "unsafe OCI layer path") {
+		t.Fatalf("unsafe OCI archive path accepted: code=%d output=%s", code, output)
+	}
+}

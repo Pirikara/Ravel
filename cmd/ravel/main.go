@@ -454,7 +454,11 @@ func runScan(args []string) int {
 	case selected == "npm-archive":
 		doc, err = npm.CollectArchive(lock, project)
 	case selected == "oci":
-		doc, err = oci.Collect(filepath.Dir(lock), project, *platform)
+		if info.IsDir() {
+			doc, err = oci.Collect(filepath.Dir(lock), project, *platform)
+		} else {
+			doc, err = oci.CollectArchive(lock, project, *platform)
+		}
 	default:
 		doc, err = collectStatic(selected, lock, project)
 	}
@@ -590,6 +594,9 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		if isRequirementsName(name) {
 			return "requirements"
 		}
+		if strings.HasSuffix(strings.ToLower(name), ".oci.tar") {
+			return "oci"
+		}
 		if strings.HasSuffix(strings.ToLower(name), ".jar") || strings.HasSuffix(strings.ToLower(name), ".war") {
 			return "java-archive"
 		}
@@ -608,6 +615,9 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		return ""
 	}
 	if !directory {
+		if requested == "oci" && strings.HasSuffix(strings.ToLower(input), ".tar") {
+			return input, "oci", nil
+		}
 		selected := managerForFile(filepath.Base(input))
 		if selected == "" || requested != "auto" && requested != selected {
 			return "", "", errors.New("unsupported lockfile or manager mismatch")
