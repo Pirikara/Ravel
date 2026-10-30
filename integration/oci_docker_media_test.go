@@ -57,3 +57,49 @@ func TestOCIDockerSchema2MediaTypesInLayoutAndArchive(t *testing.T) {
 		})
 	}
 }
+
+func TestOCIDockerSaveHybridSparseIndexUsesSavedManifest(t *testing.T) {
+	layout := ociTestLayout(t)
+	original := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{gzip: true, entries: []ociTestEntry{{name: "var/lib/dpkg/status", data: ociTestStatus(t, "dpkg-basic")}}}})
+	data, err := os.ReadFile(filepath.Join(layout, "blobs", "sha256", strings.TrimPrefix(original.Digest, "sha256:")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var image struct {
+		Config ociTestDescriptor   `json:"config"`
+		Layers []ociTestDescriptor `json:"layers"`
+	}
+	if err := json.Unmarshal(data, &image); err != nil || len(image.Layers) != 1 {
+		t.Fatalf("test image manifest invalid: %v", err)
+	}
+	configPath := "blobs/sha256/" + strings.TrimPrefix(image.Config.Digest, "sha256:")
+	layerPath := "blobs/sha256/" + strings.TrimPrefix(image.Layers[0].Digest, "sha256:")
+	saveManifest, err := json.Marshal([]map[string]any{{"Config": configPath, "Layers": []string{layerPath}, "RepoTags": []string{"test:latest"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "manifest.json"), saveManifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A modern docker save may retain a multi-platform index whose other
+	// manifests were not included in the local archive.
+	ociTestIndex(t, layout, ociTestDescriptor{MediaType: "application/vnd.oci.image.index.v1+json", Digest: "sha256:" + strings.Repeat("a", 64), Size: 123})
+	archive := ociTestArchive(t, layout, "hybrid.docker.tar")
+	doc, output, code := ociTestScan(t, archive)
+	if code != 0 || doc.Coverage.Packages != 4 || doc.Coverage.Manager != "oci" || doc.Source != archive {
+		t.Fatalf("hybrid Docker save failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	blob := filepath.Join(layout, filepath.FromSlash(layerPath))
+	data, err = os.ReadFile(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data[0] ^= 1
+	if err := os.WriteFile(blob, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	corrupt := ociTestArchive(t, layout, "corrupt.docker.tar")
+	if _, output, code := ociTestScan(t, corrupt); code != 1 || !strings.Contains(output, "digest mismatch") {
+		t.Fatalf("content-addressed layer digest mismatch accepted: code=%d output=%s", code, output)
+	}
+}

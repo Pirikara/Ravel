@@ -116,6 +116,10 @@ func collectLegacyDockerArchive(archive, project, platform string) (model.Docume
 			return model.Document{}, closeErr
 		}
 		digest := hex.EncodeToString(hasher.Sum(nil))
+		if archiveBlobName.MatchString(name) && path.Base(name) != digest {
+			_ = os.Remove(entryFile.Name())
+			return model.Document{}, errors.New("Docker save content-addressed blob digest mismatch")
+		}
 		if name == selected.Config && !dockerConfigFilenameMatches(name, digest) {
 			_ = os.Remove(entryFile.Name())
 			return model.Document{}, errors.New("Docker save config filename digest mismatch")

@@ -104,6 +104,7 @@ func collectPlainArchive(archive, project, platform string) (model.Document, err
 	defer os.RemoveAll(temp)
 	reader := tar.NewReader(file)
 	seen := map[string]bool{}
+	dockerManifestPresent := false
 	var extracted int64
 	for entries := 0; ; entries++ {
 		if entries >= maxArchiveEntries {
@@ -125,6 +126,10 @@ func collectPlainArchive(archive, project, platform string) (model.Document, err
 		}
 		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
 			return model.Document{}, fmt.Errorf("unsupported OCI archive entry: %s", name)
+		}
+		if name == "manifest.json" {
+			dockerManifestPresent = true
+			continue // A Docker save manifest names the blobs actually stored in the archive.
 		}
 		if name != "oci-layout" && name != "index.json" && !archiveBlobName.MatchString(name) {
 			continue // optional layout files are not needed for this scan
@@ -157,6 +162,9 @@ func collectPlainArchive(archive, project, platform string) (model.Document, err
 		if closeErr != nil {
 			return model.Document{}, closeErr
 		}
+	}
+	if dockerManifestPresent {
+		return collectLegacyDockerArchive(archive, project, platform)
 	}
 	if !seen["oci-layout"] || !seen["index.json"] {
 		if !seen["oci-layout"] && !seen["index.json"] {
