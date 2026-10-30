@@ -1,0 +1,11 @@
+{
+  // Bun accepts JSONC comments and trailing commas.
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": {"name": "bun-basic", "dependencies": {"alpha": "^1.0.0"}},
+  },
+  "packages": {
+    "alpha": ["alpha@1.0.0", "", {"dependencies": {"beta": "^2.0.0"}}, ""],
+    "beta": ["beta@2.1.0", "", {}, ""],
+  },
+}

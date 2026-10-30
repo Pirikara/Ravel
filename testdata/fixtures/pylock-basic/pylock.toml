@@ -1,0 +1,25 @@
+lock-version = "1.0"
+created-by = "fixture"
+
+[[packages]]
+name = "demo"
+version = "0.1.0"
+dependencies = [{ name = "click" }]
+[packages.directory]
+path = "."
+
+[[packages]]
+name = "click"
+version = "8.1.3"
+index = "https://user:secret@pypi.example.test/simple?token=hidden"
+dependencies = [{ name = "colorama" }]
+[[packages.wheels]]
+name = "click-8.1.3-py3-none-any.whl"
+url = "https://files.example.test/click.whl"
+[packages.wheels.hashes]
+sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+[[packages]]
+name = "colorama"
+version = "0.4.6"
+index = "https://pypi.org/simple"

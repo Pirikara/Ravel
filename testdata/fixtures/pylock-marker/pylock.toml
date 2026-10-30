@@ -1,0 +1,21 @@
+lock-version = "1.0"
+environments = ["sys_platform == 'linux'", "sys_platform == 'win32'"]
+
+[[packages]]
+name = "spam"
+version = "1.0.0"
+marker = "sys_platform == 'linux'"
+index = "https://pypi.org/simple"
+
+[[packages]]
+name = "spam"
+version = "1.1.0"
+marker = "sys_platform == 'win32'"
+index = "https://pypi.org/simple"
+
+[[packages]]
+name = "ham"
+version = "3.0.0"
+marker = "sys_platform == 'linux'"
+index = "https://pypi.org/simple"
+dependencies = [{ name = "spam", version = "1.0.0" }]

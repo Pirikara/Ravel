@@ -1,0 +1,8 @@
+# github.com/acme/alpha v1.2.3
+## explicit; go 1.20
+github.com/acme/alpha
+# golang.org/x/text v0.14.0
+## explicit; go 1.18
+golang.org/x/text/language
+# example.com/tool v0.5.0
+## explicit; go 1.20

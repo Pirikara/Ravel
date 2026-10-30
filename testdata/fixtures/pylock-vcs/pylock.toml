@@ -1,0 +1,16 @@
+lock-version = "1.0"
+
+[[packages]]
+name = "demo"
+version = "0.1.0"
+dependencies = [{ name = "git-package" }]
+[packages.directory]
+path = "."
+
+[[packages]]
+name = "git-package"
+version = "0.3.0"
+[packages.vcs]
+type = "git"
+url = "https://user:secret@github.com/team/git-package?token=hidden"
+commit-id = "1234567890abcdef"

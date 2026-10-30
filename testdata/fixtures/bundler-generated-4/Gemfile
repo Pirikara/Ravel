@@ -1,0 +1,4 @@
+source "https://rubygems.org"
+
+gem "ravel_alpha", path: "gems/alpha"
+gem "ravel_beta", path: "gems/beta"

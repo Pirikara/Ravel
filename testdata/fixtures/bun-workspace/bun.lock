@@ -1,0 +1,11 @@
+{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": { "dependencies": { "alpha": "1.0.0" } },
+    "packages/web": { "dependencies": { "beta": "1.0.0" } }
+  },
+  "packages": {
+    "alpha": ["alpha@1.0.0", "", {}, "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="],
+    "beta": ["beta@1.0.0", "", {}, "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="]
+  }
+}

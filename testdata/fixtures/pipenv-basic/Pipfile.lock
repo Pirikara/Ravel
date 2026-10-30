@@ -1,0 +1,8 @@
+{
+  "_meta": {"pipfile-spec": 6, "hash": {"sha256": "fixture"}, "sources": [{"name": "pypi", "url": "https://pypi.org/simple", "verify_ssl": true}]},
+  "default": {
+    "Requests": {"version": "==2.32.3", "index": "pypi", "hashes": ["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]},
+    "idna": {"version": "==3.10", "index": "pypi"}
+  },
+  "develop": {}
+}

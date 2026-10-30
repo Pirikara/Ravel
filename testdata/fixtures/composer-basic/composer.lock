@@ -1,0 +1,16 @@
+{
+  "content-hash": "fixture",
+  "packages": [
+    {
+      "name": "monolog/monolog", "version": "3.0.0",
+      "require": {"php": ">=8.2", "psr/log": "^3.0"},
+      "source": {"type": "git", "url": "https://user:secret@github.com/Seldaek/monolog.git?token=hidden", "reference": "abcdef1234567890"},
+      "dist": {"type": "zip", "url": "https://user:secret@api.github.com/repos/Seldaek/monolog/zipball/abcdef1234567890?token=hidden", "reference": "abcdef1234567890"}
+    },
+    {
+      "name": "psr/log", "version": "3.0.0",
+      "source": {"type": "git", "url": "https://github.com/php-fig/log.git", "reference": "1234567890abcdef"}
+    }
+  ],
+  "packages-dev": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "ravel-yarn-root",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "yarn@4.18.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "@ravel/alpha": "workspace:*"
+  }
+}

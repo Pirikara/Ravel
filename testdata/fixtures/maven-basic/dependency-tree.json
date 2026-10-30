@@ -1,0 +1,21 @@
+{
+  "groupId": "com.example",
+  "artifactId": "app",
+  "version": "1.0.0",
+  "type": "jar",
+  "scope": "",
+  "optional": "false",
+  "children": [
+    {
+      "groupId": "org.slf4j",
+      "artifactId": "slf4j-api",
+      "version": "2.0.13",
+      "type": "jar",
+      "scope": "compile",
+      "optional": "false",
+      "children": [
+        {"groupId": "org.example", "artifactId": "api", "version": "3.0.0", "type": "jar", "scope": "compile", "optional": "false"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  // URL imports are modules, not npm packages.
+  "imports": {
+    "remote": "https://cdn.example.test/lib/mod.ts",
+    "@std/path": "jsr:@std/path@^1.0.0",
+  },
+}

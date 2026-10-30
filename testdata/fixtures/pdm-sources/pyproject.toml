@@ -1,0 +1,4 @@
+[project]
+name = "pdm-sources"
+version = "0.1.0"
+dependencies = ["git-lib", "archive-lib", "local-lib"]

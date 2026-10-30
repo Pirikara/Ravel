@@ -1,0 +1,2 @@
+widget[fast]==1.2.0 ; python_version >= "3.11"
+helper>=2.0

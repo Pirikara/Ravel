@@ -1,0 +1,11 @@
+PODS:
+  - LocalKit (1.0.0)
+
+DEPENDENCIES:
+  - LocalKit (from `../LocalKit`)
+
+EXTERNAL SOURCES:
+  LocalKit:
+    :path: ../LocalKit
+
+COCOAPODS: 1.16.2

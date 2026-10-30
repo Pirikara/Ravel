@@ -1,0 +1,4 @@
+# Different configurations may select different versions.
+org.example:widget:1.0.0=compileClasspath
+org.example:widget:2.0.0=testRuntimeClasspath
+empty=

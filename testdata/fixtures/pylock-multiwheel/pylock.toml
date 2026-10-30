@@ -1,0 +1,22 @@
+lock-version = "1.0"
+
+[[packages]]
+name = "demo"
+version = "0.1.0"
+dependencies = [{ name = "platform-lib" }]
+[packages.directory]
+path = "."
+
+[[packages]]
+name = "platform-lib"
+version = "2.0.0"
+[[packages.wheels]]
+name = "platform_lib-2.0.0-linux.whl"
+url = "https://files.example.test/platform_lib-linux.whl"
+[packages.wheels.hashes]
+sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+[[packages.wheels]]
+name = "platform_lib-2.0.0-win.whl"
+url = "https://files.example.test/platform_lib-win.whl"
+[packages.wheels.hashes]
+sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

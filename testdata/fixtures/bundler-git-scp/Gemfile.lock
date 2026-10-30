@@ -1,0 +1,11 @@
+GIT
+  remote: git@github.com:ravel/gitgem.git
+  revision: 0123456789abcdef0123456789abcdef01234567
+  specs:
+    gitgem (0.3.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  gitgem!

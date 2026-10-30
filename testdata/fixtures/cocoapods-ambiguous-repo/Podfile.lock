@@ -1,0 +1,13 @@
+PODS:
+  - SharedKit (1.0.0)
+
+DEPENDENCIES:
+  - SharedKit
+
+SPEC REPOS:
+  https://pods-a.example.test/specs.git:
+    - SharedKit
+  https://pods-b.example.test/specs.git:
+    - SharedKit
+
+COCOAPODS: 1.16.2

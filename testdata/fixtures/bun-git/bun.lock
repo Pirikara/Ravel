@@ -1,0 +1,10 @@
+{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": {"dependencies": {"gitpkg": "github:team/gitpkg#abcdef0", "webpkg": "1.0.0"}}
+  },
+  "packages": {
+    "gitpkg": ["gitpkg@github:team/gitpkg#abcdef0", {}],
+    "webpkg": ["webpkg@1.0.0", "https://registry.example.test/webpkg/-/webpkg-1.0.0.tgz?token=hidden", {}]
+  }
+}

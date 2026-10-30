@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0": {
+      "Example.Core/2.0.0": {"type": "package", "dependencies": {"Example.Abstractions": "1.1.0"}},
+      "Example.Abstractions/1.1.0": {"type": "package"},
+      "Demo.Project/1.0.0": {"type": "project", "dependencies": {"Example.Core": "2.0.0"}}
+    }
+  },
+  "libraries": {
+    "Example.Core/2.0.0": {"type": "package", "sha512": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="},
+    "Example.Abstractions/1.1.0": {"type": "package"}
+  },
+  "projectFileDependencyGroups": {"net8.0": ["Example.Core >= 2.0.0"]},
+  "project": {
+    "restore": {"sources": {"https://private.example.test/v3/index.json": {}}},
+    "frameworks": {"net8.0": {"dependencies": {"Example.Core": {"version": "[2.0.0, )"}}}}
+  }
+}

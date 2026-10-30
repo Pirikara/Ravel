@@ -1,0 +1,16 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      main: {specifier: 1.0.0, version: 1.0.0}
+    optionalDependencies:
+      native: {specifier: 2.0.0, version: 2.0.0}
+packages:
+  main@1.0.0: {}
+  native@2.0.0:
+    os: [darwin]
+    cpu: [arm64]
+snapshots:
+  main@1.0.0:
+    optionalDependencies: {native: 2.0.0}
+  native@2.0.0: {}

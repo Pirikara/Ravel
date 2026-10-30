@@ -1,0 +1,24 @@
+[[package]]
+name = "Requests"
+version = "2.32.3"
+optional = false
+groups = ["main"]
+files = [{file = "requests-2.32.3.whl", hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]
+[package.dependencies]
+idna = ">=3"
+[package.source]
+type = "legacy"
+url = "https://user:secret@pypi.example.test/simple?token=hidden"
+reference = "private"
+
+[[package]]
+name = "idna"
+version = "3.10"
+optional = false
+groups = ["main"]
+[package.source]
+type = "legacy"
+url = "https://pypi.org/simple"
+
+[metadata]
+lock-version = "2.0"

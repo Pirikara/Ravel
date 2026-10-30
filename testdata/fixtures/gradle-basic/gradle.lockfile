@@ -1,0 +1,5 @@
+# This is a Gradle generated file for dependency locking.
+com.google.guava:guava:33.2.1-jre=compileClasspath,runtimeClasspath
+com.google.guava:failureaccess:1.0.2=compileClasspath,runtimeClasspath
+org.slf4j:slf4j-api:2.0.13=runtimeClasspath
+empty=annotationProcessor

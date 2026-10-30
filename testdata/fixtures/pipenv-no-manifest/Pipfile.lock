@@ -1,0 +1,5 @@
+{
+  "_meta": {"pipfile-spec": 6, "sources": [{"name": "pypi", "url": "https://pypi.org/simple"}]},
+  "default": {"standalone": {"version": "==1.0.0", "index": "pypi"}},
+  "develop": {}
+}

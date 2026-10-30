@@ -1,0 +1,6 @@
+packages:
+  old_package:
+    dependency: "direct main"
+    description: old_package
+    source: hosted
+    version: "0.9.0"

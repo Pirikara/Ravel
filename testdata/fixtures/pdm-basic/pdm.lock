@@ -1,0 +1,18 @@
+[metadata]
+groups = ["default"]
+lock_version = "4.5.1"
+content_hash = "sha256:fixture"
+
+[[package]]
+name = "alpha"
+version = "1.0.0"
+groups = ["default"]
+dependencies = ["beta>=2"]
+files = [{file = "alpha-1.0.0-py3-none-any.whl", hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]
+
+[[package]]
+name = "beta"
+version = "2.0.0"
+groups = ["default"]
+requires_python = ">=3.9"
+files = [{file = "beta-2.0.0-py3-none-any.whl", hash = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]

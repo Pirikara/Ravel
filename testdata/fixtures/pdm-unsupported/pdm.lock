@@ -1,0 +1,7 @@
+[metadata]
+groups = ["default"]
+lock_version = "5.0.0"
+
+[[package]]
+name = "future"
+version = "1.0.0"

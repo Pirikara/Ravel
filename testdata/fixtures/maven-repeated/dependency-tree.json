@@ -1,0 +1,17 @@
+{
+  "groupId": "com.example", "artifactId": "app", "version": "1.0.0",
+  "children": [
+    {
+      "groupId": "org.example", "artifactId": "main", "version": "1.0.0", "type": "jar", "scope": "compile",
+      "children": [
+        {"groupId": "org.example", "artifactId": "shared", "version": "2.0.0", "type": "jar", "scope": "compile"}
+      ]
+    },
+    {
+      "groupId": "org.example", "artifactId": "tests", "version": "1.0.0", "type": "jar", "scope": "test",
+      "children": [
+        {"groupId": "org.example", "artifactId": "shared", "version": "2.0.0", "type": "jar", "scope": "compile"}
+      ]
+    }
+  ]
+}

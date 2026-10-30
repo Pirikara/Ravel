@@ -1,0 +1,22 @@
+version = 1
+
+[[package]]
+name = "demo"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [{ name = "git-lib" }, { name = "archive-lib" }, { name = "local-lib" }]
+
+[[package]]
+name = "git-lib"
+version = "1.0.0"
+source = { git = "https://user:secret@github.com/team/git-lib?rev=main#abcdef1234567890" }
+
+[[package]]
+name = "archive-lib"
+version = "2.0.0"
+source = { url = "https://user:secret@files.example.test/archive-lib.tar.gz?token=hidden" }
+
+[[package]]
+name = "local-lib"
+version = "3.0.0"
+source = { directory = "../local-lib" }

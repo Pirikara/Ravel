@@ -1,0 +1,9 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[packages]
+git-lib = {git = "https://github.com/team/git-lib.git", ref = "abcdef1234567890"}
+archive-lib = {file = "https://files.example.test/archive-lib.tar.gz"}
+local-lib = {path = "../local-lib", editable = true}

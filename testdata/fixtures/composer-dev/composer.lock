@@ -1,0 +1,8 @@
+{
+  "packages": [
+    {"name":"symfony/console","version":"7.0.0","source":{"type":"git","url":"https://github.com/symfony/console.git","reference":"abcdef1234567890"}}
+  ],
+  "packages-dev": [
+    {"name":"phpunit/phpunit","version":"11.0.0","require":{"symfony/console":"^7.0"},"source":{"type":"git","url":"https://github.com/sebastianbergmann/phpunit.git","reference":"1234567890abcdef"}}
+  ]
+}

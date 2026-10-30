@@ -1,0 +1,4 @@
+{
+  "_meta": {"pipfile-spec": 7, "sources": []},
+  "default": {"future": {"version": "==1.0.0"}}
+}

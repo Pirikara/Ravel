@@ -1,0 +1,95 @@
+package model
+
+type Evidence struct {
+	Collector   string `json:"collector"`
+	InputPath   string `json:"inputPath"`
+	InputDigest string `json:"inputDigest"`
+	Line        int    `json:"line"`
+	Pointer     string `json:"pointer,omitempty"`
+	Method      string `json:"method"`
+	ObservedAt  string `json:"observedAt,omitempty"`
+}
+
+type Hash struct {
+	Alg     string `json:"alg"`
+	Content string `json:"content"`
+}
+
+type Component struct {
+	ID       string     `json:"id"`
+	Kind     string     `json:"kind"`
+	Name     string     `json:"name"`
+	Version  string     `json:"version"`
+	Platform string     `json:"platform,omitempty"`
+	Context  string     `json:"context,omitempty"`
+	PURL     string     `json:"purl,omitempty"`
+	Hashes   []Hash     `json:"hashes,omitempty"`
+	Evidence []Evidence `json:"evidence"`
+}
+
+type Edge struct {
+	From      string   `json:"from"`
+	To        string   `json:"to"`
+	Kind      string   `json:"kind"`
+	Condition string   `json:"condition,omitempty"`
+	Evidence  Evidence `json:"evidence"`
+}
+
+type Origin struct {
+	Occurrence string   `json:"occurrence"`
+	Kind       string   `json:"kind"`
+	SafeURL    string   `json:"safeUrl"`
+	LocalPath  string   `json:"localPath,omitempty"`
+	Target     string   `json:"target,omitempty"`
+	Revision   string   `json:"revision,omitempty"`
+	Status     string   `json:"status"`
+	Evidence   Evidence `json:"evidence"`
+}
+
+type Development struct {
+	Occurrence string   `json:"occurrence"`
+	SafeURL    string   `json:"safeUrl"`
+	Status     string   `json:"status"`
+	Evidence   Evidence `json:"evidence"`
+}
+
+type Issue struct {
+	Code  string `json:"code"`
+	Name  string `json:"name,omitempty"`
+	Line  int    `json:"line,omitempty"`
+	Scope string `json:"scope,omitempty"`
+}
+
+type InputCoverage struct {
+	Project     string  `json:"project"`
+	Source      string  `json:"source"`
+	Manager     string  `json:"manager"`
+	GraphState  string  `json:"graphState"`
+	OriginState string  `json:"originState"`
+	Packages    int     `json:"packages"`
+	Edges       int     `json:"edges"`
+	Issues      []Issue `json:"issues"`
+}
+
+type Coverage struct {
+	Manager     string          `json:"manager"`
+	GraphState  string          `json:"graphState"`
+	OriginState string          `json:"originState"`
+	Platforms   []string        `json:"platforms,omitempty"`
+	Packages    int             `json:"packages"`
+	Edges       int             `json:"edges"`
+	Issues      []Issue         `json:"issues"`
+	Inputs      []InputCoverage `json:"inputs,omitempty"`
+}
+
+type Document struct {
+	SchemaVersion string        `json:"schemaVersion"`
+	Project       string        `json:"project"`
+	Source        string        `json:"source"`
+	Sources       []string      `json:"sources,omitempty"`
+	Components    []Component   `json:"components"`
+	Edges         []Edge        `json:"edges"`
+	Origins       []Origin      `json:"origins"`
+	Development   []Development `json:"development"`
+	Coverage      Coverage      `json:"coverage"`
+}

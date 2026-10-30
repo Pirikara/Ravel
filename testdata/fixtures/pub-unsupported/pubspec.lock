@@ -1,0 +1,6 @@
+packages:
+  mystery:
+    dependency: "direct main"
+    description: mystery
+    source: alien
+    version: "1.0.0"

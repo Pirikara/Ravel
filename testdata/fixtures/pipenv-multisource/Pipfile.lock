@@ -1,0 +1,11 @@
+{
+  "_meta": {"pipfile-spec": 6, "sources": [
+    {"name": "pypi", "url": "https://pypi.org/simple"},
+    {"name": "private", "url": "https://user:secret@packages.example.test/simple?token=hidden"}
+  ]},
+  "default": {
+    "alpha": {"version": "==1.0.0", "index": "private"},
+    "beta": {"version": "==2.0.0"}
+  },
+  "develop": {}
+}

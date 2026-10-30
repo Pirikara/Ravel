@@ -1,0 +1,8 @@
+PODS:
+  - Standalone (1.0.0)
+
+SPEC REPOS:
+  trunk:
+    - Standalone
+
+COCOAPODS: 1.16.2

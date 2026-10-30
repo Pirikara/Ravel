@@ -1,0 +1,14 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      alpha: {specifier: 1.0.0, version: 1.0.0}
+  packages/web:
+    dependencies:
+      beta: {specifier: 2.0.0, version: 2.0.0}
+packages:
+  alpha@1.0.0: {}
+  beta@2.0.0: {}
+snapshots:
+  alpha@1.0.0: {}
+  beta@2.0.0: {}

@@ -1,0 +1,7 @@
+{
+  "packages": [
+    {"name":"team/foo","version":"1.0.0","source":{"type":"git","url":"https://github.com/team/foo.git","reference":"abcdef1234567890"}},
+    {"name":"team/foo","version":"2.0.0","source":{"type":"git","url":"https://github.com/team/foo.git","reference":"abcdef1234567890"}}
+  ],
+  "packages-dev": []
+}

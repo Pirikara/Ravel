@@ -1,0 +1,9 @@
+version = 3
+[[package]]
+name = "demo"
+version = "0.1.0"
+dependencies = ["git-lib 1.0.0"]
+[[package]]
+name = "git-lib"
+version = "1.0.0"
+source = "git+https://user:secret@github.com/team/git-lib?branch=main#abcdef1234567890"

@@ -1,0 +1,18 @@
+__metadata:
+  version: 8
+"demo@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "demo@workspace:."
+  dependencies:
+    web: "workspace:*"
+  linkType: soft
+"web@workspace:*":
+  version: 1.0.0
+  resolution: "web@workspace:packages/web"
+  dependencies:
+    alpha: ^1.0.0
+  linkType: soft
+"alpha@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "alpha@npm:1.0.0"
+  linkType: hard
