@@ -136,7 +136,7 @@ The table describes inputs Ravel reads today. A listed format does not imply com
 | RPM rootfs | SQLite `rpmdb.sqlite`, NDB `Packages.db`, and Berkeley DB `Packages`; name, epoch, version, release, architecture, and conditional capability links. |
 | OCI image | Local OCI layout or OCI/Docker save tar archive, including gzip-compressed tar; final Debian, APK, or RPM database, JAR/WAR files, and Go ELF build information after layer whiteouts. |
 | Installed Python in OCI | `.dist-info/METADATA` records and `Requires-Dist` links when identifiable; packages explicitly listed in pip's installed `_vendor/vendor.txt`, linked to pip when its metadata is present. |
-| Installed Node in OCI | Conventional `node_modules/*/package.json` records and dependency links when identifiable. |
+| Installed Node in OCI | Conventional `node_modules/*/package.json` records and dependency links when identifiable; versioned Yarn installations under `/opt/yarn-v*/package.json`. |
 | Java archives in OCI | JAR/WAR files and identifiable nested JARs, with archive hashes and embedded Maven metadata. |
 | Go binaries in OCI | Embedded Go toolchain and module versions from Linux ELF files, tied to the executable's SHA-256 and image layer. The module-to-module dependency graph is not reconstructed. |
 

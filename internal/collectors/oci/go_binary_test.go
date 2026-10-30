@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"bytes"
 	"encoding/binary"
 	"testing"
 )
@@ -17,6 +18,21 @@ func testELF64WithSectionNames() []byte {
 	binary.LittleEndian.PutUint64(data[160:168], 16)  // section-name data size
 	copy(data[192:], "\x00.shstrtab\x00")
 	return data
+}
+
+func TestGoBuildInfoMagicStreamAcrossChunks(t *testing.T) {
+	for _, test := range []struct {
+		data []byte
+		want bool
+	}{
+		{data: bytes.Repeat([]byte("x"), 70000), want: false},
+		{data: append(append(bytes.Repeat([]byte("x"), (32<<10)-2), []byte(goBuildInfoMagic)...), bytes.Repeat([]byte("y"), 40000)...), want: true},
+	} {
+		found, err := hasGoBuildInfoMagic(bytes.NewReader(test.data), int64(len(test.data)))
+		if err != nil || found != test.want {
+			t.Fatalf("streamed Go marker detection incorrect: found=%t want=%t err=%v", found, test.want, err)
+		}
+	}
 }
 
 func TestGuardELFMetadataBoundsSectionNames(t *testing.T) {

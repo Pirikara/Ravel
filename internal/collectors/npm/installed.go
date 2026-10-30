@@ -22,7 +22,8 @@ var (
 	installedNodeName      = regexp.MustCompile(`^(?:@[A-Za-z0-9_~][A-Za-z0-9._~-]*/)?[A-Za-z0-9_~][A-Za-z0-9._~-]*$`)
 )
 
-// IsInstalledPackagePath recognizes conventional node_modules package roots.
+// IsInstalledPackagePath recognizes conventional node_modules package roots
+// and the versioned Yarn installation used by the official Node image.
 // The pnpm content store needs symlink resolution before it can establish an
 // installed package, so paths beneath .pnpm are excluded.
 func IsInstalledPackagePath(name string) bool {
@@ -30,6 +31,9 @@ func IsInstalledPackagePath(name string) bool {
 		return false
 	}
 	parts := strings.Split(name, "/")
+	if _, ok := versionedYarnPath(name); ok {
+		return true
+	}
 	for _, part := range parts {
 		if part == ".pnpm" {
 			return false
@@ -41,8 +45,8 @@ func IsInstalledPackagePath(name string) bool {
 	return len(parts) >= 4 && parts[len(parts)-4] == "node_modules" && strings.HasPrefix(parts[len(parts)-3], "@") && installedNodePathToken.MatchString(strings.TrimPrefix(parts[len(parts)-3], "@")) && installedNodePathToken.MatchString(parts[len(parts)-2])
 }
 
-// CollectInstalledPackage records a package manifest found at an installed
-// node_modules path. The manifest identifies the package but does not prove
+// CollectInstalledPackage records a package manifest found at a recognized
+// installation path. The manifest identifies the package but does not prove
 // which registry or tarball supplied it.
 func CollectInstalledPackage(data []byte, source, project, metadataPath string) (model.Document, error) {
 	if len(data) > MaxInstalledPackageJSONBytes || !IsInstalledPackagePath(metadataPath) {
@@ -55,6 +59,9 @@ func CollectInstalledPackage(data []byte, source, project, metadataPath string) 
 	var name, version string
 	if json.Unmarshal(manifest["name"], &name) != nil || json.Unmarshal(manifest["version"], &version) != nil || len(name) > 214 || !installedNodeName.MatchString(name) || version == "" || len(version) > 128 || strings.ContainsAny(version, " \t\r\n\x00/\\") {
 		return model.Document{}, errors.New("installed Node package identity is invalid")
+	}
+	if expected, ok := versionedYarnPath(metadataPath); ok && (name != "yarn" || version != expected) {
+		return model.Document{}, errors.New("installed Yarn version does not match its installation path")
 	}
 	hash := sha256.Sum256(data)
 	digest := "sha256:" + hex.EncodeToString(hash[:])
@@ -73,6 +80,15 @@ func CollectInstalledPackage(data []byte, source, project, metadataPath string) 
 	}
 	common.Finalize(&doc)
 	return doc, nil
+}
+
+func versionedYarnPath(name string) (string, bool) {
+	parts := strings.Split(name, "/")
+	if len(parts) != 3 || parts[0] != "opt" || parts[2] != "package.json" || !strings.HasPrefix(parts[1], "yarn-v") {
+		return "", false
+	}
+	version := strings.TrimPrefix(parts[1], "yarn-v")
+	return version, installedNodePathToken.MatchString(version)
 }
 
 func decodeUniqueObject(data []byte) (map[string]json.RawMessage, error) {

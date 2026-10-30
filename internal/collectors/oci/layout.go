@@ -849,7 +849,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 				goFiles++
 				switch {
 				case header.Size > maxGoBinaryBytes:
-					change.goBinaries[name] = goBinaryState{status: "oversized"}
+					hasMagic, err := hasGoBuildInfoMagic(reader, header.Size-4)
+					if err != nil {
+						return layerChange{}, "", err
+					}
+					if hasMagic {
+						change.goBinaries[name] = goBinaryState{status: "oversized"}
+					}
 				case goFiles > maxGoBinaryFiles || int64(goBytes)+header.Size > maxGoBinaryLayerBytes:
 					change.goLimited = true
 				default:

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	goversion "go/version"
+	"io"
 	"path"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ const (
 	maxGoBinaryImageFiles = 10000
 	maxGoBinaryModules    = 2000
 	maxELFSectionNames    = 2 << 20
+	goBuildInfoMagic      = "\xff Go buildinf:"
 )
 
 type goBinaryState struct {
@@ -41,7 +43,7 @@ func inspectGoBinary(data []byte, source, project, binaryPath string) (document 
 	if len(data) == 0 || len(data) > maxGoBinaryBytes {
 		return model.Document{}, false, errors.New("Go binary exceeds size limit")
 	}
-	if !bytes.Contains(data, []byte("\xff Go buildinf:")) {
+	if !bytes.Contains(data, []byte(goBuildInfoMagic)) {
 		return model.Document{}, false, nil // Ordinary ELF executable.
 	}
 	if err := guardELFMetadata(data); err != nil {
@@ -212,4 +214,33 @@ func tableWithinFile(offset, entrySize, count uint64, length int) bool {
 
 func isELFMagic(data []byte) bool {
 	return bytes.Equal(data, []byte("\x7fELF"))
+}
+
+// hasGoBuildInfoMagic checks an oversized ELF stream without retaining its
+// contents. A native binary should not be reported as an oversized Go binary.
+func hasGoBuildInfoMagic(reader io.Reader, remaining int64) (bool, error) {
+	const chunkSize = 32 << 10
+	var buffer [chunkSize + len(goBuildInfoMagic) - 1]byte
+	tail := 0
+	for remaining > 0 {
+		chunk := int64(chunkSize)
+		if remaining < chunk {
+			chunk = remaining
+		}
+		n, err := io.ReadFull(reader, buffer[tail:tail+int(chunk)])
+		if err != nil {
+			return false, err
+		}
+		if bytes.Contains(buffer[:tail+n], []byte(goBuildInfoMagic)) {
+			return true, nil
+		}
+		keep := len(goBuildInfoMagic) - 1
+		if tail+n < keep {
+			keep = tail + n
+		}
+		copy(buffer[:keep], buffer[tail+n-keep:tail+n])
+		tail = keep
+		remaining -= int64(n)
+	}
+	return false, nil
 }
