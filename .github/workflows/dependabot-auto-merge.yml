@@ -1,8 +1,9 @@
 name: Dependabot auto-merge
 
 on:
-  pull_request_target:
-    types: [opened, reopened, synchronize]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 permissions:
   contents: write
@@ -12,18 +13,44 @@ jobs:
   approve-and-merge:
     if: >-
       github.repository == 'Pirikara/Ravel' &&
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.base.ref == 'main'
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Approve pull request
+      - name: Find the tested pull request
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # workflow_run.pull_requests can be empty, so resolve the tested commit.
+          pr_number="$(
+            gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/pulls" |
+              jq -r --arg sha "$HEAD_SHA" --arg repo "$GITHUB_REPOSITORY" '
+                [.[] |
+                  select(.state == "open" and
+                         .user.login == "dependabot[bot]" and
+                         .base.ref == "main" and
+                         .head.repo.full_name == $repo and
+                         .head.sha == $sha)
+                ] | if length == 1 then .[0].number else empty end
+              '
+          )"
+          if [[ -n "$pr_number" ]]; then
+            echo "number=$pr_number" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Approve pull request
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: gh pr review "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --approve
       - name: Enable auto-merge
+        if: steps.pr.outputs.number != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash
