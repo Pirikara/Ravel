@@ -1,0 +1,14 @@
+P:mail-one
+V:1.0-r0
+A:x86_64
+p:cmd:mailer
+
+P:mail-two
+V:2.0-r0
+A:x86_64
+p:cmd:mailer
+
+P:app
+V:1.0-r0
+A:noarch
+D:cmd:mailer

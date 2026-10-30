@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 
+	"ravel/internal/collectors/apk"
 	"ravel/internal/collectors/common"
 	"ravel/internal/collectors/dpkg"
 	"ravel/internal/model"
@@ -22,7 +23,7 @@ import (
 
 const (
 	maxMetadataBytes  = 8 << 20
-	maxStatusBytes    = 128 << 20
+	maxDatabaseBytes  = 128 << 20
 	maxLayerBytes     = 2 << 30
 	maxExpandedLayer  = 4 << 30
 	maxLayerEntries   = 1000000
@@ -35,7 +36,10 @@ const (
 	plainNonDistType  = "application/vnd.oci.image.layer.nondistributable.v1.tar"
 	gzipNonDistType   = "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"
 	statusPath        = "var/lib/dpkg/status"
+	apkInstalledPath  = "lib/apk/db/installed"
 )
+
+var databasePaths = []string{statusPath, apkInstalledPath}
 
 var (
 	sha256Digest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
@@ -75,7 +79,7 @@ type imageChoice struct {
 }
 
 // Collect reads an OCI image layout directory. It reconstructs the final
-// dpkg status database across layers without extracting arbitrary image files.
+// installed package databases across layers without extracting image files.
 func Collect(layout, project, requestedPlatform string) (model.Document, error) {
 	if requestedPlatform != "" && !platformName.MatchString(requestedPlatform) {
 		return model.Document{}, errors.New("invalid OCI platform; use os/architecture[/variant]")
@@ -149,45 +153,65 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		return model.Document{}, errors.New("OCI platform selects multiple images; choose a single-image layout")
 	}
 	choice := choices[0]
-	var status []byte
-	statusLayer := ""
+	type databaseState struct {
+		data  []byte
+		layer string
+	}
+	databases := map[string]databaseState{}
 	for i, layer := range choice.layers {
 		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i])
 		if err != nil {
 			return model.Document{}, fmt.Errorf("OCI layer %d: %w", i, err)
 		}
 		sources = append(sources, blobPath)
-		if change.deleted {
-			status, statusLayer = nil, ""
-		}
-		if change.present {
-			status, statusLayer = change.status, layer.Digest
+		for name, update := range change.files {
+			if update.deleted {
+				delete(databases, name)
+			}
+			if update.present {
+				databases[name] = databaseState{data: update.data, layer: layer.Digest}
+			}
 		}
 	}
 	platform := choice.config.OS + "/" + choice.config.Architecture
 	if choice.config.Variant != "" {
 		platform += "/" + choice.config.Variant
 	}
-	if statusLayer == "" {
+	if len(databases) == 0 {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
 		doc.Coverage.GraphState = "unknown"
 		doc.Coverage.OriginState = "unknown"
-		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg"}, model.Issue{Code: "image_language_packages_unscanned"})
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk"}, model.Issue{Code: "image_language_packages_unscanned"})
 		common.Finalize(&doc)
 		doc.Coverage.GraphState = "unknown"
 		return doc, nil
 	}
-	evidencePath := "oci:" + statusLayer + "!/" + statusPath
-	doc, err := dpkg.CollectBytes(status, evidencePath, project)
-	if err != nil {
-		return model.Document{}, fmt.Errorf("invalid dpkg database in OCI image: %w", err)
-	}
-	doc.Source = layout
+	doc := common.NewDocument(layout, project, "oci", nil)
 	doc.Sources = sources
-	doc.Coverage.Manager = "oci"
 	doc.Coverage.Platforms = []string{platform}
+	for _, name := range databasePaths {
+		state, found := databases[name]
+		if !found {
+			continue
+		}
+		evidencePath := "oci:" + state.layer + "!/" + name
+		var database model.Document
+		if name == statusPath {
+			database, err = dpkg.CollectBytes(state.data, evidencePath, project)
+		} else {
+			database, err = apk.CollectBytes(state.data, evidencePath, project)
+		}
+		if err != nil {
+			return model.Document{}, fmt.Errorf("invalid %s database in OCI image: %w", name, err)
+		}
+		doc.Components = append(doc.Components, database.Components...)
+		doc.Edges = append(doc.Edges, database.Edges...)
+		doc.Origins = append(doc.Origins, database.Origins...)
+		doc.Development = append(doc.Development, database.Development...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, database.Coverage.Issues...)
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_language_packages_unscanned"})
 	for i := range doc.Components {
 		doc.Components[i].Context += ";image=" + platform
@@ -282,10 +306,14 @@ func readBlob(layout string, item descriptor, limit int64) ([]byte, string, erro
 	return data, file, nil
 }
 
-type layerChange struct {
+type databaseChange struct {
 	deleted bool
 	present bool
-	status  []byte
+	data    []byte
+}
+
+type layerChange struct {
+	files map[string]databaseChange
 }
 
 func scanLayer(layout string, item descriptor, diffID string) (layerChange, string, error) {
@@ -319,8 +347,10 @@ func scanLayer(layout string, item descriptor, diffID string) (layerChange, stri
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{}
-	statusSeen, parentReplaced, entries := false, false, 0
+	change := layerChange{files: map[string]databaseChange{}}
+	seenDatabase := map[string]bool{}
+	parentReplaced := map[string]bool{}
+	entries := 0
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -348,35 +378,47 @@ func scanLayer(layout string, item descriptor, diffID string) (layerChange, stri
 			if base == ".wh." {
 				return layerChange{}, "", errors.New("invalid OCI whiteout")
 			}
+			deletedPath := path.Join(path.Dir(name), strings.TrimPrefix(base, ".wh."))
 			if base == ".wh..wh..opq" {
-				if ancestorOfStatus(path.Dir(name)) {
-					change.deleted = true
+				deletedPath = path.Dir(name)
+			}
+			for _, target := range databasePaths {
+				if ancestorOfTarget(deletedPath, target) {
+					update := change.files[target]
+					update.deleted = true
+					change.files[target] = update
 				}
-			} else if ancestorOfStatus(path.Join(path.Dir(name), strings.TrimPrefix(base, ".wh."))) {
-				change.deleted = true
 			}
 			continue
 		}
-		if name == statusPath {
-			if statusSeen || header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxStatusBytes {
-				return layerChange{}, "", errors.New("unsupported or duplicate OCI dpkg status entry")
+		for _, target := range databasePaths {
+			if name == target {
+				if seenDatabase[target] || header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxDatabaseBytes {
+					return layerChange{}, "", fmt.Errorf("unsupported or duplicate OCI database entry: %s", target)
+				}
+				seenDatabase[target] = true
+				update := change.files[target]
+				update.present = true
+				update.data, err = io.ReadAll(io.LimitReader(reader, maxDatabaseBytes+1))
+				if err != nil || len(update.data) > maxDatabaseBytes {
+					return layerChange{}, "", errors.New("OCI package database exceeded size limit")
+				}
+				change.files[target] = update
+			} else if ancestorOfTarget(name, target) && header.Typeflag != tar.TypeDir {
+				if header.Typeflag == tar.TypeSymlink || header.Typeflag == tar.TypeLink {
+					return layerChange{}, "", fmt.Errorf("OCI package database path has an unsupported link: %s", name)
+				}
+				update := change.files[target]
+				update.deleted = true
+				change.files[target] = update
+				parentReplaced[target] = true
 			}
-			statusSeen = true
-			change.present = true
-			change.status, err = io.ReadAll(io.LimitReader(reader, maxStatusBytes+1))
-			if err != nil || len(change.status) > maxStatusBytes {
-				return layerChange{}, "", errors.New("OCI dpkg status exceeded size limit")
-			}
-		} else if ancestorOfStatus(name) && header.Typeflag != tar.TypeDir {
-			if header.Typeflag == tar.TypeSymlink || header.Typeflag == tar.TypeLink {
-				return layerChange{}, "", errors.New("OCI dpkg path has an unsupported link")
-			}
-			change.deleted = true
-			parentReplaced = true
 		}
 	}
-	if parentReplaced && statusSeen {
-		return layerChange{}, "", errors.New("OCI layer replaces dpkg parent directory and status together")
+	for target := range parentReplaced {
+		if seenDatabase[target] {
+			return layerChange{}, "", fmt.Errorf("OCI layer replaces database parent directory and %s together", target)
+		}
 	}
 	if _, err := io.Copy(io.Discard, stream); err != nil {
 		return layerChange{}, "", err
@@ -408,6 +450,6 @@ func cleanTarPath(raw string) (string, error) {
 	return path.Clean(raw), nil
 }
 
-func ancestorOfStatus(candidate string) bool {
-	return candidate == "." || candidate == statusPath || strings.HasPrefix(statusPath, candidate+"/")
+func ancestorOfTarget(candidate, target string) bool {
+	return candidate == "." || candidate == target || strings.HasPrefix(target, candidate+"/")
 }

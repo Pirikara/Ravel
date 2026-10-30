@@ -1,0 +1,21 @@
+C:Q1examplebusybox
+P:busybox
+V:1.36.1-r1
+A:x86_64
+T:BusyBox utilities
+p:/bin/sh=1.36.1-r1
+F:bin
+R:busybox
+
+C:Q1examplemusl
+P:musl
+V:1.2.5-r0
+A:x86_64
+p:so:libc.musl-x86_64.so.1
+
+C:Q1exampleapp
+P:sample-app
+V:2.0-r0
+A:noarch
+D:busybox=1.36.1-r1 so:libc.musl-x86_64.so.1 /bin/sh
+i:sample-app=2.0-r0 docs

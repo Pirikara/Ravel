@@ -147,6 +147,15 @@ func ociTestStatus(t *testing.T, fixture string) []byte {
 	return data
 }
 
+func ociTestAPKInstalled(t *testing.T, fixture string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", fixture, "lib", "apk", "db", "installed"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 func ociTestScan(t *testing.T, layout string, args ...string) (model.Document, string, int) {
 	t.Helper()
 	result := filepath.Join(t.TempDir(), "image.json")
@@ -409,5 +418,46 @@ func TestOCIArchiveRejectsUnsafePath(t *testing.T) {
 	}
 	if _, output, code := ociTestScan(t, archive); code != 1 || !strings.Contains(output, "unsafe OCI layer path") {
 		t.Fatalf("unsafe OCI archive path accepted: code=%d output=%s", code, output)
+	}
+}
+
+func TestOCIApkDatabaseOverlayAndWhiteout(t *testing.T) {
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{
+		{gzip: true, entries: []ociTestEntry{{name: "lib/apk/db/installed", data: ociTestAPKInstalled(t, "apk-basic")}}},
+		{entries: []ociTestEntry{{name: "lib/apk/db/installed", data: ociTestAPKInstalled(t, "apk-versioned")}, {name: "lib/apk/db/.wh.installed"}}},
+	})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 3 || doc.Coverage.GraphState != "partial" {
+		t.Fatalf("OCI APK overlay failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	for _, component := range doc.Components {
+		if !strings.Contains(component.Evidence[0].InputPath, "!/lib/apk/db/installed") || component.Evidence[0].Collector != "apk-installed" {
+			t.Fatalf("OCI APK evidence incorrect: %#v", component)
+		}
+	}
+	removed := ociTestLayout(t)
+	removedManifest := ociTestImage(t, removed, "linux", "amd64", []ociTestLayer{
+		{entries: []ociTestEntry{{name: "lib/apk/db/installed", data: ociTestAPKInstalled(t, "apk-basic")}}},
+		{entries: []ociTestEntry{{name: "lib/apk/db/.wh.installed"}}},
+	})
+	ociTestIndex(t, removed, removedManifest)
+	removedDoc, output, code := ociTestScan(t, removed)
+	if code != 0 || removedDoc.Coverage.Packages != 0 || removedDoc.Coverage.GraphState != "unknown" {
+		t.Fatalf("OCI APK whiteout failed: code=%d output=%s coverage=%#v", code, output, removedDoc.Coverage)
+	}
+}
+
+func TestOCIMixedOSDatabases(t *testing.T) {
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+		{name: "var/lib/dpkg/status", data: ociTestStatus(t, "dpkg-basic")},
+		{name: "lib/apk/db/installed", data: ociTestAPKInstalled(t, "apk-basic")},
+	}}})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 7 || doc.Coverage.Edges != 13 || doc.Coverage.Manager != "oci" {
+		t.Fatalf("mixed OCI OS databases failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
 	}
 }

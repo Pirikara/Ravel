@@ -1,0 +1,8 @@
+P:busybox
+V:1.36-r0
+A:x86_64
+
+P:app
+V:1.0-r0
+A:x86_64
+D:!old-shell busybox

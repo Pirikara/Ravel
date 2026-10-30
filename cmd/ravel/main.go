@@ -299,8 +299,8 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec; --network must be deny or allow")
 		return 2
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "dpkg" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
-		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, cocoapods, pipenv, pdm, go, pub, gradle, maven, dpkg, oci, java-archive, python-wheel")
+	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "dpkg" && *manager != "apk" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
+		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, cocoapods, pipenv, pdm, go, pub, gradle, maven, dpkg, apk, oci, java-archive, python-wheel")
 		return 2
 	}
 	if *all {
@@ -329,6 +329,9 @@ func runScan(args []string) int {
 			project = filepath.Base(filepath.Dir(filepath.Dir(path)))
 		}
 		if filepath.Base(path) == "status" && project == "dpkg" {
+			project = filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path)))))
+		}
+		if filepath.Base(path) == "installed" && project == "db" {
 			project = filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path)))))
 		}
 	}
@@ -618,6 +621,11 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		if requested == "oci" && strings.HasSuffix(strings.ToLower(input), ".tar") {
 			return input, "oci", nil
 		}
+		if filepath.Base(input) == "installed" && filepath.Base(filepath.Dir(input)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(input))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(input)))) == "lib" {
+			if requested == "auto" || requested == "apk" {
+				return input, "apk", nil
+			}
+		}
 		selected := managerForFile(filepath.Base(input))
 		if selected == "" || requested != "auto" && requested != selected {
 			return "", "", errors.New("unsupported lockfile or manager mismatch")
@@ -707,6 +715,10 @@ func selectLock(input string, directory bool, requested string) (string, string,
 	dpkgStatus := filepath.Join(input, "var", "lib", "dpkg", "status")
 	if stat, err := os.Stat(dpkgStatus); err == nil && stat.Mode().IsRegular() {
 		candidates["dpkg"] = dpkgStatus
+	}
+	apkInstalled := filepath.Join(input, "lib", "apk", "db", "installed")
+	if stat, err := os.Stat(apkInstalled); err == nil && stat.Mode().IsRegular() {
+		candidates["apk"] = apkInstalled
 	}
 	if requested == "auto" || requested == "pylock" {
 		entries, err := os.ReadDir(input)

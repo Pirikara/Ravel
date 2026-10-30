@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"ravel/internal/collectors/apk"
 	"ravel/internal/collectors/bun"
 	"ravel/internal/collectors/bundler"
 	"ravel/internal/collectors/cargo"
@@ -34,7 +35,7 @@ import (
 var staticManagers = []string{
 	"bundler", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
 	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "cocoapods",
-	"pipenv", "pdm", "go", "pub", "gradle", "maven", "dpkg", "oci",
+	"pipenv", "pdm", "go", "pub", "gradle", "maven", "dpkg", "apk", "oci",
 }
 
 // runScanAll scans static manager inputs at the directory root, and nested
@@ -295,6 +296,9 @@ func scanDirectories(root string) ([]string, error) {
 		if name == "status" && filepath.Base(filepath.Dir(path)) == "dpkg" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "lib" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path)))) == "var" {
 			dirs[filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path))))] = true
 		}
+		if name == "installed" && filepath.Base(filepath.Dir(path)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path)))) == "lib" {
+			dirs[filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path))))] = true
+		}
 		if recursiveCandidate(name) {
 			dirs[filepath.Dir(path)] = true
 		}
@@ -373,6 +377,8 @@ func collectStatic(manager, lock, project string) (model.Document, error) {
 		return maven.CollectTree(lock, project)
 	case "dpkg":
 		return dpkg.Collect(lock, project)
+	case "apk":
+		return apk.Collect(lock, project)
 	case "oci":
 		return oci.Collect(filepath.Dir(lock), project, "")
 	}

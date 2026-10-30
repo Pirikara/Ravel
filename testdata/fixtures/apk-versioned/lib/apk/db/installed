@@ -1,0 +1,8 @@
+P:library
+V:1.2-r0
+A:x86_64
+
+P:app
+V:1.0-r0
+A:noarch
+D:library=1.2-r0 library>=1.0-r0

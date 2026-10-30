@@ -17,6 +17,7 @@ go build -o ravel ./cmd/ravel
 ./ravel scan path/to/polyglot-project --all --recursive --output combined.cdx.json
 ./ravel scan path/to/project --strict --output sbom.cdx.json
 ./ravel scan path/to/rootfs --manager dpkg --output os.cdx.json
+./ravel scan path/to/alpine-rootfs --manager apk --output alpine.cdx.json
 ./ravel scan path/to/oci-layout --manager oci --platform linux/amd64 --output image.cdx.json
 ./ravel scan path/to/image.oci.tar --platform linux/amd64 --output image.cdx.json
 
@@ -40,7 +41,7 @@ go build -o ravel ./cmd/ravel
 ./ravel diff before.ravel.json after.ravel.json --format json
 ```
 
-`scan` accepts a project directory, a supported lockfile or manifest, or a `.jar`, `.war`, `.nupkg`, `.whl`, `.tgz`, or `.gem` archive. Its default output is CycloneDX JSON on stdout. Diagnostics go to stderr. `--strict` returns exit code 3 when coverage issues remain, after writing the requested output.
+`scan` accepts a project directory, a supported lockfile or manifest, an OCI layout directory or tar archive, or a `.jar`, `.war`, `.nupkg`, `.whl`, `.tgz`, or `.gem` archive. Its default output is CycloneDX JSON on stdout. Diagnostics go to stderr. `--strict` returns exit code 3 when coverage issues remain, after writing the requested output.
 
 A normal scan reads local files without running a package manager or making network requests. `--resolve` requires `--allow-exec` and uses the selected manager's offline mode unless `--network allow` is explicit. Offline flags do not isolate build scripts or plugins at the operating system level.
 
@@ -63,8 +64,8 @@ Ravel JSON retains the evidence, conditional edges, and reasons for incomplete c
 | .NET | NuGet `packages.lock.json`, `project.assets.json`, and `.nupkg` archives |
 | Swift | `Package.resolved` v1-v3; an opt-in SwiftPM resolver supplies package edges |
 | Java | Maven `pom.xml` with declared module traversal and dependency tree JSON; Gradle lockfiles and opt-in resolution across projects; JAR/WAR archives and nested JARs |
-| OS packages | Debian `var/lib/dpkg/status` from a filesystem tree: installed packages, architectures, `Depends` / `Pre-Depends`, and unambiguous virtual providers |
-| OCI images | Local OCI image layout directories and tar archives with platform selection, SHA-256 and DiffID verification, layer whiteouts, and the final Debian package database |
+| OS packages | Debian `var/lib/dpkg/status` and Alpine APK v2 `lib/apk/db/installed` from a filesystem tree, including installed packages and supported dependency edges |
+| OCI images | Local OCI image layout directories and tar archives with platform selection, SHA-256 and DiffID verification, layer whiteouts, and the final Debian or APK package database |
 | Go | `vendor/modules.txt` with `go.mod`; an opt-in `go list` resolver when vendor data is absent |
 | Rust | Cargo.lock v3/v4; an opt-in `cargo metadata` resolver for the selected host graph |
 | Other | Composer, CocoaPods, and Dart/Flutter Pub lockfiles |
@@ -79,7 +80,9 @@ npm v2-v4 scans follow installed package locations, verify semver ranges and npm
 
 The dpkg scan reads an existing filesystem tree and does not run `dpkg` or APT. It excludes packages left only in a removed or configuration state. When multiple installed packages can satisfy an alternative dependency, Ravel keeps conditional edges. It uses `Multi-Arch` declarations where possible and reports architecture choices that the status file cannot establish. The status database does not identify the repository or distribution that supplied an installed package, so Ravel leaves its PURL and distribution origin unset. Its graph scope is the installed packages and their declared `Depends` and `Pre-Depends`; `Recommends` and `Suggests` are outside that scope.
 
-The OCI scan reads an existing local OCI image layout directory or `.oci.tar` archive without pulling images or extracting unrelated files. A generic `.tar` archive can be scanned with `--manager oci`. It verifies the selected manifest, configuration, compressed layer digests, and uncompressed layer DiffIDs before using the final `var/lib/dpkg/status` after whiteouts. Layouts with multiple images require `--platform`. This first image collector inventories Debian packages; language packages, RPM/APK databases, Docker archives, and live registries are not yet scanned, and coverage reports that limit.
+The APK scan reads the text v2 installed database without running APK. It resolves installed names and unambiguous virtual providers; an exact `=` version is checked against installed or provided versions. Other version operators remain unverified and make graph coverage partial. Conflicts (`!name`) and `install-if` declarations are outside the dependency-edge scope. The database does not prove distribution or repository origin, so Ravel leaves PURL and origin unset. Binary APK v3 databases are not yet supported.
+
+The OCI scan reads an existing local OCI image layout directory or `.oci.tar` archive without pulling images or extracting unrelated files. A generic `.tar` archive can be scanned with `--manager oci`. It verifies the selected manifest, configuration, compressed layer digests, and uncompressed layer DiffIDs before using the final Debian and APK installed databases after whiteouts. Layouts with multiple images require `--platform`. Language packages, RPM databases, Docker archives, and live registries are not yet scanned, and coverage reports that limit.
 
 Ravel preserves conditional edges for Python markers and extras, npm peers, NuGet target frameworks, Cargo target and feature choices, CocoaPods target choices, and other unresolved variants. Without a target selection, it does not turn those edges into unconditional CycloneDX or SPDX dependencies.
 
@@ -102,7 +105,7 @@ go test ./...
 go vet ./...
 ```
 
-The integration suite scans 184 supported fixture directories and 25 unsupported format cases. It validates CycloneDX 1.7 and SPDX 2.3 against their JSON Schemas, checks package and edge counts, and tests provenance, URL redaction, conditional edges, and the CLI reports. Fixtures include lockfiles generated by npm, pnpm, Yarn, Bundler, Composer, Bun, Deno, uv, and dotnet. Archive fixtures include a NuGet package, wheel, npm tarball, Ruby gem, and generated JAR/WAR samples.
+The integration suite scans 190 supported fixture directories and 25 unsupported format cases. It validates CycloneDX 1.7 and SPDX 2.3 against their JSON Schemas, checks package and edge counts, and tests provenance, URL redaction, conditional edges, and the CLI reports. Fixtures include lockfiles generated by npm, pnpm, Yarn, Bundler, Composer, Bun, Deno, uv, and dotnet, plus Debian and APK installed databases. Archive fixtures include a NuGet package, wheel, npm tarball, Ruby gem, and generated JAR/WAR samples.
 
 The opt-in resolver tests use local dependencies and offline execution where possible. To include the real Maven plugin tests, including a multi-module reactor, run:
 

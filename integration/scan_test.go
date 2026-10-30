@@ -246,6 +246,12 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"dpkg-missing", "dpkg", 1, 1, "partial", "partial", []string{"application"}, "unavailable", ""},
 		{"dpkg-any", "dpkg", 2, 3, "complete_for_scope", "partial", []string{"interpreter", "application"}, "", ""},
 		{"dpkg-native-unknown", "dpkg", 2, 2, "partial", "partial", []string{"library", "application"}, "", ""},
+		{"apk-basic", "apk", 3, 5, "complete_for_scope", "partial", []string{"busybox", "musl", "sample-app"}, "", ""},
+		{"apk-virtual", "apk", 3, 5, "partial", "partial", []string{"mail-one", "mail-two", "app"}, "", ""},
+		{"apk-versioned", "apk", 2, 3, "partial", "partial", []string{"library", "app"}, "", ""},
+		{"apk-missing", "apk", 1, 1, "partial", "partial", []string{"app"}, "missing-library", ""},
+		{"apk-broken", "apk", 1, 1, "partial", "partial", []string{"damaged"}, "", ""},
+		{"apk-conflict", "apk", 2, 3, "complete_for_scope", "partial", []string{"busybox", "app"}, "old-shell", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
