@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "beta": "npm:beta@2.0.0"
+  }
+}

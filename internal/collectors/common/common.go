@@ -123,7 +123,7 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
-		case "unresolved_dependency", "ambiguous_dependency", "missing_direct_dependencies", "duplicate_spec", "conditional_graph", "unsupported_lock_version", "unreachable_graph", "manifest_freshness_unverified", "target_conditions_unresolved", "transitive_graph_unavailable", "vendor_manifest_mismatch", "vendor_package_missing", "workspace_unresolved", "workspace_version_unresolved", "workspace_manifest_mismatch", "artifact_graph_partial", "multi_module_scope_root", "maven_inherited_dependencies_unavailable", "maven_profiles_unresolved", "gradle_variant_union", "gradle_unidentified_component", "cargo_dep_kinds_unavailable", "duplicate_archive_entry":
+		case "unresolved_dependency", "ambiguous_dependency", "missing_direct_dependencies", "duplicate_spec", "conditional_graph", "unsupported_lock_version", "unreachable_graph", "manifest_freshness_unverified", "target_conditions_unresolved", "transitive_graph_unavailable", "vendor_manifest_mismatch", "vendor_package_missing", "workspace_unresolved", "workspace_version_unresolved", "workspace_manifest_mismatch", "artifact_graph_partial", "multi_module_scope_root", "maven_inherited_dependencies_unavailable", "maven_profiles_unresolved", "gradle_variant_union", "gradle_unidentified_component", "cargo_dep_kinds_unavailable", "duplicate_archive_entry", "source_scan_limited", "source_parse_error", "source_import_map_unavailable":
 			doc.Coverage.GraphState = "partial"
 		case "missing_source", "ambiguous_source", "unsafe_or_invalid_source", "source_unresolved", "distribution_source_unavailable":
 			doc.Coverage.OriginState = "partial"

@@ -89,6 +89,11 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"deno-v5", "deno", 3, 3, "partial", "partial", []string{"@std/encoding", "@std/bytes", "chalk"}, "stale", ""},
 		{"deno-generated-2_9", "deno", 1, 1, "partial", "partial", []string{"is-number"}, "", ""},
 		{"deno-peer", "deno", 2, 2, "partial", "partial", []string{"typedoc", "typescript"}, "", ""},
+		{"deno-source-only", "deno", 5, 5, "partial", "partial", []string{"@std/path", "@std/bytes", "chalk", "is-number", "https://cdn.example.test/mod.ts"}, "", "hidden"},
+		{"deno-source-mapped", "deno", 3, 3, "partial", "partial", []string{"@std/path", "is-number"}, "", ""},
+		{"deno-source-importmap", "deno", 1, 1, "partial", "partial", []string{"chalk"}, "", ""},
+		{"deno-source-nested", "deno", 1, 1, "partial", "partial", []string{"alpha"}, "beta", ""},
+		{"deno-source-mismatch", "deno", 0, 0, "partial", "complete_for_scope", nil, "chalk", ""},
 		{"swift-v1", "swiftpm", 1, 0, "unknown", "complete_for_scope", []string{"swift-collections"}, "", ""},
 		{"swift-v2", "swiftpm", 2, 0, "unknown", "complete_for_scope", []string{"swift-algorithms", "swift-atomics"}, "", "secret"},
 		{"swift-v3", "swiftpm", 2, 0, "unknown", "partial", []string{"swift-mmio", "registry-package"}, "", ""},
@@ -644,6 +649,57 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 	case "deno-peer":
 		find("typedoc", "0.28.19")
 		find("typescript", "6.0.3")
+	case "deno-source-only":
+		path, bytes := find("@std/path", "1.0.1"), find("@std/bytes", "1.0.2")
+		if !connected("root", path) || !connected(path, bytes) ||
+			!connected("root", find("chalk", "5.3.0")) ||
+			!connected("root", find("is-number", "7.0.0")) ||
+			!connected("root", find("https://cdn.example.test/mod.ts", "")) {
+			t.Fatal("Deno source imports or lockfile transitive edge missing")
+		}
+		for _, edge := range doc.Edges {
+			if edge.From == "root" && edge.Evidence.Method != "source-import-analysis" {
+				t.Fatal("source-only Deno root edge lacks source evidence")
+			}
+		}
+		for _, issue := range doc.Coverage.Issues {
+			if issue.Code == "missing_direct_dependencies" || issue.Code == "unresolved_dependency" {
+				t.Fatalf("comment, string, or computed import was treated as a resolved dependency: %+v", issue)
+			}
+		}
+		serialized, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(serialized), "secret") || strings.Contains(string(serialized), "hidden") {
+			t.Fatal("Deno source or lock URL credentials leaked")
+		}
+	case "deno-source-mapped":
+		if !connected("root", find("@std/path", "1.0.1")) ||
+			!connected("root", find("@std/path", "0.100.1")) ||
+			!connected("root", find("is-number", "7.0.0")) {
+			t.Fatal("Deno import-map aliases or scoped version missing")
+		}
+		for _, issue := range doc.Coverage.Issues {
+			if issue.Code == "unresolved_dependency" {
+				t.Fatalf("local or scoped Deno import was not resolved: %+v", issue)
+			}
+		}
+	case "deno-source-importmap":
+		if !connected("root", find("chalk", "5.3.0")) || len(doc.Sources) != 3 {
+			t.Fatal("separate Deno import map was not included")
+		}
+	case "deno-source-nested":
+		if !connected("root", find("alpha", "1.0.0")) {
+			t.Fatal("root Deno import missing")
+		}
+		if !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "source_scan_limited" }) {
+			t.Fatal("nested Deno project was not reported as a separate scope")
+		}
+	case "deno-source-mismatch":
+		if !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "unresolved_dependency" }) {
+			t.Fatal("Deno source import with unpinned version was not reported")
+		}
 	case "swift-v2":
 		var sawVCS bool
 		for _, origin := range doc.Origins {

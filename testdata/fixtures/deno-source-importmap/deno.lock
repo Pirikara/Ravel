@@ -1,0 +1,9 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:chalk@5.3.0": "5.3.0"
+  },
+  "npm": {
+    "chalk@5.3.0": {}
+  }
+}

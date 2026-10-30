@@ -31,7 +31,9 @@ type packageEntry struct {
 }
 
 type configFile struct {
-	Imports map[string]string `json:"imports"`
+	Imports   map[string]string            `json:"imports"`
+	Scopes    map[string]map[string]string `json:"scopes"`
+	ImportMap string                       `json:"importMap"`
 }
 
 type packageJSON struct {
@@ -47,9 +49,9 @@ type item struct {
 	kind    string
 }
 
-// Collect emits the package closure reachable from config imports and workspace
-// dependencies. Source-level imports require a separate module graph analysis, so
-// the static result explicitly remains partial.
+// Collect emits the package closure observed in config, workspace dependencies,
+// and project source imports. Runtime-selected entry points and nonliteral
+// dynamic imports remain unknown, so the static result explicitly stays partial.
 func Collect(file, project string) (model.Document, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -65,6 +67,7 @@ func Collect(file, project string) (model.Document, error) {
 	doc := common.NewDocument(file, project, "deno", data)
 	base := filepath.Dir(file)
 	var roots []string
+	var config configFile
 	for _, name := range []string{"deno.json", "deno.jsonc"} {
 		configData, err := os.ReadFile(filepath.Join(base, name))
 		if err != nil {
@@ -75,29 +78,45 @@ func Collect(file, project string) (model.Document, error) {
 		if err != nil {
 			return model.Document{}, fmt.Errorf("invalid %s: %w", name, err)
 		}
-		var config configFile
 		if err := json.Unmarshal(standard, &config); err != nil {
 			return model.Document{}, fmt.Errorf("invalid %s: %w", name, err)
 		}
-		for _, value := range config.Imports {
-			roots = append(roots, value)
-		}
 		break
 	}
+	if config.ImportMap != "" {
+		importMap, path, err := readImportMap(base, config.ImportMap)
+		if err != nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "source_import_map_unavailable"})
+		} else {
+			config.Imports, config.Scopes = importMap.Imports, importMap.Scopes
+			doc.Sources = append(doc.Sources, path)
+		}
+	}
+	for _, value := range config.Imports {
+		if !strings.HasPrefix(value, "./") && !strings.HasPrefix(value, "../") {
+			roots = append(roots, value)
+		}
+	}
+	packageDeps := map[string]string{}
 	if packageData, err := os.ReadFile(filepath.Join(base, "package.json")); err == nil {
 		doc.Sources = append(doc.Sources, filepath.Join(base, "package.json"))
 		var pkg packageJSON
 		if json.Unmarshal(packageData, &pkg) == nil {
 			for name, constraint := range pkg.Dependencies {
+				packageDeps[name] = constraint
 				roots = append(roots, "npm:"+name+"@"+constraint)
 			}
 			for name, constraint := range pkg.DevDependencies {
+				packageDeps[name] = constraint
 				roots = append(roots, "npm:"+name+"@"+constraint)
 			}
 		}
 	}
 	roots = append(roots, lock.Workspace.Dependencies...)
-	if len(roots) == 0 {
+	sourceImports, sourceFiles, sourceIssues := scanSourceImports(base)
+	doc.Sources = append(doc.Sources, sourceFiles...)
+	doc.Coverage.Issues = append(doc.Coverage.Issues, sourceIssues...)
+	if len(roots) == 0 && len(sourceFiles) == 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
 	}
 	items := map[string]item{}
@@ -138,11 +157,18 @@ func Collect(file, project string) (model.Document, error) {
 		}
 		name, version, withVersion := splitNameVersion(value)
 		if !withVersion {
-			name = value
+			name = barePackageName(value)
 		}
 		if pinned, ok := lock.Specifiers[spec]; ok {
 			version = pinned
 			withVersion = true
+		} else if withVersion {
+			if slash := strings.IndexByte(version, '/'); slash >= 0 {
+				version = version[:slash]
+				if pinned, ok := lock.Specifiers[kind+":"+name+"@"+version]; ok {
+					version = pinned
+				}
+			}
 		}
 		if withVersion {
 			key := kind + ":" + name + "@" + version
@@ -161,6 +187,7 @@ func Collect(file, project string) (model.Document, error) {
 			if matching != "" {
 				return matching
 			}
+			return ""
 		}
 		if matches := byName[kind+":"+name]; len(matches) == 1 {
 			return matches[0]
@@ -235,8 +262,80 @@ func Collect(file, project string) (model.Document, error) {
 		}
 		visit(key, "root")
 	}
-	// Static config alone does not capture every direct source import. The lock
-	// can also retain stale entries, so no complete reachability claim is made.
+	scanned := make(map[string]bool, len(sourceFiles))
+	for _, source := range sourceFiles {
+		scanned[filepath.Clean(source)] = true
+	}
+	for _, observed := range sourceImports {
+		spec, fromMap := mappedSourceSpecifier(observed.specifier, observed.path, base, config.Imports, config.Scopes)
+		if !fromMap {
+			spec = observed.specifier
+		}
+		if strings.HasPrefix(spec, "./") || strings.HasPrefix(spec, "../") {
+			target, ok := localSourcePath(spec, observed.path, base, fromMap)
+			if !ok {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "local source import", Scope: observed.path})
+			} else if _, source := sourceLoader(filepath.Ext(target)); source && !scanned[filepath.Clean(target)] {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "source_scan_limited", Scope: target})
+			}
+			continue
+		}
+		if strings.HasPrefix(spec, "node:") || strings.HasPrefix(spec, "data:") {
+			continue
+		}
+		if !fromMap && !strings.Contains(spec, ":") {
+			name := barePackageName(spec)
+			constraint, ok := packageDeps[name]
+			if !ok {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "bare source import", Scope: observed.path})
+				continue
+			}
+			spec = "npm:" + name + "@" + constraint
+		}
+		if !strings.HasPrefix(spec, "jsr:") && !strings.HasPrefix(spec, "npm:") &&
+			!strings.HasPrefix(spec, "https://") && !strings.HasPrefix(spec, "http://") {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "source import", Scope: observed.path})
+			continue
+		}
+		key := resolve(spec)
+		if key == "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "source import absent from lockfile", Scope: observed.path})
+			continue
+		}
+		ref := ""
+		if entry, ok := items[key]; ok {
+			ref = entry.ref
+		} else if strings.HasPrefix(key, "remote:") {
+			ref = "deno:remote:" + common.ID(key)
+		}
+		if ref == "" {
+			continue
+		}
+		visit(key, "")
+		edgeKey := "root\x00" + ref
+		if !seenEdges[edgeKey] {
+			seenEdges[edgeKey] = true
+			doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "depends_on", Evidence: observed.evidence})
+		}
+		for i := range doc.Components {
+			if doc.Components[i].ID != ref {
+				continue
+			}
+			found := false
+			for _, evidence := range doc.Components[i].Evidence {
+				if evidence.InputPath == observed.evidence.InputPath && evidence.Method == observed.evidence.Method {
+					found = true
+					break
+				}
+			}
+			if !found {
+				doc.Components[i].Evidence = append(doc.Components[i].Evidence, observed.evidence)
+			}
+			break
+		}
+	}
+	// An arbitrary runtime entry point or computed import can still be absent.
+	// The lock can also retain stale entries, so no complete reachability claim is made.
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph"})
 	common.Finalize(&doc)
 	return doc, nil

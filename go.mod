@@ -3,6 +3,7 @@ module ravel
 go 1.27
 
 require (
+	github.com/evanw/esbuild v0.28.2
 	github.com/package-url/packageurl-go v0.1.7
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -11,4 +12,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require golang.org/x/text v0.14.0 // indirect
+require (
+	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+)
