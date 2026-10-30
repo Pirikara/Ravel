@@ -1,6 +1,8 @@
 package integration_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -52,6 +54,27 @@ func dockerTestArchive(t *testing.T, name string, entries []ociTestEntry) string
 	return archive
 }
 
+func gzipDockerTestArchive(t *testing.T, source, name string) string {
+	t.Helper()
+	plain, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write(plain); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(archive, compressed.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return archive
+}
+
 func TestLegacyDockerSaveArchive(t *testing.T) {
 	const node = "app/node_modules/"
 	entries := dockerTestEntries(t, []ociTestLayer{
@@ -81,8 +104,39 @@ func TestLegacyDockerSaveArchive(t *testing.T) {
 	if _, output, code := ociTestScan(t, plain, "--manager", "oci"); code != 0 {
 		t.Fatalf("explicit manager did not scan Docker save tar: code=%d output=%s", code, output)
 	}
+	compressed := gzipDockerTestArchive(t, archive, "image.docker.tar.gz")
+	compressedDoc, output, code := ociTestScan(t, compressed)
+	if code != 0 || compressedDoc.Coverage.Packages != 6 || compressedDoc.Source != compressed || len(compressedDoc.Sources) != 1 || compressedDoc.Sources[0] != compressed {
+		t.Fatalf("gzip Docker save scan failed: code=%d output=%s coverage=%#v", code, output, compressedDoc.Coverage)
+	}
+	if _, output, code := ociTestScan(t, gzipDockerTestArchive(t, archive, "image.tar.gz"), "--manager", "oci"); code != 0 {
+		t.Fatalf("explicit manager did not scan gzip Docker save tar: code=%d output=%s", code, output)
+	}
 	if _, output, code := ociTestScan(t, archive, "--platform", "linux/arm64"); code == 0 || !strings.Contains(output, "no manifest for platform") {
 		t.Fatalf("Docker save platform mismatch was accepted: code=%d output=%s", code, output)
+	}
+}
+
+func TestGzipOCIArchive(t *testing.T) {
+	layout := ociTestLayout(t)
+	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{{name: "var/lib/dpkg/status", data: ociTestStatus(t, "dpkg-basic")}}}})
+	ociTestIndex(t, layout, image)
+	plain := ociTestArchive(t, layout, "image.oci.tar")
+	compressed := gzipDockerTestArchive(t, plain, "image.oci.tar.gz")
+	doc, output, code := ociTestScan(t, compressed)
+	if code != 0 || doc.Coverage.Packages != 4 || doc.Source != compressed {
+		t.Fatalf("gzip OCI archive scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	data, err := os.ReadFile(compressed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	truncated := filepath.Join(t.TempDir(), "truncated.oci.tar.gz")
+	if err := os.WriteFile(truncated, data[:len(data)-4], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, output, code := ociTestScan(t, truncated); code == 0 || !strings.Contains(output, "unexpected EOF") {
+		t.Fatalf("truncated gzip OCI archive was accepted: code=%d output=%s", code, output)
 	}
 }
 

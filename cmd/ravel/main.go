@@ -597,7 +597,7 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		if isRequirementsName(name) {
 			return "requirements"
 		}
-		if strings.HasSuffix(strings.ToLower(name), ".oci.tar") || strings.HasSuffix(strings.ToLower(name), ".docker.tar") {
+		if strings.HasSuffix(strings.ToLower(name), ".oci.tar") || strings.HasSuffix(strings.ToLower(name), ".docker.tar") || strings.HasSuffix(strings.ToLower(name), ".oci.tar.gz") || strings.HasSuffix(strings.ToLower(name), ".docker.tar.gz") {
 			return "oci"
 		}
 		if strings.HasSuffix(strings.ToLower(name), ".jar") || strings.HasSuffix(strings.ToLower(name), ".war") {
@@ -618,7 +618,7 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		return ""
 	}
 	if !directory {
-		if requested == "oci" && strings.HasSuffix(strings.ToLower(input), ".tar") {
+		if requested == "oci" && (strings.HasSuffix(strings.ToLower(input), ".tar") || strings.HasSuffix(strings.ToLower(input), ".tar.gz")) {
 			return input, "oci", nil
 		}
 		if filepath.Base(input) == "installed" && filepath.Base(filepath.Dir(input)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(input))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(input)))) == "lib" {

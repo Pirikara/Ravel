@@ -2,6 +2,7 @@ package oci
 
 import (
 	"archive/tar"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +25,66 @@ var archiveBlobName = regexp.MustCompile(`^blobs/sha256/[0-9a-f]{64}$`)
 // extracting files unrelated to the image layout. The temporary layout is
 // removed after its referenced blobs have been verified by Collect.
 func CollectArchive(archive, project, platform string) (model.Document, error) {
+	info, err := os.Lstat(archive)
+	if err != nil {
+		return model.Document{}, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxArchiveBytes {
+		return model.Document{}, errors.New("image archive must be a regular file within the size limit")
+	}
+	file, err := os.Open(archive)
+	if err != nil {
+		return model.Document{}, err
+	}
+	var prefix [2]byte
+	_, readErr := io.ReadFull(file, prefix[:])
+	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		_ = file.Close()
+		return model.Document{}, readErr
+	}
+	if prefix != [2]byte{0x1f, 0x8b} {
+		_ = file.Close()
+		return collectPlainArchive(archive, project, platform)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		_ = file.Close()
+		return model.Document{}, err
+	}
+	compressed, err := gzip.NewReader(file)
+	if err != nil {
+		_ = file.Close()
+		return model.Document{}, err
+	}
+	temp, err := os.CreateTemp("", "ravel-image-*.tar")
+	if err != nil {
+		_ = compressed.Close()
+		_ = file.Close()
+		return model.Document{}, err
+	}
+	defer os.Remove(temp.Name())
+	copied, copyErr := io.Copy(temp, io.LimitReader(compressed, maxArchiveBytes+1))
+	closeTempErr := temp.Close()
+	closeGzipErr := compressed.Close()
+	closeFileErr := file.Close()
+	if copyErr != nil {
+		return model.Document{}, copyErr
+	}
+	if closeTempErr != nil || closeGzipErr != nil || closeFileErr != nil {
+		return model.Document{}, errors.New("could not finish reading compressed image archive")
+	}
+	if copied > maxArchiveBytes {
+		return model.Document{}, errors.New("decompressed image archive exceeds size limit")
+	}
+	doc, err := collectPlainArchive(temp.Name(), project, platform)
+	if err != nil {
+		return model.Document{}, err
+	}
+	doc.Source = archive
+	doc.Sources = []string{archive}
+	return doc, nil
+}
+
+func collectPlainArchive(archive, project, platform string) (model.Document, error) {
 	info, err := os.Lstat(archive)
 	if err != nil {
 		return model.Document{}, err
