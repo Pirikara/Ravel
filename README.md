@@ -1,121 +1,254 @@
 # Ravel
 
-Ravel is a work in progress SBOM CLI written in Go. It reads lockfiles, selected package manager resolution results, and package archives. It keeps package identities, dependency edges, distribution origins, development repositories, and the evidence for each claim separate. It emits CycloneDX 1.7 JSON, SPDX 2.3 JSON, a detailed Ravel JSON document, and a coverage report.
+**SBOM generation grounded in evidence from projects, archives, and container images.**
 
-## Build
+[![CI](https://github.com/Pirikara/Ravel/actions/workflows/ci.yml/badge.svg)](https://github.com/Pirikara/Ravel/actions/workflows/ci.yml)
+
+Ravel is a command-line tool under active development, written in Go. It turns local lockfiles, package metadata, archives, and OCI images into a software bill of materials (SBOM). Every package and relationship can carry evidence, while a separate coverage report explains what the input could not establish.
+
+Ravel distinguishes **package identity**, **distribution origin**, and **development repository**. A repository URL in a lockfile is a declaration; it is not proof that a package was downloaded from that URL. When an input cannot establish a claim, Ravel leaves it open instead of inventing one.
+
+- **Outputs:** CycloneDX 1.7 JSON, SPDX 2.3 JSON, Ravel JSON, and a coverage report.
+- **Inputs:** common application lockfiles, selected package manager results, package archives, installed OS databases, and local OCI or Docker save archives.
+- **Default behavior:** local, static analysis without package manager execution or network access.
+- **Inspection:** `explain` a package, `diff` two scans, `merge` scans, or explicitly `enrich` development repository candidates.
+
+> Ravel is under active development. Read the coverage report before treating an SBOM as complete for your use case.
+
+## Contents
+
+- [Get started](#get-started)
+- [How Ravel represents evidence](#how-ravel-represents-evidence)
+- [Supported inputs](#supported-inputs)
+- [Scan workflows](#scan-workflows)
+- [Coverage and output formats](#coverage-and-output-formats)
+- [Optional resolution and enrichment](#optional-resolution-and-enrichment)
+- [Current limits](#current-limits)
+- [Development](#development)
+
+## Get started
+
+Ravel currently builds from source and requires **Go 1.27 or newer**.
 
 ```sh
 go build -o ravel ./cmd/ravel
+./ravel scan path/to/project --output sbom.cdx.json --report coverage.json
 ```
 
-## Quick start
+The scan command produces a CycloneDX SBOM and a separate JSON coverage report. To retain evidence and conditional dependency edges for inspection, also write Ravel JSON:
 
 ```sh
-./ravel scan path/to/project --output sbom.cdx.json --report coverage.json
 ./ravel scan path/to/project --format ravel-json --output scan.ravel.json
-./ravel scan path/to/project --format spdx-json --output sbom.spdx.json
-./ravel scan path/to/polyglot-project --all --recursive --output combined.cdx.json
-./ravel scan path/to/project --strict --output sbom.cdx.json
-./ravel scan path/to/rootfs --manager dpkg --output os.cdx.json
-./ravel scan path/to/alpine-rootfs --manager apk --output alpine.cdx.json
-./ravel scan path/to/fedora-rootfs --manager rpm --output fedora.cdx.json
-./ravel scan path/to/oci-layout --manager oci --platform linux/amd64 --output image.cdx.json
-./ravel scan path/to/image.oci.tar --platform linux/amd64 --output image.cdx.json
-./ravel scan path/to/image.docker.tar --output image.cdx.json
-./ravel scan path/to/image.docker.tar.gz --output image.cdx.json
-
-./ravel scan path/to/go/project --manager go --resolve --allow-exec --network deny
-./ravel scan path/to/cargo/project --manager cargo --resolve --allow-exec --network deny
-./ravel scan path/to/gradle/project --manager gradle --resolve --allow-exec --configuration runtimeClasspath --network deny
-./ravel scan path/to/maven/project --manager maven --resolve --allow-exec --network deny
-./ravel scan path/to/swift/project --manager swiftpm --resolve --allow-exec --network deny
-
-./ravel scan path/to/package.gem --output package.cdx.json
-./ravel scan path/to/package.tgz --output package.cdx.json
-./ravel scan path/to/package.whl --output package.cdx.json
-./ravel scan path/to/package.nupkg --output package.cdx.json
-./ravel scan path/to/app.jar --output app.cdx.json
-
-./ravel merge --name my-app --format cyclonedx-json --output combined.cdx.json npm.ravel.json cargo.ravel.json
-./ravel enrich scan.ravel.json --ecosystem rubygems --network allow --output enriched.ravel.json
-./ravel enrich scan.ravel.json --ecosystem npm --network allow --output enriched.ravel.json
-./ravel enrich scan.ravel.json --ecosystem pypi --network allow --output enriched.ravel.json
-./ravel explain 'monolog/monolog' --input scan.ravel.json
-./ravel diff before.ravel.json after.ravel.json --format json
+./ravel explain 'package-name' --input scan.ravel.json
 ```
 
-`scan` accepts a project directory, a supported lockfile or manifest, an OCI layout directory or tar archive, or a `.jar`, `.war`, `.nupkg`, `.whl`, `.tgz`, or `.gem` archive. Its default output is CycloneDX JSON on stdout. Diagnostics go to stderr. `--strict` returns exit code 3 when coverage issues remain, after writing the requested output.
+`scan` accepts either a project directory or a supported file. It writes CycloneDX JSON to stdout unless `--output` is given. Progress and errors go to stderr. Run `./ravel` without arguments for command syntax.
 
-A normal scan reads local files without running a package manager or making network requests. `--resolve` requires `--allow-exec` and uses the selected manager's offline mode unless `--network allow` is explicit. Offline flags do not isolate build scripts or plugins at the operating system level.
+### A small example
 
-`--all` scans the static inputs in one directory; `--recursive` includes subprojects and skips generated directories such as `.git`, `node_modules`, and `vendor`. Archives are not discovered automatically. When multiple JavaScript lockfiles coexist, Ravel uses `package.json`'s `packageManager` field; an ambiguous selection requires `--manager`. Separate scans can be combined with `merge`.
+The repository includes an RPM database with two test packages. Scan it and inspect the report:
 
-## Evidence and output
+```sh
+./ravel scan testdata/fixtures/rpm-sqlite-basic \
+  --manager rpm \
+  --output rpm.cdx.json \
+  --report rpm.coverage.json
+```
 
-A lockfile registry URL is recorded as a *declared* origin, not proof of a download. A local archive proves its own bytes and metadata, but not which registry supplied it. Ravel omits a default registry PURL when that registry cannot be established. Credentials, URL queries, and fragments are removed before URLs are stored in output.
+The report records two packages and explains why the graph and origin are partial:
 
-Ravel JSON retains the evidence, conditional edges, and reasons for incomplete coverage. `explain` looks up a component by name, PURL, or component ID and shows its origins, development repository candidates, dependency edges, and evidence. `diff` compares two Ravel JSON documents. `merge` retains distinct occurrences and rejects duplicate input scopes. CycloneDX and SPDX contain only dependency edges that are unconditional for the scanned scope. The coverage report lists known information losses for the selected output format separately from scan issues; `--strict` applies to scan issues.
+```json
+{
+  "manager": "rpm",
+  "graphState": "partial",
+  "originState": "partial",
+  "packages": 2,
+  "edges": 3,
+  "issues": [
+    {"code": "missing_source", "name": "RPM database"},
+    {"code": "rpm_dependency_flags_unavailable", "name": "ravel-fixture-consumer"}
+  ],
+  "outputFormat": "cyclonedx-json",
+  "outputLosses": [
+    {"code": "conditional_edges_omitted", "count": 1},
+    {"code": "edge_kinds_omitted", "count": 2},
+    {"code": "evidence_records_omitted", "count": 5},
+    {"code": "source_paths_omitted", "count": 1},
+    {"code": "coverage_issues_omitted", "count": 2}
+  ]
+}
+```
+
+The three Ravel edges include two installed-package edges and one conditional dependency. CycloneDX omits that dependency because its RPM version constraint cannot be verified from the current parser output.
+
+## How Ravel represents evidence
+
+```mermaid
+flowchart LR
+  A["Lockfiles and manifests"] --> C["Collectors"]
+  B["Archives and installed databases"] --> C
+  I["OCI image layers"] --> C
+  C --> R["Ravel evidence graph"]
+  R --> X["CycloneDX 1.7"]
+  R --> Y["SPDX 2.3"]
+  R --> Z["Ravel JSON + coverage"]
+```
+
+A Ravel JSON document keeps these records separate:
+
+| Record | What it means |
+| --- | --- |
+| **Component** | One observed package occurrence, with its name, version, context, and evidence. |
+| **Edge** | A relationship backed by evidence. A `condition` marks a relationship that depends on an unselected target, range, marker, or other unresolved choice. |
+| **Origin** | A distribution location or source declaration, with its evidence and status. |
+| **Development** | A candidate source repository. It is distinct from the place that distributed the package. |
+| **Coverage** | Package and edge counts, graph and origin states, and specific issues. |
+
+Ravel records hashes for observed archive bytes and checks available lockfile integrity data. It removes credentials, URL queries, and fragments before storing URLs. A default registry Package URL (PURL) is omitted when that registry cannot be established from the input.
+
+CycloneDX and SPDX exports include only dependency edges that are unconditional for the scanned scope. **Ravel JSON retains conditional edges and their evidence**. The coverage report lists any information lost in the requested export separately from scan issues.
 
 ## Supported inputs
 
-| Ecosystem | Static inputs and current behavior |
+The table describes inputs Ravel reads today. A listed format does not imply complete dependency or origin coverage; the report describes each scan's actual scope.
+
+| Ecosystem | Inputs | Notes |
+| --- | --- | --- |
+| Ruby | `Gemfile.lock`; `.gem` archives | GEM, GIT, and PATH sources; archive metadata and SHA-256. |
+| JavaScript | npm lockfiles v1–v4; pnpm v6/v9; Yarn Classic and Berry; Bun text `bun.lock` v0–v2; npm `.tgz` archives | Package locations, dependency edges, and conditions where the format permits. |
+| Deno | `deno.lock` v4/v5, `deno.json` / `deno.jsonc`, local import maps, JS/TS imports | Discovers static imports, re-exports, and literal dynamic imports as entry points. |
+| Python | `uv.lock` v1; `pylock.toml` 1.0; Poetry, Pipenv, PDM, and pinned requirements; `.whl` archives | Keeps markers, extras, groups, and unresolved choices conditional. |
+| .NET | NuGet `packages.lock.json`, `project.assets.json`, `.nupkg` archives | Keeps target framework choices. |
+| Swift | `Package.resolved` v1–v3 | Static pins do not establish package dependency edges. |
+| Java | Maven `pom.xml` and dependency tree JSON; Gradle lockfiles; JAR/WAR archives | Includes declared Maven modules and nested JARs when identifiable. |
+| Go | `vendor/modules.txt` with `go.mod` | An optional `go list` resolver handles projects without usable vendor data. |
+| Rust | Cargo.lock v3/v4 | An optional `cargo metadata` resolver supplies a selected host graph. |
+| PHP | `composer.lock` | Source and distribution URLs remain separate. |
+| Apple | CocoaPods `Podfile.lock` | Keeps subspec and target choices. |
+| Dart/Flutter | `pubspec.lock` | Hosted, Git, path, and SDK sources are distinguished. |
+
+### Installed systems and images
+
+| Input | Current scope |
 | --- | --- |
-| Ruby | `Gemfile.lock` with GEM, GIT, and PATH sources and dependency edges; `.gem` archives with metadata and SHA-256 |
-| JavaScript | npm lockfiles v1-v4, pnpm lockfiles v6/v9, Yarn Classic and Berry, Bun text `bun.lock` v0-v2; npm `.tgz` archives and installed Node packages in OCI images |
-| Deno | `deno.lock` v4/v5 with configuration and source import discovery for JSR, npm, and URL modules |
-| Python | `uv.lock` v1, `pylock.toml` 1.0, Poetry, Pipenv, PDM, pinned pip requirements, wheel archives, and installed `.dist-info/METADATA` in OCI images |
-| .NET | NuGet `packages.lock.json`, `project.assets.json`, and `.nupkg` archives |
-| Swift | `Package.resolved` v1-v3; an opt-in SwiftPM resolver supplies package edges |
-| Java | Maven `pom.xml` with declared module traversal and dependency tree JSON; Gradle lockfiles and opt-in resolution across projects; JAR/WAR archives and nested JARs |
-| OS packages | Debian `var/lib/dpkg/status`, Alpine APK v2 `lib/apk/db/installed`, and RPM SQLite, NDB, and Berkeley DB installed databases from a filesystem tree |
-| OCI images | Local OCI image layouts, OCI and Docker save tar archives, platform selection, SHA-256 and DiffID verification, layer whiteouts, final Debian, APK, or RPM databases, installed Python dist-info metadata, and conventional Node package manifests |
-| Go | `vendor/modules.txt` with `go.mod`; an opt-in `go list` resolver when vendor data is absent |
-| Rust | Cargo.lock v3/v4; an opt-in `cargo metadata` resolver for the selected host graph |
-| Other | Composer, CocoaPods, and Dart/Flutter Pub lockfiles |
+| Debian rootfs | Installed packages from `var/lib/dpkg/status`; declared `Depends` and `Pre-Depends`. |
+| Alpine rootfs | APK text v2 `lib/apk/db/installed`; installed names and supported virtual providers. |
+| RPM rootfs | SQLite `rpmdb.sqlite`, NDB `Packages.db`, and Berkeley DB `Packages`; name, epoch, version, release, architecture, and conditional capability links. |
+| OCI image | Local OCI layout or OCI/Docker save tar archive, including gzip-compressed tar; final Debian, APK, or RPM database after layer whiteouts. |
+| Installed Python in OCI | `.dist-info/METADATA` records and `Requires-Dist` links when identifiable. |
+| Installed Node in OCI | Conventional `node_modules/*/package.json` records and dependency links when identifiable. |
 
-Deno scans JavaScript and TypeScript source files in the project tree as potential entry points. It applies `deno.json` / `deno.jsonc` import aliases and scopes, including a local `importMap` file, and records source-file evidence for locked imports. Generated directories and symlinks are skipped; parse errors and scan limits appear in coverage.
+OCI scans verify available descriptor SHA-256 hashes and uncompressed layer DiffIDs. A multi-image layout requires `--platform os/architecture[/variant]`. Legacy Docker save archives must contain one image. Ravel reads local image data; it does not pull images.
 
-Bun lockfile scans use package locations to distinguish nested versions, check root dependency declarations against `package.json` when present, and keep optional and platform conditions on their edges. Git and URL selectors are kept out of package version fields.
+## Scan workflows
 
-npm v4 scans read native `patched` records and verify the local patch file against its lockfile SHA-512. Ravel JSON retains the patch path, declared hash, verification status, and evidence. CycloneDX properties and SPDX comments identify patched packages and retain the *base tarball* hash; neither format presents that hash as the checksum of the modified package tree. A missing, unsafe, or changed patch appears as a coverage issue. Patch verification does not prove that a package manager applied the patch to an installed tree.
-
-npm v2-v4 scans follow installed package locations, verify semver ranges and npm aliases when possible, compare the root declaration with `package.json` when available, and flag unreachable lockfile entries. Selectors that cannot be verified remain connected but make graph coverage partial.
-
-The dpkg scan reads an existing filesystem tree and does not run `dpkg` or APT. It excludes packages left only in a removed or configuration state. When multiple installed packages can satisfy an alternative dependency, Ravel keeps conditional edges. It uses `Multi-Arch` declarations where possible and reports architecture choices that the status file cannot establish. The status database does not identify the repository or distribution that supplied an installed package, so Ravel leaves its PURL and distribution origin unset. Its graph scope is the installed packages and their declared `Depends` and `Pre-Depends`; `Recommends` and `Suggests` are outside that scope.
-
-The APK scan reads the text v2 installed database without running APK. It resolves installed names and unambiguous virtual providers; exact `=` versions and numeric version orderings that can be proven without interpreting suffixes are checked. More complex constraints remain unverified and make graph coverage partial. Conflicts (`!name`) and `install-if` declarations are outside the dependency-edge scope. The database does not prove distribution or repository origin, so Ravel leaves PURL and origin unset. Binary APK v3 databases are not yet supported.
-
-The RPM scan reads installed SQLite (`rpmdb.sqlite`), NDB (`Packages.db`), and legacy Berkeley DB (`Packages`) databases without running RPM. It records name, epoch, version, release, and architecture, omitting RPM key records from package inventory. Installed names and virtual capabilities can be linked to providers, but the parser does not expose the requirement's version flags, so all RPM dependency edges remain conditional in Ravel JSON and are omitted from CycloneDX and SPDX dependency relationships. File requirements and ambiguous providers appear as coverage issues. The database alone does not establish distribution or repository origin; Ravel leaves PURL and origin unset. A SQLite database with a nonempty write-ahead log is rejected until its transactions are checkpointed.
-
-The image scan reads an existing local OCI layout directory, `.oci.tar` archive, or `.docker.tar` archive, including gzip-compressed tar files, without pulling images or extracting unrelated files. A generic `.tar` or `.tar.gz` archive can be scanned with `--manager oci`. Docker save archives containing an OCI layout use it directly; legacy `manifest.json` archives are converted to a temporary content-addressed layout from their referenced config and layers. Ravel checks OCI descriptor digests, available Docker config filename hashes, and uncompressed layer DiffIDs before using the final Debian, APK, or RPM databases, Python `.dist-info/METADATA` files, and conventional Node `node_modules` package manifests after whiteouts. Python metadata records installed names and versions only when the directory name agrees with the metadata. `Requires-Dist` links to installed packages in the same Python environment when the requirement is unversioned or has an exact matching version; version ranges and environment markers remain conditional, and direct URL requirements are reported as unparsed. Node `package.json` records installed names and versions. A dependency directly nested under its consumer with an exact matching version gets a definite edge; ancestor lookup and version ranges stay conditional. Symlinked packages and pnpm's content store are not followed. Layouts with multiple images require `--platform`; legacy Docker save archives must contain one image. Other language packages and live registries are not yet scanned, and coverage reports that limit.
-
-Ravel preserves conditional edges for Python markers and extras, npm peers, NuGet target frameworks, Cargo target and feature choices, CocoaPods target choices, and other unresolved variants. Without a target selection, it does not turn those edges into unconditional CycloneDX or SPDX dependencies.
-
-Several formats have intentional limits. Binary `bun.lockb` is rejected explicitly. npm v1 requires `package.json` to identify direct dependencies, and nested packages without a `requires` map cannot establish transitive edges. Deno source scanning covers static imports, re-exports, and literal dynamic imports, while computed imports and runtime-selected entry points remain partial. Static SwiftPM pins do not establish dependency edges. Gradle lockfiles provide selected versions but not dependency edges. The Gradle resolver scans the requested configuration in every resolvable project of the main build, keeping each project's graph as a separate occurrence; other configurations and included builds are outside that scope. Static Maven module traversal reads declared modules inside the scanned project, skips symlinks, and does not build effective POMs. The Maven resolver runs across the reactor when declared local modules can be matched to their resolved coordinates; otherwise it reports root-only scope. Go vendor data and Pub lockfiles do not provide complete transitive edges. Poetry and Composer manifest freshness is not verified. These limitations appear in coverage rather than being filled with guesses.
-
-## Registry metadata enrichment
-
-`enrich` reads Ravel JSON and requires `--network allow`. It adds development repository *candidates*; it does not change package identities, distribution origins, or dependency edges. Use `--registry HTTPS_URL` to select a registry API origin, and `--max-requests N` to lower the default limit of 1,000 requests. Requests use HTTPS, a five second timeout, a 2 MiB response limit, and a two minute overall deadline. Redirects and credentials are not used. The response SHA-256 and observation time are recorded with each candidate.
-
-- `--ecosystem rubygems`: Queries version metadata only when a Bundler package has one GEM remote matching the selected registry. It verifies name, version, and platform before accepting `metadata.source_code_uri`.
-- `--ecosystem npm`: Supports npm, pnpm, Bun, and Yarn lockfile occurrences with one tarball URL under the selected registry. It verifies name, version, and `dist.tarball` before accepting `repository`.
-- `--ecosystem pypi`: Supports uv and pylock occurrences with a matching `/simple` index and one retained distribution SHA-256. It verifies the normalized name, version, and release file digest before accepting a source or repository entry from `project_urls`. Packages without a retained digest are not enriched.
-
-The default registries are `https://rubygems.org`, `https://registry.npmjs.org`, and `https://pypi.org` respectively. The default `enrich` output is Ravel JSON; `--format cyclonedx-json` and `--format spdx-json` are also available. Failed requests, mismatches, and missing or unsafe repository URLs are reported as coverage issues.
-
-## Development and tests
+### One project or a polyglot tree
 
 ```sh
-go test ./...
+./ravel scan path/to/project --output sbom.cdx.json --report coverage.json
+./ravel scan path/to/polyglot-project --all --recursive --output combined.cdx.json
+```
+
+`--all` combines static inputs in one directory. `--recursive` also scans subprojects while skipping generated directories such as `.git`, `node_modules`, and `vendor`. Archives are not automatically discovered. If multiple JavaScript lockfiles coexist, Ravel uses `package.json`'s `packageManager` field; otherwise select a manager explicitly.
+
+### A package archive or installed system
+
+```sh
+./ravel scan path/to/app.jar --output app.cdx.json
+./ravel scan path/to/package.whl --output wheel.cdx.json
+./ravel scan path/to/package.nupkg --output nuget.cdx.json
+./ravel scan path/to/debian-rootfs --manager dpkg --output debian.cdx.json
+./ravel scan path/to/alpine-rootfs --manager apk --output alpine.cdx.json
+./ravel scan path/to/fedora-rootfs --manager rpm --output fedora.cdx.json
+```
+
+`.war`, `.gem`, and npm `.tgz` archives are also accepted. An archive proves the bytes Ravel read; it does not by itself prove which registry supplied them.
+
+### A container image
+
+```sh
+docker save --output image.docker.tar image:tag
+./ravel scan image.docker.tar --platform linux/amd64 \
+  --output image.cdx.json --report image.coverage.json
+```
+
+You can also scan an OCI layout directory, a `.oci.tar` archive, or a gzip-compressed `.docker.tar.gz` / `.oci.tar.gz` archive. For a generic `.tar` or `.tar.gz` file, specify `--manager oci`.
+
+### Inspect, compare, and combine
+
+```sh
+./ravel scan path/to/project --format ravel-json --output project.ravel.json
+./ravel explain 'package-name' --input project.ravel.json
+./ravel diff before.ravel.json after.ravel.json --format json
+./ravel merge --name my-app --format cyclonedx-json \
+  --output combined.cdx.json npm.ravel.json cargo.ravel.json
+```
+
+`explain` accepts a package name, PURL, or component ID. If multiple occurrences share a name, use the component ID. `merge` takes at least two Ravel JSON inputs, preserves distinct occurrences, and rejects duplicate input scopes.
+
+## Coverage and output formats
+
+| Output | Use it for | Retained detail |
+| --- | --- | --- |
+| `cyclonedx-json` (default) | A standard CycloneDX 1.7 SBOM | Packages and unconditional dependencies; some provenance details as supported by the format. |
+| `spdx-json` | A standard SPDX 2.3 SBOM | Packages, PURLs when established, and unconditional dependencies. |
+| `ravel-json` | Investigation, `explain`, `diff`, `merge`, and `enrich` | Evidence, conditional edges, origin and development records, and scan coverage. |
+| `--report FILE` | Checking the result of any output format | Scan issues and `outputLosses` for the chosen format. |
+
+`graphState` and `originState` describe the scanned scope:
+
+- `complete_for_scope`: Ravel found no known gap for that dimension **within the input's defined scope**.
+- `partial`: Ravel found packages or relationships but also recorded a known gap.
+- `unknown`: The input did not establish a graph or origin for that dimension.
+
+`--strict` writes the requested output and then exits with code **3** if any scan coverage issue remains. A normal successful scan exits **0**; scan or input failures exit **1**, and invalid usage exits **2**. `outputLosses` describe conversion to the chosen format and do not by themselves trigger strict mode.
+
+## Optional resolution and enrichment
+
+A normal `scan` does not execute a package manager. For **Go modules, Cargo, Maven, Gradle, or SwiftPM**, resolution is opt-in:
+
+```sh
+./ravel scan path/to/cargo/project --manager cargo \
+  --resolve --allow-exec --network deny
+./ravel scan path/to/gradle/project --manager gradle \
+  --resolve --allow-exec --configuration runtimeClasspath --network deny
+```
+
+`--network deny` is the default for resolver commands. Package manager offline flags do **not** isolate build scripts or plugins at the operating system level. Use `--network allow` only when you intend to permit the resolver to fetch data.
+
+`enrich` is a separate, explicit network operation. It reads Ravel JSON and adds development repository **candidates** from matched registry metadata without changing package identities, distribution origins, or dependency edges:
+
+```sh
+./ravel enrich scan.ravel.json --ecosystem npm --network allow \
+  --output enriched.ravel.json
+```
+
+The supported ecosystems are `rubygems`, `npm`, and `pypi`. Ravel checks the package name and version plus the applicable platform, tarball URL, or distribution digest before accepting a repository candidate. `--registry HTTPS_URL` selects an API origin; `--max-requests N` lowers the default 1,000-request limit. Requests use HTTPS, bounded responses and deadlines, and no redirects or credentials. Failed lookups and mismatches appear in coverage.
+
+## Current limits
+
+- **Static data has boundaries.** SwiftPM pins and Gradle lockfiles do not contain complete dependency graphs. Go vendor data and Pub lockfiles do not establish every transitive edge. Maven POMs are not effective POMs, and Poetry/Composer manifest freshness is not verified.
+- **Some choices remain conditional.** Python markers and extras, npm peers, NuGet target frameworks, Cargo features and targets, and CocoaPods targets can require an environment or target selection. These edges remain in Ravel JSON and are omitted from unconditional standard-format dependency lists.
+- **Installed OS databases do not prove repository origin.** Debian, APK, and RPM scans leave PURL and origin unset when the database cannot establish them. RPM dependency version flags are not exposed by the current parser, so its dependency edges stay conditional. APK binary v3 databases are not supported.
+- **OCI language coverage is still partial.** Installed Python dist-info and conventional Node package manifests are read. Other language packages and pnpm's content store are not yet inventoried from image files. Symlinked Node packages are not followed.
+- **Some input versions are unsupported.** Binary `bun.lockb` is rejected; create a text `bun.lock` with Bun before scanning. Unknown lockfile versions and unparsed features are reported or rejected rather than silently guessed.
+
+## Development
+
+```sh
+go test ./... -count=1
 go vet ./...
 ```
 
-The integration suite scans 183 supported fixture directories and 25 unsupported format cases. It validates CycloneDX 1.7 and SPDX 2.3 against their JSON Schemas, checks package and edge counts, and tests provenance, URL redaction, conditional edges, and the CLI reports. Fixtures include lockfiles generated by npm, pnpm, Yarn, Bundler, Composer, Bun, Deno, uv, and dotnet, plus Debian, APK, and RPM installed databases. Archive fixtures include a NuGet package, wheel, npm tarball, Ruby gem, and generated JAR/WAR samples.
+The integration suite scans 183 supported fixture directories and 25 unsupported format cases. It validates CycloneDX 1.7 and SPDX 2.3 against their JSON Schemas and checks package counts, dependency edges, provenance, URL redaction, conditional relationships, and coverage. Fixtures include generated npm, pnpm, Yarn, Bundler, Composer, Bun, Deno, uv, and dotnet lockfiles; Debian, APK, and RPM installed databases; and package archives.
 
-The opt-in resolver tests use local dependencies and offline execution where possible. To include the real Maven plugin tests, including a multi-module reactor, run:
+The real Maven resolver tests are opt-in:
 
 ```sh
-RAVEL_TEST_REAL_MAVEN=1 go test ./integration -run 'TestMavenResolverWithReal(Reactor|Maven)' -count=1
+RAVEL_TEST_REAL_MAVEN=1 go test ./integration \
+  -run 'TestMavenResolverWithReal(Reactor|Maven)' -count=1
 ```
 
-Registry enrichment tests use local TLS servers and saved version responses for RubyGems `rack` 3.1.0, npm `is-number` 7.0.0, and PyPI `idna` 3.10. They verify evidence, registry selection, identity checks, artifact matching, and opt-in network access.
+Registry enrichment tests use local TLS servers and saved version responses. New collectors should include representative real-format fixtures and assertions about identity, graph, origin, and output loss.
+
+See [third-party notices](THIRD_PARTY_NOTICES.md) for licenses of the RPM database reader's Go dependencies.
