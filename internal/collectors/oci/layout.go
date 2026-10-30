@@ -542,6 +542,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	}
 	sort.Strings(rubyNames)
 	rubyInstalled := false
+	rubyRecords := make([]rubyInstalledRecord, 0, len(rubyNames))
 	for _, name := range rubyNames {
 		state := rubySpecs[name]
 		evidencePath := "oci:" + state.layer + "!/" + name
@@ -551,11 +552,13 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			continue
 		}
 		rubyInstalled = true
+		rubyRecords = append(rubyRecords, rubyInstalledRecord{component: installed.Components[0], metadata: state.data, metadataPath: name})
 		doc.Components = append(doc.Components, installed.Components...)
 		doc.Edges = append(doc.Edges, installed.Edges...)
 	}
 	if rubyInstalled {
-		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_installed_graph_unavailable"}, model.Issue{Code: "ruby_installed_origin_unavailable"})
+		linkInstalledRubyDependencies(&doc, rubyRecords)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_installed_activation_unresolved"}, model.Issue{Code: "ruby_installed_origin_unavailable"})
 	}
 	javaNames := make([]string, 0, len(javaArchives))
 	for name := range javaArchives {

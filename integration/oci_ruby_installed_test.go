@@ -61,7 +61,7 @@ func TestOCIInstalledRubyGemsAndOverlay(t *testing.T) {
 			if len(got) != len(strings.Split(test.want, ",")) {
 				t.Fatalf("stale installed Ruby gem remained: %#v", got)
 			}
-			for _, code := range []string{"ruby_installed_graph_unavailable", "ruby_installed_origin_unavailable", test.wantIssue} {
+			for _, code := range []string{"ruby_installed_activation_unresolved", "ruby_installed_origin_unavailable", test.wantIssue} {
 				if code == "" {
 					continue
 				}
