@@ -1,0 +1,11 @@
+Package: provider
+Status: install ok installed
+Architecture: amd64
+Version: 3.0
+Provides: virtual-core (= 2.0)
+
+Package: application
+Status: install ok installed
+Architecture: amd64
+Version: 1.0
+Depends: virtual-core (>= 2.0)

@@ -1,0 +1,35 @@
+Package: base-files
+Status: install ok installed
+Architecture: amd64
+Multi-Arch: foreign
+Version: 12.4+deb12u9
+Description: Debian base system files
+
+Package: libalpha
+Status: hold ok installed
+Architecture: amd64
+Version: 1:2.3~rc1-1
+Depends: base-files (>= 12.4)
+Description: alpha library
+
+Package: mailer
+Status: install ok installed
+Architecture: all
+Multi-Arch: foreign
+Version: 2.0-1
+Provides: virtual-mta
+Depends: base-files
+Description: a mail transport provider
+
+Package: application
+Status: install ok installed
+Architecture: amd64
+Version: 1.0-1
+Depends: libalpha (>= 1:2.3~rc1-1), virtual-mta | unavailable-mta
+Description: application
+
+Package: retired
+Status: deinstall ok config-files
+Architecture: amd64
+Version: 0.9-1
+Description: removed package with configuration left behind

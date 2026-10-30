@@ -1,0 +1,15 @@
+Package: alpha
+Status: install ok installed
+Architecture: amd64
+Version: 1.0
+
+Package: beta
+Status: install ok installed
+Architecture: amd64
+Version: 2.0
+
+Package: application
+Status: install ok installed
+Architecture: amd64
+Version: 1.0
+Depends: alpha (>= 1) | beta (>= 2)

@@ -14,6 +14,7 @@ import (
 	"ravel/internal/collectors/cocoapods"
 	"ravel/internal/collectors/composer"
 	"ravel/internal/collectors/deno"
+	"ravel/internal/collectors/dpkg"
 	"ravel/internal/collectors/gomod"
 	"ravel/internal/collectors/gradle"
 	"ravel/internal/collectors/maven"
@@ -32,7 +33,7 @@ import (
 var staticManagers = []string{
 	"bundler", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
 	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "cocoapods",
-	"pipenv", "pdm", "go", "pub", "gradle", "maven",
+	"pipenv", "pdm", "go", "pub", "gradle", "maven", "dpkg",
 }
 
 // runScanAll scans static manager inputs at the directory root, and nested
@@ -285,6 +286,9 @@ func scanDirectories(root string) ([]string, error) {
 			return nil
 		}
 		name := entry.Name()
+		if name == "status" && filepath.Base(filepath.Dir(path)) == "dpkg" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "lib" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path)))) == "var" {
+			dirs[filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path))))] = true
+		}
 		if recursiveCandidate(name) {
 			dirs[filepath.Dir(path)] = true
 		}
@@ -361,6 +365,8 @@ func collectStatic(manager, lock, project string) (model.Document, error) {
 			return maven.CollectPOM(lock, project)
 		}
 		return maven.CollectTree(lock, project)
+	case "dpkg":
+		return dpkg.Collect(lock, project)
 	}
 	return model.Document{}, fmt.Errorf("unsupported manager %s", manager)
 }

@@ -297,8 +297,8 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec; --network must be deny or allow")
 		return 2
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "java-archive" && *manager != "python-wheel" {
-		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, cocoapods, pipenv, pdm, go, pub, gradle, maven, java-archive, python-wheel")
+	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "dpkg" && *manager != "java-archive" && *manager != "python-wheel" {
+		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, cocoapods, pipenv, pdm, go, pub, gradle, maven, dpkg, java-archive, python-wheel")
 		return 2
 	}
 	if *all {
@@ -325,6 +325,9 @@ func runScan(args []string) int {
 		}
 		if filepath.Base(path) == "modules.txt" && project == "vendor" {
 			project = filepath.Base(filepath.Dir(filepath.Dir(path)))
+		}
+		if filepath.Base(path) == "status" && project == "dpkg" {
+			project = filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path)))))
 		}
 	}
 	lock, selected, err := selectLock(path, info.IsDir(), *manager)
@@ -526,6 +529,10 @@ func samePath(a, b string) bool {
 func selectLock(input string, directory bool, requested string) (string, string, error) {
 	managerForFile := func(name string) string {
 		switch name {
+		case "status":
+			if filepath.Base(filepath.Dir(input)) == "dpkg" && filepath.Base(filepath.Dir(filepath.Dir(input))) == "lib" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(input)))) == "var" {
+				return "dpkg"
+			}
 		case "Gemfile.lock":
 			return "bundler"
 		case "package-lock.json", "npm-shrinkwrap.json":
@@ -672,6 +679,10 @@ func selectLock(input string, directory bool, requested string) (string, string,
 	vendorManifest := filepath.Join(input, "vendor", "modules.txt")
 	if stat, err := os.Stat(vendorManifest); err == nil && !stat.IsDir() {
 		candidates["go"] = vendorManifest
+	}
+	dpkgStatus := filepath.Join(input, "var", "lib", "dpkg", "status")
+	if stat, err := os.Stat(dpkgStatus); err == nil && stat.Mode().IsRegular() {
+		candidates["dpkg"] = dpkgStatus
 	}
 	if requested == "auto" || requested == "pylock" {
 		entries, err := os.ReadDir(input)

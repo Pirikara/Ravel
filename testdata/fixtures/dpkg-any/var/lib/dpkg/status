@@ -1,0 +1,11 @@
+Package: interpreter
+Status: install ok installed
+Architecture: arm64
+Multi-Arch: allowed
+Version: 3.1
+
+Package: application
+Status: install ok installed
+Architecture: amd64
+Version: 1.0
+Depends: interpreter:any (>= 3)

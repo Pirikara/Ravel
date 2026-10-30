@@ -1,0 +1,15 @@
+Package: libc6
+Status: install ok installed
+Architecture: amd64
+Version: 2.36-9+deb12u13
+
+Package: libc6
+Status: install ok installed
+Architecture: arm64
+Version: 2.36-9+deb12u13
+
+Package: application
+Status: install ok installed
+Architecture: amd64
+Version: 1.0
+Depends: libc6 (>= 2.36)

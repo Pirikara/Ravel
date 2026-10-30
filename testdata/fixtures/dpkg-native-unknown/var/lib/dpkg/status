@@ -1,0 +1,10 @@
+Package: library
+Status: install ok installed
+Architecture: amd64
+Version: 1.0
+
+Package: application
+Status: install ok installed
+Architecture: amd64
+Version: 1.0
+Depends: library:native

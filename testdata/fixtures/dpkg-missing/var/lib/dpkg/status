@@ -1,0 +1,5 @@
+Package: application
+Status: install ok installed
+Architecture: amd64
+Version: 1.0
+Depends: unavailable (>= 2)

@@ -239,6 +239,13 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"maven-multi-module", "maven", 5, 7, "partial", "partial", []string{"org.demo:api", "org.demo:web", "org.demo:plugin", "org.example:shared", "org.example:plugin-lib"}, "", ""},
 		{"maven-pom-empty", "maven", 0, 0, "partial", "complete_for_scope", nil, "", ""},
 		{"maven-pom-duplicate", "maven", 0, 0, "partial", "complete_for_scope", nil, "org.example:lib", ""},
+		{"dpkg-basic", "dpkg", 4, 8, "complete_for_scope", "partial", []string{"base-files", "libalpha", "mailer", "application"}, "retired", ""},
+		{"dpkg-alternatives", "dpkg", 3, 5, "partial", "partial", []string{"alpha", "beta", "application"}, "", ""},
+		{"dpkg-multiarch", "dpkg", 3, 4, "complete_for_scope", "partial", []string{"libc6", "application"}, "", ""},
+		{"dpkg-versioned-provide", "dpkg", 2, 3, "complete_for_scope", "partial", []string{"provider", "application"}, "", ""},
+		{"dpkg-missing", "dpkg", 1, 1, "partial", "partial", []string{"application"}, "unavailable", ""},
+		{"dpkg-any", "dpkg", 2, 3, "complete_for_scope", "partial", []string{"interpreter", "application"}, "", ""},
+		{"dpkg-native-unknown", "dpkg", 2, 2, "partial", "partial", []string{"library", "application"}, "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
