@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,6 +11,94 @@ import (
 
 	"ravel/internal/model"
 )
+
+func TestGradleResolverWithRealMultiProject(t *testing.T) {
+	if _, err := exec.LookPath("gradle"); err != nil {
+		t.Skip("Gradle is not installed")
+	}
+	if _, err := exec.LookPath("java"); err != nil {
+		t.Skip("Java is not installed")
+	}
+	project := t.TempDir()
+	for _, dir := range []string{"app", "lib"} {
+		if err := os.Mkdir(filepath.Join(project, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		"settings.gradle":  "rootProject.name = 'ravel-multi'\ninclude 'app', 'lib'\n",
+		"build.gradle":     "\n",
+		"app/build.gradle": "plugins { id 'java' }\nrepositories { maven { url = uri('../repo') } }\ndependencies { implementation project(':lib'); implementation 'org.example:app-dep:1.0' }\n",
+		"lib/build.gradle": "plugins { id 'java' }\nrepositories { maven { url = uri('../repo') } }\ndependencies { implementation 'org.example:lib-dep:2.0' }\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(project, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, pkg := range []struct{ name, version string }{{"app-dep", "1.0"}, {"lib-dep", "2.0"}} {
+		dir := filepath.Join(project, "repo", "org", "example", pkg.name, pkg.version)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		base := pkg.name + "-" + pkg.version
+		pom := `<project><modelVersion>4.0.0</modelVersion><groupId>org.example</groupId><artifactId>` + pkg.name + `</artifactId><version>` + pkg.version + `</version></project>`
+		if err := os.WriteFile(filepath.Join(dir, base+".pom"), []byte(pom), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		jar, err := os.Create(filepath.Join(dir, base+".jar"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer := zip.NewWriter(jar)
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := jar.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result := filepath.Join(t.TempDir(), "gradle.ravel.json")
+	if output, code := mavenScan(t, project, "--manager", "gradle", "--resolve", "--allow-exec", "--network", "deny", "--format", "ravel-json", "--output", result); code != 0 {
+		t.Fatalf("multi-project Gradle resolution failed, code=%d output=%s", code, output)
+	}
+	data, err := os.ReadFile(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc model.Document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Coverage.Packages != 6 || doc.Coverage.Edges != 6 || doc.Coverage.GraphState != "complete_for_scope" || doc.Coverage.OriginState != "partial" {
+		t.Fatalf("unexpected multi-project Gradle coverage: %+v", doc.Coverage)
+	}
+	ids := map[string]string{}
+	for _, component := range doc.Components {
+		ids[component.Name+"|"+component.Context] = component.ID
+		if component.PURL != "" {
+			t.Fatalf("Gradle package without observed repository acquired a PURL: %+v", component)
+		}
+	}
+	app := ids[":app|configuration=runtimeClasspath;project=:app"]
+	appLib := ids[":lib|configuration=runtimeClasspath;project=:app"]
+	lib := ids[":lib|configuration=runtimeClasspath;project=:lib"]
+	appDep := ids["org.example:app-dep|configuration=runtimeClasspath;project=:app"]
+	appLibDep := ids["org.example:lib-dep|configuration=runtimeClasspath;project=:app"]
+	libDep := ids["org.example:lib-dep|configuration=runtimeClasspath;project=:lib"]
+	if app == "" || appLib == "" || lib == "" || appDep == "" || appLibDep == "" || libDep == "" {
+		t.Fatalf("missing Gradle project or package scope: %+v", ids)
+	}
+	connected := map[string]bool{}
+	for _, edge := range doc.Edges {
+		connected[edge.From+"->"+edge.To] = true
+	}
+	for _, pair := range [][2]string{{"root", app}, {"root", lib}, {app, appLib}, {app, appDep}, {appLib, appLibDep}, {lib, libDep}} {
+		if !connected[pair[0]+"->"+pair[1]] {
+			t.Fatalf("Gradle multi-project edge missing: %s -> %s", pair[0], pair[1])
+		}
+	}
+}
 
 const gradleGraph = `{"root":"project :","configuration":"runtimeClasspath","nodes":[{"id":"project :","kind":"project","name":":","dependencies":["org.example:alpha:1"],"failed":0,"variantCount":1},{"id":"org.example:alpha:1","kind":"module","group":"org.example","name":"alpha","version":"1","dependencies":["org.example:beta:2"],"failed":0,"variantCount":1},{"id":"org.example:beta:2","kind":"module","group":"org.example","name":"beta","version":"2","dependencies":[],"failed":0,"variantCount":1}]}`
 

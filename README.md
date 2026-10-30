@@ -59,7 +59,7 @@ Ravel JSON retains the evidence, conditional edges, and reasons for incomplete c
 | Python | `uv.lock` v1, `pylock.toml` 1.0, Poetry, Pipenv, PDM, pinned pip requirements, and wheel archives |
 | .NET | NuGet `packages.lock.json`, `project.assets.json`, and `.nupkg` archives |
 | Swift | `Package.resolved` v1-v3; an opt-in SwiftPM resolver supplies package edges |
-| Java | Maven `pom.xml` with declared module traversal and dependency tree JSON; Gradle lockfiles; JAR/WAR archives and nested JARs |
+| Java | Maven `pom.xml` with declared module traversal and dependency tree JSON; Gradle lockfiles and opt-in resolution across projects; JAR/WAR archives and nested JARs |
 | Go | `vendor/modules.txt` with `go.mod`; an opt-in `go list` resolver when vendor data is absent |
 | Rust | Cargo.lock v3/v4; an opt-in `cargo metadata` resolver for the selected host graph |
 | Other | Composer, CocoaPods, and Dart/Flutter Pub lockfiles |
@@ -74,7 +74,7 @@ npm v2-v4 scans follow installed package locations, verify semver ranges and npm
 
 Ravel preserves conditional edges for Python markers and extras, npm peers, NuGet target frameworks, Cargo target and feature choices, CocoaPods target choices, and other unresolved variants. Without a target selection, it does not turn those edges into unconditional CycloneDX or SPDX dependencies.
 
-Several formats have intentional limits. Binary `bun.lockb` is rejected explicitly. npm v1 requires `package.json` to identify direct dependencies, and nested packages without a `requires` map cannot establish transitive edges. Deno source scanning covers static imports, re-exports, and literal dynamic imports, while computed imports and runtime-selected entry points remain partial. Static SwiftPM pins do not establish dependency edges. Gradle lockfiles provide selected versions but not dependency edges. Static Maven module traversal reads declared modules inside the scanned project, skips symlinks, and does not build effective POMs; the Maven and Gradle resolvers currently cover the root project. Go vendor data and Pub lockfiles do not provide complete transitive edges. Poetry and Composer manifest freshness is not verified. These limitations appear in coverage rather than being filled with guesses.
+Several formats have intentional limits. Binary `bun.lockb` is rejected explicitly. npm v1 requires `package.json` to identify direct dependencies, and nested packages without a `requires` map cannot establish transitive edges. Deno source scanning covers static imports, re-exports, and literal dynamic imports, while computed imports and runtime-selected entry points remain partial. Static SwiftPM pins do not establish dependency edges. Gradle lockfiles provide selected versions but not dependency edges. The Gradle resolver scans the requested configuration in every resolvable project of the main build, keeping each project's graph as a separate occurrence; other configurations and included builds are outside that scope. Static Maven module traversal reads declared modules inside the scanned project, skips symlinks, and does not build effective POMs. The Maven resolver currently covers only the root project. Go vendor data and Pub lockfiles do not provide complete transitive edges. Poetry and Composer manifest freshness is not verified. These limitations appear in coverage rather than being filled with guesses.
 
 ## Registry metadata enrichment
 

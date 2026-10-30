@@ -32,19 +32,21 @@ gradle.projectsLoaded { g ->
   g.rootProject.tasks.register('ravelSbomGraph') {
     doLast {
       def configurationName = System.getProperty('ravel.configuration')
-      def configuration = g.rootProject.configurations.findByName(configurationName)
-      if (configuration == null || !configuration.canBeResolved) {
+      def projects = g.rootProject.allprojects.findAll { p ->
+        def configuration = p.configurations.findByName(configurationName)
+        configuration != null && configuration.canBeResolved
+      }.sort { a, b -> a.path <=> b.path }
+      if (projects.isEmpty()) {
         throw new GradleException('Ravel configuration is unavailable or not resolvable')
       }
-      def graph = configuration.incoming.resolutionResult
-      def nodes = graph.allComponents.collect { component ->
+      def describe = { component, encode, projectPath ->
         def identifier = component.id
         def kind = identifier instanceof ModuleComponentIdentifier ? 'module' :
                    identifier instanceof ProjectComponentIdentifier ? 'project' : 'other'
         def dependencies = component.dependencies.findAll { it instanceof ResolvedDependencyResult }
-          .collect { it.selected.id.displayName }
+          .collect { encode(it.selected.id) }
         def failed = component.dependencies.count { it instanceof UnresolvedDependencyResult }
-        [id: identifier.displayName, kind: kind,
+        [id: encode(identifier), kind: kind, projectPath: projectPath,
          group: kind == 'module' ? identifier.group : '',
          name: kind == 'module' ? identifier.module :
                kind == 'project' ? identifier.projectPath : identifier.displayName,
@@ -52,8 +54,31 @@ gradle.projectsLoaded { g ->
          dependencies: dependencies, failed: failed,
          variantCount: component.variants.size()]
       }
+      def nodes = []
+      def rootId
+      if (projects.size() == 1 && projects[0].path == ':') {
+        def graph = projects[0].configurations.getByName(configurationName).incoming.resolutionResult
+        rootId = graph.root.id.displayName
+        nodes.addAll(graph.allComponents.collect { component ->
+          describe(component, { id -> id.displayName }, ':')
+        })
+      } else {
+        rootId = 'ravel:aggregate-root'
+        def root = [id: rootId, kind: 'project', name: ':', projectPath: ':',
+                    dependencies: [], failed: 0, variantCount: 1]
+        nodes << root
+        projects.each { p ->
+          def graph = p.configurations.getByName(configurationName).incoming.resolutionResult
+          def encode = { id -> p.path + '|' + id.displayName }
+          root.dependencies << encode(graph.root.id)
+          nodes.addAll(graph.allComponents.collect { component ->
+            describe(component, encode, p.path)
+          })
+        }
+      }
+      nodes.sort { a, b -> a.id <=> b.id }
       new File(System.getProperty('ravel.output')).setText(JsonOutput.toJson(
-        [root: graph.root.id.displayName, configuration: configurationName, nodes: nodes]), 'UTF-8')
+        [root: rootId, configuration: configurationName, nodes: nodes]), 'UTF-8')
     }
   }
 }
@@ -65,6 +90,7 @@ type resolvedGraph struct {
 	Nodes         []struct {
 		ID           string   `json:"id"`
 		Kind         string   `json:"kind"`
+		ProjectPath  string   `json:"projectPath"`
 		Group        string   `json:"group"`
 		Name         string   `json:"name"`
 		Version      string   `json:"version"`
@@ -108,7 +134,7 @@ func CollectResolved(buildFile, project, configuration string, networkAllow bool
 			}
 		}
 	}
-	args := []string{"--no-daemon", "--no-configuration-cache", "--console=plain", "--init-script", initPath,
+	args := []string{"--no-daemon", "--no-configuration-cache", "--no-configure-on-demand", "--console=plain", "--init-script", initPath,
 		"-Dravel.output=" + graphPath, "-Dravel.configuration=" + configuration}
 	if !networkAllow {
 		args = append(args, "--offline")
@@ -203,7 +229,11 @@ func collectGraph(buildFile, project, configuration string, data []byte) (model.
 			} else if node.Kind == "other" {
 				name = "unidentified Gradle component"
 			}
-			doc.Components = append(doc.Components, model.Component{ID: byID[node.ID], Kind: kind, Name: name, Version: node.Version, PURL: purl, Context: "configuration=" + configuration, Evidence: []model.Evidence{ev}})
+			context := "configuration=" + configuration
+			if node.ProjectPath != "" {
+				context += ";project=" + node.ProjectPath
+			}
+			doc.Components = append(doc.Components, model.Component{ID: byID[node.ID], Kind: kind, Name: name, Version: node.Version, PURL: purl, Context: context, Evidence: []model.Evidence{ev}})
 		}
 		for j, dependency := range node.Dependencies {
 			to, ok := byID[dependency]
