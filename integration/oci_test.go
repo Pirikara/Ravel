@@ -88,7 +88,7 @@ func ociTestTar(t *testing.T, entries []ociTestEntry) []byte {
 	return buffer.Bytes()
 }
 
-func ociTestImage(t *testing.T, layout, osName, arch string, layers []ociTestLayer) ociTestDescriptor {
+func ociTestImage(t *testing.T, layout, osName, arch string, layers []ociTestLayer, variant ...string) ociTestDescriptor {
 	t.Helper()
 	var layerDescriptors []ociTestDescriptor
 	var diffIDs []string
@@ -116,7 +116,11 @@ func ociTestImage(t *testing.T, layout, osName, arch string, layers []ociTestLay
 		layerDescriptors = append(layerDescriptors, ociTestBlob(t, layout, media, data))
 		diffIDs = append(diffIDs, diffID)
 	}
-	configData, err := json.Marshal(map[string]any{"os": osName, "architecture": arch, "rootfs": map[string]any{"type": "layers", "diff_ids": diffIDs}})
+	configValues := map[string]any{"os": osName, "architecture": arch, "rootfs": map[string]any{"type": "layers", "diff_ids": diffIDs}}
+	if len(variant) > 0 {
+		configValues["variant"] = variant[0]
+	}
+	configData, err := json.Marshal(configValues)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,6 +241,38 @@ func TestOCILayoutPlatformSelection(t *testing.T) {
 	}
 	if _, output, code := ociTestScan(t, layout, "--platform", "linux/s390x"); code != 1 || !strings.Contains(output, "no manifest for platform") {
 		t.Fatalf("missing OCI platform was accepted: code=%d output=%s", code, output)
+	}
+}
+
+func TestOCISparsePlatformIndex(t *testing.T) {
+	layout := ociTestLayout(t)
+	amd := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{{name: "var/lib/dpkg/status", data: ociTestStatus(t, "dpkg-basic")}}}})
+	armStatus := []byte("Package: arm64-only\nStatus: install ok installed\nArchitecture: arm64\nVersion: 1.0\n")
+	arm := ociTestImage(t, layout, "linux", "arm64", []ociTestLayer{{entries: []ociTestEntry{{name: "var/lib/dpkg/status", data: armStatus}}}}, "v8")
+	index, err := json.Marshal(map[string]any{
+		"schemaVersion": 2,
+		"manifests": []any{
+			map[string]any{"mediaType": amd.MediaType, "digest": amd.Digest, "size": amd.Size, "platform": map[string]string{"os": "linux", "architecture": "amd64"}},
+			map[string]any{"mediaType": arm.MediaType, "digest": arm.Digest, "size": arm.Size, "platform": map[string]string{"os": "linux", "architecture": "arm64", "variant": "v8"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layout, "index.json"), index, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(layout, "blobs", "sha256", strings.TrimPrefix(amd.Digest, "sha256:"))); err != nil {
+		t.Fatal(err)
+	}
+	if _, output, code := ociTestScan(t, layout); code != 1 || !strings.Contains(output, "select --platform") {
+		t.Fatalf("sparse multi-platform index was accepted without selection: code=%d output=%s", code, output)
+	}
+	for _, platform := range []string{"linux/arm64", "linux/arm64/v8"} {
+		doc, output, code := ociTestScan(t, layout, "--platform", platform)
+		if code != 0 || len(doc.Components) != 1 || doc.Components[0].Name != "arm64-only" {
+			t.Fatalf("sparse index selection failed for %s: code=%d output=%s doc=%#v", platform, code, output, doc)
+		}
 	}
 }
 

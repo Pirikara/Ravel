@@ -21,6 +21,7 @@ import (
 	"ravel/internal/collectors/dpkg"
 	"ravel/internal/collectors/npm"
 	"ravel/internal/collectors/python"
+	"ravel/internal/collectors/rpm"
 	"ravel/internal/model"
 )
 
@@ -46,7 +47,11 @@ const (
 	apkInstalledPath       = "lib/apk/db/installed"
 )
 
-var databasePaths = []string{statusPath, apkInstalledPath}
+var databasePaths = append([]string{statusPath, apkInstalledPath}, rpm.DatabasePaths...)
+var rpmWALPaths = []string{
+	"usr/lib/sysimage/rpm/rpmdb.sqlite-wal", "var/lib/rpm/rpmdb.sqlite-wal", "usr/share/rpm/rpmdb.sqlite-wal",
+}
+var trackedDatabasePaths = append(append([]string{}, databasePaths...), rpmWALPaths...)
 
 var (
 	sha256Digest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
@@ -61,6 +66,7 @@ type descriptor struct {
 	Platform    *struct {
 		OS           string `json:"os"`
 		Architecture string `json:"architecture"`
+		Variant      string `json:"variant"`
 	} `json:"platform,omitempty"`
 }
 
@@ -120,11 +126,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	sources := []string{layoutPath, indexPath}
 	seen := map[string]bool{}
 	for _, item := range index.Manifests {
-		if err := collectManifests(layout, item, 0, seen, &manifests, &sources); err != nil {
+		if err := collectManifests(layout, item, requestedPlatform, 0, seen, &manifests, &sources); err != nil {
 			return model.Document{}, err
 		}
 	}
 	if len(manifests) == 0 {
+		if requestedPlatform != "" {
+			return model.Document{}, fmt.Errorf("OCI image has no manifest for platform %s", requestedPlatform)
+		}
 		return model.Document{}, errors.New("OCI layout has no image manifest")
 	}
 	if requestedPlatform == "" && len(manifests) > 1 {
@@ -154,7 +163,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if config.Variant != "" {
 			platform += "/" + config.Variant
 		}
-		if requestedPlatform == "" || requestedPlatform == platform {
+		if requestedPlatform == "" || matchesPlatform(requestedPlatform, platform) {
 			choices = append(choices, imageChoice{config: config, layers: manifest.Layers})
 		}
 	}
@@ -237,13 +246,24 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	if choice.config.Variant != "" {
 		platform += "/" + choice.config.Variant
 	}
-	if len(databases) == 0 && len(pythonMetadata) == 0 && len(nodeMetadata) == 0 {
+	for _, name := range rpmWALPaths {
+		if state, found := databases[name]; found && len(state.data) != 0 {
+			return model.Document{}, fmt.Errorf("RPM SQLite database has an uncheckpointed WAL: %s", name)
+		}
+	}
+	installedDatabases := 0
+	for _, name := range databasePaths {
+		if _, found := databases[name]; found {
+			installedDatabases++
+		}
+	}
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(nodeMetadata) == 0 {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
 		doc.Coverage.GraphState = "unknown"
 		doc.Coverage.OriginState = "unknown"
-		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk"}, model.Issue{Code: "image_language_packages_unscanned"})
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"}, model.Issue{Code: "image_language_packages_unscanned"})
 		common.Finalize(&doc)
 		doc.Coverage.GraphState = "unknown"
 		return doc, nil
@@ -251,8 +271,17 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	doc := common.NewDocument(layout, project, "oci", nil)
 	doc.Sources = sources
 	doc.Coverage.Platforms = []string{platform}
-	if len(databases) == 0 {
-		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk"})
+	if installedDatabases == 0 {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"})
+	}
+	rpmDatabases := 0
+	for _, name := range rpm.DatabasePaths {
+		if _, found := databases[name]; found {
+			rpmDatabases++
+		}
+	}
+	if rpmDatabases > 1 {
+		return model.Document{}, errors.New("OCI image has multiple RPM databases; active database is ambiguous")
 	}
 	for _, name := range databasePaths {
 		state, found := databases[name]
@@ -263,8 +292,10 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		var database model.Document
 		if name == statusPath {
 			database, err = dpkg.CollectBytes(state.data, evidencePath, project)
-		} else {
+		} else if name == apkInstalledPath {
 			database, err = apk.CollectBytes(state.data, evidencePath, project)
+		} else {
+			database, err = rpm.CollectBytes(state.data, evidencePath, project)
 		}
 		if err != nil {
 			return model.Document{}, fmt.Errorf("invalid %s database in OCI image: %w", name, err)
@@ -346,12 +377,15 @@ func readLocalMetadata(file string) ([]byte, error) {
 	return os.ReadFile(file)
 }
 
-func collectManifests(layout string, item descriptor, depth int, seen map[string]bool, out *[]descriptor, sources *[]string) error {
+func collectManifests(layout string, item descriptor, requestedPlatform string, depth int, seen map[string]bool, out *[]descriptor, sources *[]string) error {
 	if depth > 8 || len(*out) > 128 {
 		return errors.New("OCI image index exceeds traversal limit")
 	}
 	if item.Annotations["vnd.docker.reference.type"] == "attestation-manifest" && item.Platform != nil && item.Platform.OS == "unknown" && item.Platform.Architecture == "unknown" {
 		return nil // Docker attaches attestations as non-runnable manifests.
+	}
+	if requestedPlatform != "" && item.Platform != nil && !descriptorMatchesPlatform(item, requestedPlatform) {
+		return nil // Unselected platform blobs may be absent from sparse archives.
 	}
 	if item.MediaType != manifestMediaType && item.MediaType != indexMediaType {
 		return nil // indexes may contain artifact descriptors
@@ -374,11 +408,23 @@ func collectManifests(layout string, item descriptor, depth int, seen map[string
 		return errors.New("invalid nested OCI image index")
 	}
 	for _, child := range nested.Manifests {
-		if err := collectManifests(layout, child, depth+1, seen, out, sources); err != nil {
+		if err := collectManifests(layout, child, requestedPlatform, depth+1, seen, out, sources); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func descriptorMatchesPlatform(item descriptor, requested string) bool {
+	parts := strings.Split(requested, "/")
+	if item.Platform.OS != parts[0] || item.Platform.Architecture != parts[1] {
+		return false
+	}
+	return len(parts) == 2 || item.Platform.Variant == "" || item.Platform.Variant == parts[2]
+}
+
+func matchesPlatform(requested, actual string) bool {
+	return requested == actual || strings.Count(requested, "/") == 1 && strings.HasPrefix(actual, requested+"/")
 }
 
 func blobPath(layout string, item descriptor) (string, error) {
@@ -512,7 +558,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			if relevantLanguagePaths[deletedPath] {
 				change.whiteouts = append(change.whiteouts, deletedPath)
 			}
-			for _, target := range databasePaths {
+			for _, target := range trackedDatabasePaths {
 				if ancestorOfTarget(deletedPath, target) {
 					update := change.files[target]
 					update.deleted = true
@@ -557,7 +603,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 			continue
 		}
-		for _, target := range databasePaths {
+		for _, target := range trackedDatabasePaths {
 			if name == target {
 				if seenDatabase[target] || header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxDatabaseBytes {
 					return layerChange{}, "", fmt.Errorf("unsupported or duplicate OCI database entry: %s", target)
@@ -572,7 +618,9 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 				change.files[target] = update
 			} else if ancestorOfTarget(name, target) && header.Typeflag != tar.TypeDir {
 				if header.Typeflag == tar.TypeSymlink || header.Typeflag == tar.TypeLink {
-					return layerChange{}, "", fmt.Errorf("OCI package database path has an unsupported link: %s", name)
+					if header.Typeflag != tar.TypeSymlink || !allowedDatabaseParentLink(name, header.Linkname) {
+						return layerChange{}, "", fmt.Errorf("OCI package database path has an unsupported link: %s", name)
+					}
 				}
 				update := change.files[target]
 				update.deleted = true
@@ -630,4 +678,26 @@ func cleanTarPath(raw string) (string, error) {
 
 func ancestorOfTarget(candidate, target string) bool {
 	return candidate == "." || candidate == target || strings.HasPrefix(target, candidate+"/")
+}
+
+func allowedDatabaseParentLink(name, target string) bool {
+	if len(target) == 0 || len(target) > 4096 || strings.ContainsAny(target, "\\\x00") {
+		return false
+	}
+	parents := map[string]bool{}
+	for _, database := range rpm.DatabasePaths {
+		parents[path.Dir(database)] = true
+	}
+	resolved := strings.TrimPrefix(target, "/")
+	if !strings.HasPrefix(target, "/") {
+		resolved = path.Join(path.Dir(name), target)
+	}
+	resolved = path.Clean(resolved)
+	if name == "lib" && resolved == "usr/lib" {
+		return true
+	}
+	if !parents[name] {
+		return false
+	}
+	return resolved != name && parents[resolved] && resolved != ".." && !strings.HasPrefix(resolved, "../")
 }

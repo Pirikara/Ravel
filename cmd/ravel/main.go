@@ -19,6 +19,7 @@ import (
 	"ravel/internal/collectors/npm"
 	"ravel/internal/collectors/oci"
 	"ravel/internal/collectors/python"
+	"ravel/internal/collectors/rpm"
 	"ravel/internal/collectors/swiftpm"
 	"ravel/internal/export"
 	"ravel/internal/merge"
@@ -299,8 +300,8 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec; --network must be deny or allow")
 		return 2
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "dpkg" && *manager != "apk" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
-		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, cocoapods, pipenv, pdm, go, pub, gradle, maven, dpkg, apk, oci, java-archive, python-wheel")
+	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
+		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, cocoapods, pipenv, pdm, go, pub, gradle, maven, dpkg, apk, rpm, oci, java-archive, python-wheel")
 		return 2
 	}
 	if *all {
@@ -621,6 +622,13 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		if requested == "oci" && (strings.HasSuffix(strings.ToLower(input), ".tar") || strings.HasSuffix(strings.ToLower(input), ".tar.gz")) {
 			return input, "oci", nil
 		}
+		if requested == "rpm" || requested == "auto" && filepath.Base(filepath.Dir(input)) == "rpm" {
+			for _, name := range []string{"rpmdb.sqlite", "Packages.db", "Packages"} {
+				if filepath.Base(input) == name {
+					return input, "rpm", nil
+				}
+			}
+		}
 		if filepath.Base(input) == "installed" && filepath.Base(filepath.Dir(input)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(input))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(input)))) == "lib" {
 			if requested == "auto" || requested == "apk" {
 				return input, "apk", nil
@@ -719,6 +727,30 @@ func selectLock(input string, directory bool, requested string) (string, string,
 	apkInstalled := filepath.Join(input, "lib", "apk", "db", "installed")
 	if stat, err := os.Stat(apkInstalled); err == nil && stat.Mode().IsRegular() {
 		candidates["apk"] = apkInstalled
+	}
+	var rpmFiles []string
+	var rpmInfos []os.FileInfo
+	for _, name := range rpm.DatabasePaths {
+		candidate := filepath.Join(input, filepath.FromSlash(name))
+		if stat, err := os.Stat(candidate); err == nil && stat.Mode().IsRegular() {
+			alias := false
+			for _, previous := range rpmInfos {
+				if os.SameFile(stat, previous) {
+					alias = true
+					break
+				}
+			}
+			if !alias {
+				rpmFiles = append(rpmFiles, candidate)
+				rpmInfos = append(rpmInfos, stat)
+			}
+		}
+	}
+	if len(rpmFiles) > 1 && (requested == "auto" || requested == "rpm") {
+		return "", "", errors.New("multiple RPM databases found; select a specific database file")
+	}
+	if len(rpmFiles) > 0 {
+		candidates["rpm"] = rpmFiles[0]
 	}
 	if requested == "auto" || requested == "pylock" {
 		entries, err := os.ReadDir(input)

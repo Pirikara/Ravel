@@ -25,6 +25,7 @@ import (
 	"ravel/internal/collectors/pnpm"
 	"ravel/internal/collectors/pub"
 	"ravel/internal/collectors/python"
+	"ravel/internal/collectors/rpm"
 	"ravel/internal/collectors/swiftpm"
 	"ravel/internal/collectors/yarn"
 	"ravel/internal/export"
@@ -35,7 +36,7 @@ import (
 var staticManagers = []string{
 	"bundler", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
 	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "cocoapods",
-	"pipenv", "pdm", "go", "pub", "gradle", "maven", "dpkg", "apk", "oci",
+	"pipenv", "pdm", "go", "pub", "gradle", "maven", "dpkg", "apk", "rpm", "oci",
 }
 
 // runScanAll scans static manager inputs at the directory root, and nested
@@ -89,7 +90,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 			}
 			lock, _, err := selectLock(directory, true, manager)
 			if err != nil {
-				if manager == "pylock" && strings.Contains(err.Error(), "multiple pylock files") {
+				if manager == "pylock" && strings.Contains(err.Error(), "multiple pylock files") || manager == "rpm" && strings.Contains(err.Error(), "multiple RPM databases") {
 					fmt.Fprintln(os.Stderr, "ravel:", err)
 					return 2
 				}
@@ -379,6 +380,8 @@ func collectStatic(manager, lock, project string) (model.Document, error) {
 		return dpkg.Collect(lock, project)
 	case "apk":
 		return apk.Collect(lock, project)
+	case "rpm":
+		return rpm.Collect(lock, project)
 	case "oci":
 		return oci.Collect(filepath.Dir(lock), project, "")
 	}
