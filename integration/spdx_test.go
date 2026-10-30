@@ -132,6 +132,11 @@ func TestSPDX23AllFixtures(t *testing.T) {
 					}
 				}
 			}
+			if name == "npm-v4-generated-12" {
+				if len(output.Packages) != 2 || !strings.Contains(output.Packages[1].Comment, "Ravel patch:") || !strings.Contains(output.Packages[1].Comment, "Ravel base artifact hash:") || strings.Contains(string(spdxBytes), "\"checksums\"") {
+					t.Fatal("SPDX lost npm patch context or treated base tarball hash as patched package checksum")
+				}
+			}
 			unconditional := map[string]bool{}
 			for _, edge := range doc.Edges {
 				if edge.Condition == "" {
@@ -151,8 +156,8 @@ func TestSPDX23AllFixtures(t *testing.T) {
 			}
 		})
 	}
-	if count != 152 {
-		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 152", count)
+	if count != 160 {
+		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 160", count)
 	}
 }
 

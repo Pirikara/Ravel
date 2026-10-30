@@ -65,6 +65,15 @@ func Text(doc model.Document, explanation Explanation) string {
 	if component.PURL != "" {
 		lines = append(lines, "purl: "+component.PURL)
 	}
+	for _, patch := range component.Patches {
+		lines = append(lines, fmt.Sprintf("patch: %s [%s]", patch.Path, patch.Status))
+		if patch.Hash != nil {
+			lines = append(lines, "  patch hash: "+patch.Hash.Alg+":"+patch.Hash.Content)
+		}
+		for _, evidence := range patch.Evidence {
+			lines = append(lines, evidenceLine(evidence))
+		}
+	}
 	for _, origin := range explanation.Origins {
 		location := origin.SafeURL
 		if location == "" {

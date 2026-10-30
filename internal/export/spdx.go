@@ -109,6 +109,23 @@ func SPDX23(doc model.Document) ([]byte, error) {
 		if c.Context != "" {
 			item.Comment = "Ravel context: " + c.Context
 		}
+		if len(c.Patches) > 0 {
+			for _, hash := range c.Hashes {
+				if item.Comment != "" {
+					item.Comment += "; "
+				}
+				item.Comment += "Ravel base artifact hash: " + hash.Alg + ":" + hash.Content
+			}
+			for _, patch := range c.Patches {
+				if item.Comment != "" {
+					item.Comment += "; "
+				}
+				item.Comment += "Ravel patch: " + strconv.Quote(patch.Path) + " status=" + patch.Status
+				if patch.Hash != nil {
+					item.Comment += " hash=" + patch.Hash.Alg + ":" + patch.Hash.Content
+				}
+			}
+		}
 		for _, source := range doc.Development {
 			if source.Occurrence != c.ID {
 				continue
@@ -122,6 +139,9 @@ func SPDX23(doc model.Document) ([]byte, error) {
 			item.ExternalRefs = []spdxExternalRef{{Category: "PACKAGE-MANAGER", Type: "purl", Locator: c.PURL}}
 		}
 		for _, h := range c.Hashes {
+			if len(c.Patches) > 0 {
+				continue
+			}
 			algorithm := strings.ReplaceAll(strings.ToUpper(h.Alg), "-", "")
 			if algorithm != "SHA1" && algorithm != "SHA256" && algorithm != "SHA384" && algorithm != "SHA512" && algorithm != "MD5" {
 				continue

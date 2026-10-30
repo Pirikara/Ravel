@@ -87,6 +87,14 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"npm-v1-orphan", "npm", 2, 1, "partial", "complete_for_scope", []string{"used", "orphan"}, "", ""},
 		{"npm-v3", "npm", 4, 4, "complete_for_scope", "complete_for_scope", []string{"alpha", "beta", "@scope/tool"}, "", "secret"},
 		{"npm-generated-12", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
+		{"npm-v4-generated-12", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
+		{"npm-v4-unpatched", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
+		{"npm-v4-patch-missing", "npm", 1, 1, "complete_for_scope", "partial", []string{"is-number"}, "", ""},
+		{"npm-v4-patch-mismatch", "npm", 1, 1, "complete_for_scope", "partial", []string{"is-number"}, "", ""},
+		{"npm-v4-patch-unsafe", "npm", 1, 1, "complete_for_scope", "partial", []string{"is-number"}, "", "secret-patch"},
+		{"npm-v4-manifest-mismatch", "npm", 1, 1, "partial", "complete_for_scope", []string{"is-number"}, "", ""},
+		{"npm-v4-range-selector", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
+		{"npm-v4-lock-missing-patch", "npm", 1, 1, "partial", "complete_for_scope", []string{"is-number"}, "", ""},
 		{"npm-optional", "npm", 3, 3, "partial", "partial", []string{"alpha", "native-addon", "peer-lib"}, "", ""},
 		{"bun-basic", "bun", 2, 2, "complete_for_scope", "partial", []string{"alpha", "beta"}, "", ""},
 		{"bun-git", "bun", 2, 2, "complete_for_scope", "complete_for_scope", []string{"gitpkg", "webpkg"}, "", "hidden"},
@@ -367,6 +375,71 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		}
 		if fixture == "pnpm-generated-10" && doc.Components[0].PURL != "" {
 			t.Fatal("pnpm lock without tarball URL assumed default npm registry")
+		}
+	case "npm-v4-generated-12", "npm-v4-unpatched", "npm-v4-patch-missing", "npm-v4-patch-mismatch", "npm-v4-patch-unsafe", "npm-v4-manifest-mismatch", "npm-v4-range-selector", "npm-v4-lock-missing-patch":
+		if len(doc.Components) != 1 || !connected("root", find("is-number", "7.0.0")) || doc.Components[0].PURL != "pkg:npm/is-number@7.0.0" || len(doc.Components[0].Hashes) != 1 {
+			t.Fatal("npm v4 package identity, base integrity, or dependency missing")
+		}
+		patches := doc.Components[0].Patches
+		if fixture == "npm-v4-unpatched" || fixture == "npm-v4-lock-missing-patch" {
+			if len(patches) != 0 {
+				t.Fatal("unpatched npm v4 package acquired a patch")
+			}
+			if fixture == "npm-v4-lock-missing-patch" && !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "manifest_freshness_unverified" }) {
+				t.Fatal("npm v4 manifest patch missing from lockfile was not reported")
+			}
+			break
+		}
+		if len(patches) != 1 || patches[0].Hash == nil || patches[0].Hash.Alg != "SHA-512" {
+			t.Fatal("npm v4 patch integrity was lost")
+		}
+		wantStatus := map[string]string{
+			"npm-v4-generated-12":      "content_verified",
+			"npm-v4-patch-missing":     "unavailable",
+			"npm-v4-patch-mismatch":    "integrity_mismatch",
+			"npm-v4-patch-unsafe":      "invalid_metadata",
+			"npm-v4-manifest-mismatch": "content_verified",
+			"npm-v4-range-selector":    "content_verified",
+		}[fixture]
+		if patches[0].Status != wantStatus || ((fixture == "npm-v4-generated-12" || fixture == "npm-v4-range-selector") && (patches[0].Path != "patches/is-number@7.0.0.patch" || len(patches[0].Evidence) != 3)) {
+			t.Fatalf("npm v4 patch state not established: %+v", patches[0])
+		}
+		if fixture == "npm-v4-patch-unsafe" && patches[0].Path != "" {
+			t.Fatal("unsafe npm v4 patch path was exported")
+		}
+		if fixture != "npm-v4-generated-12" && fixture != "npm-v4-range-selector" {
+			wantIssue := map[string]string{
+				"npm-v4-patch-missing":     "patch_unavailable",
+				"npm-v4-patch-mismatch":    "patch_integrity_mismatch",
+				"npm-v4-patch-unsafe":      "patch_metadata_invalid",
+				"npm-v4-manifest-mismatch": "manifest_freshness_unverified",
+			}[fixture]
+			if !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == wantIssue }) {
+				t.Fatalf("npm v4 patch problem not reported: %+v", doc.Coverage.Issues)
+			}
+		}
+		var bom struct {
+			Components []struct {
+				Name       string       `json:"name"`
+				Hashes     []model.Hash `json:"hashes"`
+				Properties []struct {
+					Name  string `json:"name"`
+					Value string `json:"value"`
+				} `json:"properties"`
+			} `json:"components"`
+		}
+		if err := json.Unmarshal(bomData, &bom); err != nil {
+			t.Fatal(err)
+		}
+		if len(bom.Components) != 1 || len(bom.Components[0].Hashes) != 0 {
+			t.Fatal("pre-patch tarball integrity was presented as the patched package checksum")
+		}
+		properties := map[string]string{}
+		for _, property := range bom.Components[0].Properties {
+			properties[property.Name] = property.Value
+		}
+		if properties["ravel:patchStatus"] != wantStatus || properties["ravel:baseArtifactHash"] == "" || properties["ravel:patchHash"] == "" {
+			t.Fatalf("npm v4 patch context missing in CycloneDX: %+v", properties)
 		}
 	case "npm-v1-generated-12":
 		odd := find("is-odd", "3.0.1")
@@ -1735,7 +1808,7 @@ func TestManagerSelectionAndUnsupportedFormats(t *testing.T) {
 	if yarnCoverage.Manager != "yarn" {
 		t.Fatal("packageManager yarn hint ignored")
 	}
-	for _, name := range []string{"bun-legacy", "bun-v3-unsupported", "bun-missing-version-unsupported", "bun-malformed-metadata-unsupported", "uv-unsupported", "pylock-unsupported", "nuget-assets-unsupported", "pnpm-unsupported", "poetry-unsupported", "yarn-unsupported", "cargo-unsupported", "composer-unsupported", "cocoapods-unsupported", "pipenv-unsupported", "pdm-unsupported", "go-vendor-unsupported", "pub-unsupported", "gradle-unsupported", "maven-unsupported", "maven-option-unsupported"} {
+	for _, name := range []string{"bun-legacy", "bun-v3-unsupported", "bun-missing-version-unsupported", "bun-malformed-metadata-unsupported", "npm-v5-unsupported", "uv-unsupported", "pylock-unsupported", "nuget-assets-unsupported", "pnpm-unsupported", "poetry-unsupported", "yarn-unsupported", "cargo-unsupported", "composer-unsupported", "cocoapods-unsupported", "pipenv-unsupported", "pdm-unsupported", "go-vendor-unsupported", "pub-unsupported", "gradle-unsupported", "maven-unsupported", "maven-option-unsupported"} {
 		cmd := exec.Command(executable, "scan", filepath.Join("..", "testdata", "fixtures", name), "--output", filepath.Join(t.TempDir(), "sbom.json"))
 		if err := cmd.Run(); err == nil {
 			t.Fatalf("unsupported format %s unexpectedly succeeded", name)

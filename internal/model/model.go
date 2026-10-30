@@ -24,6 +24,16 @@ type Component struct {
 	Context  string     `json:"context,omitempty"`
 	PURL     string     `json:"purl,omitempty"`
 	Hashes   []Hash     `json:"hashes,omitempty"`
+	Patches  []Patch    `json:"patches,omitempty"`
+	Evidence []Evidence `json:"evidence"`
+}
+
+// Patch describes a project-local modification declared for a package. Hashes
+// on the component continue to describe the unmodified distribution artifact.
+type Patch struct {
+	Path     string     `json:"path,omitempty"`
+	Hash     *Hash      `json:"hash,omitempty"`
+	Status   string     `json:"status"`
 	Evidence []Evidence `json:"evidence"`
 }
 

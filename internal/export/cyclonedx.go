@@ -65,6 +65,23 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 			kind = "application"
 		}
 		item := component{Type: kind, BomRef: c.ID, Name: c.Name, Version: c.Version, PURL: c.PURL, Hashes: c.Hashes}
+		if len(c.Patches) > 0 {
+			// The lockfile integrity is for the unmodified tarball, not the
+			// package tree after the project patch has been applied.
+			item.Hashes = nil
+			for _, hash := range c.Hashes {
+				item.Properties = append(item.Properties, property{Name: "ravel:baseArtifactHash", Value: hash.Alg + ":" + hash.Content})
+			}
+			for _, patch := range c.Patches {
+				item.Properties = append(item.Properties, property{Name: "ravel:patchStatus", Value: patch.Status})
+				if patch.Path != "" {
+					item.Properties = append(item.Properties, property{Name: "ravel:patchPath", Value: patch.Path})
+				}
+				if patch.Hash != nil {
+					item.Properties = append(item.Properties, property{Name: "ravel:patchHash", Value: patch.Hash.Alg + ":" + patch.Hash.Content})
+				}
+			}
+		}
 		seenVCS := map[string]bool{}
 		if c.Platform != "" {
 			item.Properties = append(item.Properties, property{Name: "ravel:platform", Value: c.Platform})

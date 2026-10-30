@@ -1,0 +1,2 @@
+# npm 12 generates patch headers with a literal tab after the filename.
+testdata/fixtures/npm-v4-*/patches/*.patch whitespace=-blank-at-eol

@@ -29,6 +29,12 @@ type lockPackage struct {
 	DevDependencies      map[string]string `json:"devDependencies"`
 	OptionalDependencies map[string]string `json:"optionalDependencies"`
 	PeerDependencies     map[string]string `json:"peerDependencies"`
+	Patched              *lockPatch        `json:"patched"`
+}
+
+type lockPatch struct {
+	Path      string `json:"path"`
+	Integrity string `json:"integrity"`
 }
 
 type item struct {
@@ -39,7 +45,7 @@ type item struct {
 
 var gitCommit = regexp.MustCompile(`^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$`)
 
-// Collect supports npm lockfile versions 1, 2, and 3.
+// Collect supports npm lockfile versions 1 through 4.
 func Collect(file, project string) (model.Document, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -52,7 +58,7 @@ func Collect(file, project string) (model.Document, error) {
 	if lock.LockfileVersion == 1 {
 		return collectV1(file, project, data)
 	}
-	if lock.LockfileVersion != 2 && lock.LockfileVersion != 3 || lock.Packages == nil {
+	if lock.LockfileVersion != 2 && lock.LockfileVersion != 3 && lock.LockfileVersion != 4 || lock.Packages == nil {
 		return model.Document{}, fmt.Errorf("unsupported npm lockfile version or missing packages map")
 	}
 	doc := common.NewDocument(file, project, "npm", data)
@@ -81,12 +87,25 @@ func Collect(file, project string) (model.Document, error) {
 			Hashes:   common.Integrity(meta.Integrity),
 			Evidence: []model.Evidence{ev},
 		}
+		if meta.Patched != nil {
+			patch, issue := inspectPatch(file, location, meta.Patched, common.Evidence(file, "npm-lock", pointer+"/patched", data))
+			component.Patches = []model.Patch{patch}
+			if issue != nil {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, *issue)
+			}
+			if lock.LockfileVersion < 4 {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsupported_lock_feature", Name: location})
+			}
+		}
 		if common.DefaultNpmRegistry(meta.Resolved) {
 			component.PURL = common.NpmPURL(name, meta.Version)
 		}
 		entries[location] = &item{location: location, data: meta, ref: ref}
 		doc.Components = append(doc.Components, component)
 		addOrigin(&doc, ref, meta.Resolved, ev)
+	}
+	if lock.LockfileVersion == 4 {
+		verifyPatchManifest(&doc, file, entries)
 	}
 	root, ok := lock.Packages[""]
 	if !ok {

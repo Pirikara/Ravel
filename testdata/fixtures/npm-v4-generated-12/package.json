@@ -1,0 +1,10 @@
+{
+  "name": "ravel-npm-generated",
+  "version": "1.0.0",
+  "dependencies": {
+    "is-number": "7.0.0"
+  },
+  "patchedDependencies": {
+    "is-number@7.0.0": "patches/is-number@7.0.0.patch"
+  }
+}

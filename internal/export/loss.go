@@ -36,6 +36,9 @@ func Losses(doc model.Document, format string) []Loss {
 	evidence := 0
 	for _, component := range doc.Components {
 		evidence += len(component.Evidence)
+		for _, patch := range component.Patches {
+			evidence += len(patch.Evidence)
+		}
 	}
 	for _, edge := range doc.Edges {
 		if edge.Evidence.Collector != "" {
