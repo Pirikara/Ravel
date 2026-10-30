@@ -203,6 +203,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	goScanLimited := false
 	pythonRuntimes := map[string]pythonRuntimeState{}
 	pythonRuntimeLimited := false
+	rubyRuntimes := map[string]rubyRuntimeState{}
+	rubyRuntimeLimited := false
 	var nodeRuntimeBinary *nodeRuntimeBinaryState
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
@@ -242,6 +244,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for name := range pythonRuntimes {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		for name := range rubyRuntimes {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -291,6 +301,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(pythonRuntimes, name)
 				}
 			}
+			for name := range rubyRuntimes {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(rubyRuntimes, name)
+				}
+			}
 		}
 		for name, data := range change.python {
 			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
@@ -316,6 +331,10 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			pythonRuntimes[name] = state
 		}
 		pythonRuntimeLimited = pythonRuntimeLimited || change.pythonRuntimeLimited
+		for name, state := range change.rubyRuntimes {
+			rubyRuntimes[name] = state
+		}
+		rubyRuntimeLimited = rubyRuntimeLimited || change.rubyRuntimeLimited
 		if change.nodeRuntimeBinary != nil {
 			nodeRuntimeBinary = change.nodeRuntimeBinary
 		}
@@ -371,6 +390,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if len(pythonRuntimes) > maxPythonRuntimeFiles {
 			return model.Document{}, errors.New("OCI image has too many Python runtime library records")
 		}
+		if len(rubyRuntimes) > maxRubyRuntimeFiles {
+			return model.Document{}, errors.New("OCI image has too many Ruby runtime library records")
+		}
 		goModules := 0
 		for _, state := range goBinaries {
 			goModules += len(state.document.Components)
@@ -394,7 +416,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			installedDatabases++
 		}
 	}
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -406,6 +428,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if pythonRuntimeLimited {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_runtime_scan_limited"})
+		}
+		if rubyRuntimeLimited {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_runtime_scan_limited"})
 		}
 		common.Finalize(&doc)
 		doc.Coverage.GraphState = "unknown"
@@ -419,6 +444,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	}
 	if pythonRuntimeLimited {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_runtime_scan_limited"})
+	}
+	if rubyRuntimeLimited {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_runtime_scan_limited"})
 	}
 	if installedDatabases == 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"})
@@ -620,6 +648,22 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Edges = append(doc.Edges, installed.Edges...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
+	rubyRuntimeNames := make([]string, 0, len(rubyRuntimes))
+	for name := range rubyRuntimes {
+		rubyRuntimeNames = append(rubyRuntimeNames, name)
+	}
+	sort.Strings(rubyRuntimeNames)
+	for _, name := range rubyRuntimeNames {
+		state := rubyRuntimes[name]
+		if state.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_runtime_" + state.status, Name: name})
+			continue
+		}
+		installed := state.document
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+	}
 	if nodeRuntimeBinary != nil {
 		if nodeRuntimeBinary.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_" + nodeRuntimeBinary.status, Name: nodeRuntimeBinaryPath})
@@ -766,6 +810,8 @@ type layerChange struct {
 	goLimited            bool
 	pythonRuntimes       map[string]pythonRuntimeState
 	pythonRuntimeLimited bool
+	rubyRuntimes         map[string]rubyRuntimeState
+	rubyRuntimeLimited   bool
 	nodeRuntimeBinary    *nodeRuntimeBinaryState
 	nodeRuntimeHeader    *nodeRuntimeHeaderState
 	whiteouts            []string
@@ -802,7 +848,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -815,6 +861,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	goBytes := 0
 	goFiles := 0
 	pythonRuntimeBytes := 0
+	rubyRuntimeBytes := 0
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -1011,6 +1058,31 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 			continue
 		}
+		if isRubyRuntimeLibraryPath(name) && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			switch {
+			case header.Size > maxRubyRuntimeBytes:
+				change.rubyRuntimes[name] = rubyRuntimeState{status: "oversized"}
+			case int64(rubyRuntimeBytes)+header.Size > maxRubyRuntimeLayerBytes:
+				change.rubyRuntimeLimited = true
+			default:
+				data, err := io.ReadAll(io.LimitReader(reader, maxRubyRuntimeBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI Ruby runtime library entry")
+				}
+				rubyRuntimeBytes += len(data)
+				input := "oci:" + item.Digest + "!/" + name
+				runtimeDoc, err := inspectRubyRuntimeLibrary(data, input, project, name)
+				if err != nil {
+					change.rubyRuntimes[name] = rubyRuntimeState{status: "invalid"}
+				} else {
+					change.rubyRuntimes[name] = rubyRuntimeState{document: runtimeDoc}
+				}
+			}
+			if relevantLanguagePaths[name] {
+				change.whiteouts = append(change.whiteouts, name)
+			}
+			continue
+		}
 		if name == nodeRuntimeBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
 			if change.nodeRuntimeBinary != nil {
 				return layerChange{}, "", errors.New("duplicate OCI Node runtime executable entry")
@@ -1121,6 +1193,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Python runtime library beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	for name := range change.rubyRuntimes {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Ruby runtime library beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}
