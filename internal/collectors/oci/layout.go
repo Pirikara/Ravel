@@ -13,30 +13,34 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"ravel/internal/collectors/apk"
 	"ravel/internal/collectors/common"
 	"ravel/internal/collectors/dpkg"
+	"ravel/internal/collectors/python"
 	"ravel/internal/model"
 )
 
 const (
-	maxMetadataBytes  = 8 << 20
-	maxDatabaseBytes  = 128 << 20
-	maxLayerBytes     = 2 << 30
-	maxExpandedLayer  = 4 << 30
-	maxLayerEntries   = 1000000
-	maxImageLayers    = 128
-	manifestMediaType = "application/vnd.oci.image.manifest.v1+json"
-	indexMediaType    = "application/vnd.oci.image.index.v1+json"
-	configMediaType   = "application/vnd.oci.image.config.v1+json"
-	plainLayerType    = "application/vnd.oci.image.layer.v1.tar"
-	gzipLayerType     = "application/vnd.oci.image.layer.v1.tar+gzip"
-	plainNonDistType  = "application/vnd.oci.image.layer.nondistributable.v1.tar"
-	gzipNonDistType   = "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"
-	statusPath        = "var/lib/dpkg/status"
-	apkInstalledPath  = "lib/apk/db/installed"
+	maxMetadataBytes       = 8 << 20
+	maxDatabaseBytes       = 128 << 20
+	maxLayerBytes          = 2 << 30
+	maxExpandedLayer       = 4 << 30
+	maxLayerEntries        = 1000000
+	maxImageLayers         = 128
+	maxPythonMetadataFiles = 2000
+	maxPythonMetadataTotal = 128 << 20
+	manifestMediaType      = "application/vnd.oci.image.manifest.v1+json"
+	indexMediaType         = "application/vnd.oci.image.index.v1+json"
+	configMediaType        = "application/vnd.oci.image.config.v1+json"
+	plainLayerType         = "application/vnd.oci.image.layer.v1.tar"
+	gzipLayerType          = "application/vnd.oci.image.layer.v1.tar+gzip"
+	plainNonDistType       = "application/vnd.oci.image.layer.nondistributable.v1.tar"
+	gzipNonDistType        = "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"
+	statusPath             = "var/lib/dpkg/status"
+	apkInstalledPath       = "lib/apk/db/installed"
 )
 
 var databasePaths = []string{statusPath, apkInstalledPath}
@@ -158,8 +162,18 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		layer string
 	}
 	databases := map[string]databaseState{}
+	pythonMetadata := map[string]databaseState{}
 	for i, layer := range choice.layers {
-		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i])
+		relevantPaths := map[string]bool{}
+		for name := range pythonMetadata {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths)
 		if err != nil {
 			return model.Document{}, fmt.Errorf("OCI layer %d: %w", i, err)
 		}
@@ -172,12 +186,32 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				databases[name] = databaseState{data: update.data, layer: layer.Digest}
 			}
 		}
+		for _, removed := range change.whiteouts {
+			for name := range pythonMetadata {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(pythonMetadata, name)
+				}
+			}
+		}
+		for name, data := range change.python {
+			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
+		}
+		if len(pythonMetadata) > maxPythonMetadataFiles {
+			return model.Document{}, errors.New("OCI image has too many installed Python metadata files")
+		}
+		metadataBytes := 0
+		for _, state := range pythonMetadata {
+			metadataBytes += len(state.data)
+		}
+		if metadataBytes > maxPythonMetadataTotal {
+			return model.Document{}, errors.New("OCI image installed Python metadata exceeded size limit")
+		}
 	}
 	platform := choice.config.OS + "/" + choice.config.Architecture
 	if choice.config.Variant != "" {
 		platform += "/" + choice.config.Variant
 	}
-	if len(databases) == 0 {
+	if len(databases) == 0 && len(pythonMetadata) == 0 {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -191,6 +225,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	doc := common.NewDocument(layout, project, "oci", nil)
 	doc.Sources = sources
 	doc.Coverage.Platforms = []string{platform}
+	if len(databases) == 0 {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk"})
+	}
 	for _, name := range databasePaths {
 		state, found := databases[name]
 		if !found {
@@ -211,6 +248,25 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Origins = append(doc.Origins, database.Origins...)
 		doc.Development = append(doc.Development, database.Development...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, database.Coverage.Issues...)
+	}
+	pythonNames := make([]string, 0, len(pythonMetadata))
+	for name := range pythonMetadata {
+		pythonNames = append(pythonNames, name)
+	}
+	sort.Strings(pythonNames)
+	for _, name := range pythonNames {
+		state := pythonMetadata[name]
+		evidencePath := "oci:" + state.layer + "!/" + name
+		installed, err := python.CollectInstalledMetadata(state.data, evidencePath, project, name)
+		if err != nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_installed_metadata_invalid", Name: name})
+			continue
+		}
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Origins = append(doc.Origins, installed.Origins...)
+		doc.Development = append(doc.Development, installed.Development...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_language_packages_unscanned"})
 	for i := range doc.Components {
@@ -313,10 +369,12 @@ type databaseChange struct {
 }
 
 type layerChange struct {
-	files map[string]databaseChange
+	files     map[string]databaseChange
+	python    map[string][]byte
+	whiteouts []string
 }
 
-func scanLayer(layout string, item descriptor, diffID string) (layerChange, string, error) {
+func scanLayer(layout string, item descriptor, diffID string, relevantPythonPaths map[string]bool) (layerChange, string, error) {
 	if item.MediaType != plainLayerType && item.MediaType != gzipLayerType && item.MediaType != plainNonDistType && item.MediaType != gzipNonDistType {
 		return layerChange{}, "", fmt.Errorf("unsupported OCI layer media type %s", item.MediaType)
 	}
@@ -347,10 +405,11 @@ func scanLayer(layout string, item descriptor, diffID string) (layerChange, stri
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	entries := 0
+	pythonBytes := 0
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -382,12 +441,33 @@ func scanLayer(layout string, item descriptor, diffID string) (layerChange, stri
 			if base == ".wh..wh..opq" {
 				deletedPath = path.Dir(name)
 			}
+			if relevantPythonPaths[deletedPath] {
+				change.whiteouts = append(change.whiteouts, deletedPath)
+			}
 			for _, target := range databasePaths {
 				if ancestorOfTarget(deletedPath, target) {
 					update := change.files[target]
 					update.deleted = true
 					change.files[target] = update
 				}
+			}
+			continue
+		}
+		if python.IsInstalledMetadataPath(name) {
+			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > python.MaxInstalledMetadataBytes {
+				return layerChange{}, "", fmt.Errorf("unsupported OCI installed Python metadata entry: %s", name)
+			}
+			if _, duplicate := change.python[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI installed Python metadata entry: %s", name)
+			}
+			data, err := io.ReadAll(io.LimitReader(reader, python.MaxInstalledMetadataBytes+1))
+			if err != nil || len(data) > python.MaxInstalledMetadataBytes {
+				return layerChange{}, "", errors.New("OCI installed Python metadata exceeded size limit")
+			}
+			change.python[name] = data
+			pythonBytes += len(data)
+			if len(change.python) > maxPythonMetadataFiles || pythonBytes > maxPythonMetadataTotal {
+				return layerChange{}, "", errors.New("OCI layer has too much installed Python metadata")
 			}
 			continue
 		}
@@ -414,6 +494,9 @@ func scanLayer(layout string, item descriptor, diffID string) (layerChange, stri
 				parentReplaced[target] = true
 			}
 		}
+		if relevantPythonPaths[name] && header.Typeflag != tar.TypeDir {
+			change.whiteouts = append(change.whiteouts, name)
+		}
 	}
 	for target := range parentReplaced {
 		if seenDatabase[target] {
@@ -439,7 +522,7 @@ func scanLayer(layout string, item descriptor, diffID string) (layerChange, stri
 }
 
 func cleanTarPath(raw string) (string, error) {
-	if raw == "" || strings.HasPrefix(raw, "/") || strings.ContainsAny(raw, "\\\x00") {
+	if raw == "" || len(raw) > 4096 || strings.HasPrefix(raw, "/") || strings.ContainsAny(raw, "\\\x00") {
 		return "", errors.New("unsafe OCI layer path")
 	}
 	for _, segment := range strings.Split(raw, "/") {

@@ -461,3 +461,73 @@ func TestOCIMixedOSDatabases(t *testing.T) {
 		t.Fatalf("mixed OCI OS databases failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
 	}
 }
+
+func TestOCIPythonInstalledMetadataOverlay(t *testing.T) {
+	const site = "usr/local/lib/python3.13/site-packages/"
+	metadata := func(name, version, requires string) []byte {
+		return []byte("Metadata-Version: 2.3\nName: " + name + "\nVersion: " + version + "\n" + requires + "\n")
+	}
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{
+		{entries: []ociTestEntry{
+			{name: site + "demo_pkg-1.2.0.dist-info/METADATA", data: metadata("demo-pkg", "1.2.0", "Requires-Dist: idna >=3")},
+			{name: site + "idna-3.10.dist-info/METADATA", data: metadata("idna", "3.10", "")},
+		}},
+		{entries: []ociTestEntry{
+			{name: site + "demo_pkg-2.0.0.dist-info/METADATA", data: metadata("demo-pkg", "2.0.0", "Requires-Dist: idna >=3")},
+			{name: site + ".wh.demo_pkg-1.2.0.dist-info"},
+		}},
+	})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 2 || doc.Coverage.GraphState != "partial" {
+		t.Fatalf("OCI Python metadata overlay failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	versions := map[string]string{}
+	for _, component := range doc.Components {
+		versions[component.Name] = component.Version
+		if component.Evidence[0].Collector != "python-dist-info" || !strings.Contains(component.Evidence[0].InputPath, "!/"+site) {
+			t.Fatalf("OCI Python evidence incorrect: %#v", component)
+		}
+	}
+	if versions["demo-pkg"] != "2.0.0" || versions["idna"] != "3.10" {
+		t.Fatalf("OCI Python whiteout kept a stale distribution: %#v", versions)
+	}
+	issues := map[string]bool{}
+	for _, issue := range doc.Coverage.Issues {
+		issues[issue.Code] = true
+	}
+	if !issues["declared_dependencies_unresolved"] || !issues["os_package_database_not_found"] {
+		t.Fatalf("OCI Python coverage did not declare its limits: %#v", doc.Coverage.Issues)
+	}
+	archive := ociTestArchive(t, layout, "python.oci.tar")
+	archiveDoc, output, code := ociTestScan(t, archive)
+	if code != 0 || archiveDoc.Coverage.Packages != 2 {
+		t.Fatalf("OCI Python archive scan failed: code=%d output=%s coverage=%#v", code, output, archiveDoc.Coverage)
+	}
+}
+
+func TestOCIPythonOpaqueDirectoryAndInvalidMetadata(t *testing.T) {
+	const site = "usr/local/lib/python3.13/site-packages/"
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{
+		{entries: []ociTestEntry{{name: site + "old-1.0.dist-info/METADATA", data: []byte("Metadata-Version: 2.3\nName: old\nVersion: 1.0\n")}}},
+		{entries: []ociTestEntry{
+			{name: site + ".wh..wh..opq"},
+			{name: site + "new-2.0.dist-info/METADATA", data: []byte("Metadata-Version: 2.3\nName: new\nVersion: 2.0\n")},
+			{name: site + "wrong-1.0.dist-info/METADATA", data: []byte("Metadata-Version: 2.3\nName: other\nVersion: 1.0\n")},
+		}},
+	})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 1 || doc.Components[0].Name != "new" {
+		t.Fatalf("OCI Python opaque directory failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	foundInvalid := false
+	for _, issue := range doc.Coverage.Issues {
+		foundInvalid = foundInvalid || issue.Code == "python_installed_metadata_invalid"
+	}
+	if !foundInvalid || doc.Coverage.OriginState != "partial" {
+		t.Fatalf("invalid OCI Python metadata was not reported: %#v", doc.Coverage)
+	}
+}
