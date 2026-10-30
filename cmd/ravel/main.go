@@ -597,7 +597,7 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		if isRequirementsName(name) {
 			return "requirements"
 		}
-		if strings.HasSuffix(strings.ToLower(name), ".oci.tar") {
+		if strings.HasSuffix(strings.ToLower(name), ".oci.tar") || strings.HasSuffix(strings.ToLower(name), ".docker.tar") {
 			return "oci"
 		}
 		if strings.HasSuffix(strings.ToLower(name), ".jar") || strings.HasSuffix(strings.ToLower(name), ".war") {

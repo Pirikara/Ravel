@@ -98,6 +98,9 @@ func CollectArchive(archive, project, platform string) (model.Document, error) {
 		}
 	}
 	if !seen["oci-layout"] || !seen["index.json"] {
+		if !seen["oci-layout"] && !seen["index.json"] {
+			return collectLegacyDockerArchive(archive, project, platform)
+		}
 		return model.Document{}, errors.New("OCI archive lacks oci-layout or index.json")
 	}
 	doc, err := Collect(temp, project, platform)

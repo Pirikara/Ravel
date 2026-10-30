@@ -54,9 +54,14 @@ var (
 )
 
 type descriptor struct {
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
+	MediaType   string            `json:"mediaType"`
+	Digest      string            `json:"digest"`
+	Size        int64             `json:"size"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Platform    *struct {
+		OS           string `json:"os"`
+		Architecture string `json:"architecture"`
+	} `json:"platform,omitempty"`
 }
 
 type imageIndex struct {
@@ -344,6 +349,9 @@ func readLocalMetadata(file string) ([]byte, error) {
 func collectManifests(layout string, item descriptor, depth int, seen map[string]bool, out *[]descriptor, sources *[]string) error {
 	if depth > 8 || len(*out) > 128 {
 		return errors.New("OCI image index exceeds traversal limit")
+	}
+	if item.Annotations["vnd.docker.reference.type"] == "attestation-manifest" && item.Platform != nil && item.Platform.OS == "unknown" && item.Platform.Architecture == "unknown" {
+		return nil // Docker attaches attestations as non-runnable manifests.
 	}
 	if item.MediaType != manifestMediaType && item.MediaType != indexMediaType {
 		return nil // indexes may contain artifact descriptors

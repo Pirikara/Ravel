@@ -463,6 +463,27 @@ func TestOCIMixedOSDatabases(t *testing.T) {
 	}
 }
 
+func TestOCIIndexSkipsDockerAttestationManifest(t *testing.T) {
+	layout := ociTestLayout(t)
+	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{{name: "var/lib/dpkg/status", data: ociTestStatus(t, "dpkg-basic")}}}})
+	attestation := ociTestImage(t, layout, "unknown", "unknown", nil)
+	nestedData, err := json.Marshal(map[string]any{"schemaVersion": 2, "manifests": []any{
+		image,
+		map[string]any{"mediaType": attestation.MediaType, "digest": attestation.Digest, "size": attestation.Size,
+			"platform":    map[string]string{"os": "unknown", "architecture": "unknown"},
+			"annotations": map[string]string{"vnd.docker.reference.type": "attestation-manifest"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nested := ociTestBlob(t, layout, "application/vnd.oci.image.index.v1+json", nestedData)
+	ociTestIndex(t, layout, nested)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 4 || len(doc.Coverage.Platforms) != 1 || doc.Coverage.Platforms[0] != "linux/amd64" {
+		t.Fatalf("Docker attestation blocked OCI image selection: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+}
+
 func TestOCIPythonInstalledMetadataOverlay(t *testing.T) {
 	const site = "usr/local/lib/python3.13/site-packages/"
 	metadata := func(name, version, requires string) []byte {
