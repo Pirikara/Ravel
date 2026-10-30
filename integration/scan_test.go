@@ -117,6 +117,9 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"nuget-assets-v3", "nuget", 2, 2, "complete_for_scope", "partial", []string{"Example.Core", "Example.Abstractions"}, "", ""},
 		{"nuget-assets-v4", "nuget", 2, 2, "partial", "partial", []string{"Example.Core"}, "", ""},
 		{"pnpm-basic", "pnpm", 2, 2, "complete_for_scope", "complete_for_scope", []string{"alpha", "beta"}, "", "secret"},
+		{"pnpm-v6-generated-8", "pnpm", 2, 2, "complete_for_scope", "partial", []string{"is-odd", "is-number"}, "", ""},
+		{"pnpm-v6-workspace-8", "pnpm", 1, 1, "partial", "partial", []string{"is-number"}, "", ""},
+		{"pnpm-v6-peer", "pnpm", 6, 8, "complete_for_scope", "complete_for_scope", []string{"wrapper-a", "wrapper-b", "widget", "react"}, "", ""},
 		{"pnpm-generated-10", "pnpm", 1, 1, "complete_for_scope", "partial", []string{"is-number"}, "", ""},
 		{"pnpm-enrich", "pnpm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
 		{"pnpm-peer", "pnpm", 6, 6, "complete_for_scope", "partial", []string{"wrapper-a", "wrapper-b", "widget", "react"}, "", ""},
@@ -813,6 +816,37 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			if c.ID == alpha && (len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-512") {
 				t.Fatal("pnpm integrity missing")
 			}
+		}
+	case "pnpm-v6-generated-8":
+		odd, number := find("is-odd", "3.0.1"), find("is-number", "6.0.0")
+		if !connected("root", odd) || !connected(odd, number) {
+			t.Fatal("pnpm v6 package dependency graph missing")
+		}
+		for _, c := range doc.Components {
+			if len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-512" || c.PURL != "" {
+				t.Fatal("pnpm v6 integrity missing or default registry identity invented")
+			}
+		}
+	case "pnpm-v6-workspace-8":
+		if !connected("root", find("is-number", "7.0.0")) {
+			t.Fatal("pnpm v6 workspace importer dependency missing")
+		}
+		if !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "unresolved_dependency" }) {
+			t.Fatal("pnpm v6 workspace link was not reported as unresolved")
+		}
+	case "pnpm-v6-peer":
+		var widgets []string
+		for _, c := range doc.Components {
+			if c.Name == "widget" && c.Version == "1.0.0" {
+				widgets = append(widgets, c.ID)
+			}
+		}
+		if len(widgets) != 2 || widgets[0] == widgets[1] {
+			t.Fatal("pnpm v6 peer occurrences collapsed")
+		}
+		left, right := find("react", "17.0.2"), find("react", "18.2.0")
+		if !(connected(widgets[0], left) && connected(widgets[1], right) || connected(widgets[0], right) && connected(widgets[1], left)) {
+			t.Fatal("pnpm v6 peer occurrences linked to wrong React version")
 		}
 	case "pnpm-peer":
 		var widgets []string

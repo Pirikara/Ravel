@@ -1,0 +1,45 @@
+lockfileVersion: '6.0'
+
+importers:
+  .:
+    dependencies:
+      wrapper-a:
+        specifier: 1.0.0
+        version: 1.0.0
+      wrapper-b:
+        specifier: 1.0.0
+        version: 1.0.0
+
+packages:
+  /wrapper-a@1.0.0:
+    resolution:
+      tarball: https://registry.example.test/wrapper-a/-/wrapper-a-1.0.0.tgz
+    dependencies:
+      widget: 1.0.0(react@18.2.0)
+      react: 18.2.0
+  /wrapper-b@1.0.0:
+    resolution:
+      tarball: https://registry.example.test/wrapper-b/-/wrapper-b-1.0.0.tgz
+    dependencies:
+      widget: 1.0.0(react@17.0.2)
+      react: 17.0.2
+  /widget@1.0.0(react@18.2.0):
+    resolution:
+      tarball: https://registry.example.test/widget/-/widget-1.0.0.tgz
+    peerDependencies:
+      react: ^17 || ^18
+    dependencies:
+      react: 18.2.0
+  /widget@1.0.0(react@17.0.2):
+    resolution:
+      tarball: https://registry.example.test/widget/-/widget-1.0.0.tgz
+    peerDependencies:
+      react: ^17 || ^18
+    dependencies:
+      react: 17.0.2
+  /react@18.2.0:
+    resolution:
+      tarball: https://registry.example.test/react/-/react-18.2.0.tgz
+  /react@17.0.2:
+    resolution:
+      tarball: https://registry.example.test/react/-/react-17.0.2.tgz

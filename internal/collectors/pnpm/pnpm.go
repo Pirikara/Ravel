@@ -16,10 +16,13 @@ import (
 )
 
 type lockDocument struct {
-	LockfileVersion string                  `yaml:"lockfileVersion"`
-	Importers       map[string]importer     `yaml:"importers"`
-	Packages        map[string]packageEntry `yaml:"packages"`
-	Snapshots       map[string]snapshot     `yaml:"snapshots"`
+	LockfileVersion      string                  `yaml:"lockfileVersion"`
+	Importers            map[string]importer     `yaml:"importers"`
+	Dependencies         map[string]imported     `yaml:"dependencies"`
+	DevDependencies      map[string]imported     `yaml:"devDependencies"`
+	OptionalDependencies map[string]imported     `yaml:"optionalDependencies"`
+	Packages             map[string]packageEntry `yaml:"packages"`
+	Snapshots            map[string]snapshot     `yaml:"snapshots"`
 }
 
 type importer struct {
@@ -40,9 +43,11 @@ type packageEntry struct {
 		Integrity string `yaml:"integrity"`
 		Tarball   string `yaml:"tarball"`
 	} `yaml:"resolution"`
-	OS   []string `yaml:"os"`
-	CPU  []string `yaml:"cpu"`
-	Libc []string `yaml:"libc"`
+	OS                   []string          `yaml:"os"`
+	CPU                  []string          `yaml:"cpu"`
+	Libc                 []string          `yaml:"libc"`
+	Dependencies         map[string]string `yaml:"dependencies"`
+	OptionalDependencies map[string]string `yaml:"optionalDependencies"`
 }
 
 type snapshot struct {
@@ -74,13 +79,16 @@ func Collect(file, project string) (model.Document, error) {
 		if err != nil {
 			return model.Document{}, fmt.Errorf("invalid pnpm-lock.yaml: %w", err)
 		}
-		if !strings.HasPrefix(lock.LockfileVersion, "9.") {
+		if !strings.HasPrefix(lock.LockfileVersion, "9.") && !strings.HasPrefix(lock.LockfileVersion, "6.") {
 			return model.Document{}, fmt.Errorf("unsupported pnpm lockfile version %q", lock.LockfileVersion)
+		}
+		if strings.HasPrefix(lock.LockfileVersion, "9.") && len(lock.Importers) == 0 {
+			return model.Document{}, fmt.Errorf("pnpm lockfile has no project importers")
 		}
 		documents = append(documents, lock)
 	}
-	if len(documents) == 0 || len(documents[len(documents)-1].Importers) == 0 {
-		return model.Document{}, fmt.Errorf("pnpm lockfile has no project importers")
+	if len(documents) == 0 {
+		return model.Document{}, fmt.Errorf("empty pnpm lockfile")
 	}
 	doc := common.NewDocument(file, project, "pnpm", data)
 	if len(documents) > 1 {
@@ -88,27 +96,48 @@ func Collect(file, project string) (model.Document, error) {
 	}
 	for documentIndex, lock := range documents {
 		byKey := map[string]occurrence{}
-		for key, snap := range lock.Snapshots {
-			base := strings.SplitN(key, "(", 2)[0]
-			pkg, exists := lock.Packages[base]
-			if !exists {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "snapshot without package metadata"})
-				continue
+		if strings.HasPrefix(lock.LockfileVersion, "6.") {
+			// pnpm 8 stores dependency edges on each package and may use top-level
+			// dependency groups instead of an importers map for a single project.
+			if len(lock.Importers) == 0 {
+				lock.Importers = map[string]importer{".": {
+					Dependencies: lock.Dependencies, DevDependencies: lock.DevDependencies,
+					OptionalDependencies: lock.OptionalDependencies,
+				}}
 			}
-			occ := addPackage(&doc, file, data, documentIndex, key, base, pkg, snap)
-			byKey[key] = occ
-		}
-		for key, pkg := range lock.Packages {
-			found := false
-			for snapshotKey := range lock.Snapshots {
-				if strings.SplitN(snapshotKey, "(", 2)[0] == key {
-					found = true
-					break
+			for key, pkg := range lock.Packages {
+				normalized := strings.TrimPrefix(key, "/")
+				if _, exists := byKey[normalized]; exists {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ambiguous_dependency", Name: normalized})
+					continue
 				}
+				base := strings.SplitN(normalized, "(", 2)[0]
+				snap := snapshot{Dependencies: pkg.Dependencies, OptionalDependencies: pkg.OptionalDependencies}
+				byKey[normalized] = addPackage(&doc, file, data, documentIndex, key, base, pkg, snap)
 			}
-			if !found {
-				byKey[key] = addPackage(&doc, file, data, documentIndex, key, key, pkg, snapshot{})
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph", Name: "package without snapshot"})
+		} else {
+			for key, snap := range lock.Snapshots {
+				base := strings.SplitN(key, "(", 2)[0]
+				pkg, exists := lock.Packages[base]
+				if !exists {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "snapshot without package metadata"})
+					continue
+				}
+				occ := addPackage(&doc, file, data, documentIndex, key, base, pkg, snap)
+				byKey[key] = occ
+			}
+			for key, pkg := range lock.Packages {
+				found := false
+				for snapshotKey := range lock.Snapshots {
+					if strings.SplitN(snapshotKey, "(", 2)[0] == key {
+						found = true
+						break
+					}
+				}
+				if !found {
+					byKey[key] = addPackage(&doc, file, data, documentIndex, key, key, pkg, snapshot{})
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph", Name: "package without snapshot"})
+				}
 			}
 		}
 		resolve := func(name, version string) occurrence {
