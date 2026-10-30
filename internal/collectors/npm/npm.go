@@ -3,9 +3,11 @@ package npm
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -104,29 +106,59 @@ func Collect(file, project string) (model.Document, error) {
 		doc.Components = append(doc.Components, component)
 		addOrigin(&doc, ref, meta.Resolved, ev)
 	}
-	if lock.LockfileVersion == 4 {
-		verifyPatchManifest(&doc, file, entries)
-	}
 	root, ok := lock.Packages[""]
 	if !ok {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
+	} else {
+		manifestPath := filepath.Join(filepath.Dir(file), "package.json")
+		if manifestData, err := os.ReadFile(manifestPath); err == nil {
+			doc.Sources = append(doc.Sources, manifestPath)
+			var manifest struct {
+				Name                 string            `json:"name"`
+				Version              string            `json:"version"`
+				Dependencies         map[string]string `json:"dependencies"`
+				DevDependencies      map[string]string `json:"devDependencies"`
+				OptionalDependencies map[string]string `json:"optionalDependencies"`
+				PeerDependencies     map[string]string `json:"peerDependencies"`
+			}
+			if json.Unmarshal(manifestData, &manifest) != nil ||
+				!maps.Equal(manifest.Dependencies, root.Dependencies) ||
+				!maps.Equal(manifest.DevDependencies, root.DevDependencies) ||
+				!maps.Equal(manifest.OptionalDependencies, root.OptionalDependencies) ||
+				!maps.Equal(manifest.PeerDependencies, root.PeerDependencies) ||
+				manifest.Name != "" && root.Name != "" && manifest.Name != root.Name ||
+				manifest.Version != "" && root.Version != "" && manifest.Version != root.Version {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
+			}
+		}
+	}
+	if lock.LockfileVersion == 4 {
+		verifyPatchManifest(&doc, file, entries)
 	}
 	seen := map[string]bool{}
 	addEdges := func(from, location, kind string, deps map[string]string) {
-		for name := range deps {
+		for name, required := range deps {
 			to := resolve(entries, location, name)
-			if to == "" {
+			if to == nil {
 				if kind != "optional" && kind != "peer_requirement" {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: name})
 				}
 				continue
 			}
-			key := from + "\x00" + to + "\x00" + kind
+			matches, verified := matchesNpmRequirement(required, to)
+			if !matches {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: name})
+				continue
+			}
+			if !verified {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dependency_constraint_unverified", Name: name})
+			}
+			key := from + "\x00" + to.ref + "\x00" + kind
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
-			edge := model.Edge{From: from, To: to, Kind: kind, Evidence: common.Evidence(file, "npm-lock", "/packages/"+escapePointer(location), data)}
+			edge := model.Edge{From: from, To: to.ref, Kind: kind, Evidence: common.Evidence(file, "npm-lock", "/packages/"+escapePointer(location), data)}
 			if kind == "optional" || kind == "peer_requirement" {
 				edge.Condition = kind
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: name})
@@ -143,6 +175,27 @@ func Collect(file, project string) (model.Document, error) {
 		addEdges(entry.ref, entry.location, "depends_on", entry.data.Dependencies)
 		addEdges(entry.ref, entry.location, "optional", entry.data.OptionalDependencies)
 		addEdges(entry.ref, entry.location, "peer_requirement", entry.data.PeerDependencies)
+	}
+	adjacent := map[string][]string{}
+	for _, edge := range doc.Edges {
+		adjacent[edge.From] = append(adjacent[edge.From], edge.To)
+	}
+	reachable := map[string]bool{"root": true}
+	queue := []string{"root"}
+	for len(queue) != 0 {
+		from := queue[0]
+		queue = queue[1:]
+		for _, to := range adjacent[from] {
+			if !reachable[to] {
+				reachable[to] = true
+				queue = append(queue, to)
+			}
+		}
+	}
+	for _, component := range doc.Components {
+		if !reachable[component.ID] {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph", Name: component.Name})
+		}
 	}
 	common.Finalize(&doc)
 	return doc, nil
@@ -163,15 +216,15 @@ func nameFromLocation(location string) string {
 	return strings.SplitN(name, "/", 2)[0]
 }
 
-func resolve(entries map[string]*item, location, name string) string {
+func resolve(entries map[string]*item, location, name string) *item {
 	base := location
 	for {
 		candidate := path.Join(base, "node_modules", name)
 		if entry := entries[candidate]; entry != nil {
-			return entry.ref
+			return entry
 		}
 		if base == "" {
-			return ""
+			return nil
 		}
 		idx := strings.LastIndex(base, "node_modules/")
 		if idx < 0 {

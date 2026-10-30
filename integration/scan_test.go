@@ -86,6 +86,12 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"npm-v1-scoped", "npm", 2, 2, "complete_for_scope", "complete_for_scope", []string{"@scope/core", "@scope/util"}, "", ""},
 		{"npm-v1-orphan", "npm", 2, 1, "partial", "complete_for_scope", []string{"used", "orphan"}, "", ""},
 		{"npm-v3", "npm", 4, 4, "complete_for_scope", "complete_for_scope", []string{"alpha", "beta", "@scope/tool"}, "", "secret"},
+		{"npm-v3-alias-generated-11", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "number-alias", ""},
+		{"npm-v3-alias-mismatch", "npm", 1, 0, "partial", "complete_for_scope", []string{"is-number"}, "number-alias", ""},
+		{"npm-v3-stale", "npm", 2, 1, "partial", "complete_for_scope", []string{"parent", "child"}, "", ""},
+		{"npm-v3-orphan", "npm", 2, 1, "partial", "complete_for_scope", []string{"used", "orphan"}, "", ""},
+		{"npm-v3-selector-unverified", "npm", 1, 1, "partial", "complete_for_scope", []string{"opaque"}, "", ""},
+		{"npm-v3-manifest-mismatch", "npm", 1, 1, "partial", "complete_for_scope", []string{"is-number"}, "", ""},
 		{"npm-generated-12", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
 		{"npm-v4-generated-12", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
 		{"npm-v4-unpatched", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
@@ -838,6 +844,35 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			if component.PURL != "" {
 				t.Fatal("private npm registry package assigned default npm PURL")
 			}
+		}
+	case "npm-v3-alias-generated-11":
+		if !connected("root", find("is-number", "7.0.0")) || doc.Components[0].PURL != "pkg:npm/is-number@7.0.0" || len(doc.Components[0].Hashes) != 1 || slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "dependency_constraint_unverified" }) {
+			t.Fatal("npm alias lost installed identity or range verification")
+		}
+	case "npm-v3-alias-mismatch":
+		if connected("root", find("is-number", "7.0.0")) || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool {
+			return issue.Code == "unresolved_dependency" && issue.Name == "number-alias"
+		}) {
+			t.Fatal("npm alias linked to the wrong actual package")
+		}
+	case "npm-v3-stale":
+		parent, child := find("parent", "1.0.0"), find("child", "1.0.0")
+		if !connected("root", parent) || connected(parent, child) || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "unresolved_dependency" && issue.Name == "child" }) {
+			t.Fatal("npm v3 stale range created a false dependency edge")
+		}
+	case "npm-v3-orphan":
+		if !connected("root", find("used", "1.0.0")) || connected("root", find("orphan", "2.0.0")) || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "unreachable_graph" && issue.Name == "orphan" }) {
+			t.Fatal("npm v3 orphan package was presented as a complete graph")
+		}
+	case "npm-v3-selector-unverified":
+		if !connected("root", find("opaque", "1.0.0")) || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool {
+			return issue.Code == "dependency_constraint_unverified" && issue.Name == "opaque"
+		}) {
+			t.Fatal("npm v3 opaque selector was silently treated as verified")
+		}
+	case "npm-v3-manifest-mismatch":
+		if !connected("root", find("is-number", "7.0.0")) || len(doc.Sources) != 1 || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "manifest_freshness_unverified" }) {
+			t.Fatal("npm v3 stale package.json was not reported")
 		}
 	case "npm-optional", "bun-platform":
 		var parsed struct {

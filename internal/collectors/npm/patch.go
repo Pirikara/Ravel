@@ -104,7 +104,16 @@ func verifyPatchManifest(doc *model.Document, lockfile string, entries map[strin
 	if len(patched) == 0 && len(manifest.PatchedDependencies) == 0 {
 		return
 	}
-	doc.Sources = append(doc.Sources, manifestPath)
+	foundSource := false
+	for _, source := range doc.Sources {
+		if source == manifestPath {
+			foundSource = true
+			break
+		}
+	}
+	if !foundSource {
+		doc.Sources = append(doc.Sources, manifestPath)
+	}
 	index := map[string]int{}
 	for i, component := range doc.Components {
 		index[component.ID] = i
