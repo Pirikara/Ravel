@@ -19,6 +19,7 @@ import (
 	"ravel/internal/collectors/apk"
 	"ravel/internal/collectors/common"
 	"ravel/internal/collectors/dpkg"
+	"ravel/internal/collectors/javaarchive"
 	"ravel/internal/collectors/npm"
 	"ravel/internal/collectors/python"
 	"ravel/internal/collectors/rpm"
@@ -36,6 +37,8 @@ const (
 	maxPythonMetadataTotal = 128 << 20
 	maxNodeMetadataFiles   = 20000
 	maxNodeMetadataTotal   = 128 << 20
+	maxJavaArchiveFiles    = 1000
+	maxJavaArchiveTotal    = 256 << 20
 	manifestMediaType      = "application/vnd.oci.image.manifest.v1+json"
 	indexMediaType         = "application/vnd.oci.image.index.v1+json"
 	configMediaType        = "application/vnd.oci.image.config.v1+json"
@@ -94,6 +97,12 @@ type imageConfig struct {
 type imageChoice struct {
 	config imageConfig
 	layers []descriptor
+}
+
+type javaArchiveState struct {
+	data   []byte
+	layer  string
+	status string
 }
 
 // Collect reads an OCI image layout directory. It reconstructs the final
@@ -181,6 +190,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	databases := map[string]databaseState{}
 	pythonMetadata := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
+	javaArchives := map[string]javaArchiveState{}
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
 		for _, metadata := range []map[string]databaseState{pythonMetadata, nodeMetadata} {
@@ -190,6 +200,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					if current == "." {
 						break
 					}
+				}
+			}
+		}
+		for name := range javaArchives {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
 				}
 			}
 		}
@@ -214,12 +232,21 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					}
 				}
 			}
+			for name := range javaArchives {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(javaArchives, name)
+				}
+			}
 		}
 		for name, data := range change.python {
 			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
 		}
 		for name, data := range change.node {
 			nodeMetadata[name] = databaseState{data: data, layer: layer.Digest}
+		}
+		for name, state := range change.java {
+			state.layer = layer.Digest
+			javaArchives[name] = state
 		}
 		if len(pythonMetadata) > maxPythonMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Python metadata files")
@@ -241,6 +268,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if nodeBytes > maxNodeMetadataTotal {
 			return model.Document{}, errors.New("OCI image installed Node package metadata exceeded size limit")
 		}
+		if len(javaArchives) > maxJavaArchiveFiles {
+			return model.Document{}, errors.New("OCI image has too many Java archives")
+		}
+		javaBytes := 0
+		for _, state := range javaArchives {
+			javaBytes += len(state.data)
+		}
+		if javaBytes > maxJavaArchiveTotal {
+			return model.Document{}, errors.New("OCI image Java archives exceeded size limit")
+		}
 	}
 	platform := choice.config.OS + "/" + choice.config.Architecture
 	if choice.config.Variant != "" {
@@ -257,7 +294,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			installedDatabases++
 		}
 	}
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(nodeMetadata) == 0 {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -358,6 +395,32 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 	}
 	npm.LinkInstalledDependencies(&doc, installedNodeRecords)
+	javaNames := make([]string, 0, len(javaArchives))
+	for name := range javaArchives {
+		javaNames = append(javaNames, name)
+	}
+	sort.Strings(javaNames)
+	for _, name := range javaNames {
+		state := javaArchives[name]
+		if state.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "java_installed_archive_" + state.status, Name: name})
+			continue
+		}
+		evidencePath := "oci:" + state.layer + "!/" + name
+		installed, err := javaarchive.CollectBytes(state.data, evidencePath, project)
+		if err != nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "java_installed_archive_invalid", Name: name})
+			continue
+		}
+		for i := range installed.Components {
+			installed.Components[i].Context = "location=/" + name
+		}
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Origins = append(doc.Origins, installed.Origins...)
+		doc.Development = append(doc.Development, installed.Development...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_language_packages_unscanned"})
 	for i := range doc.Components {
 		doc.Components[i].Context += ";image=" + platform
@@ -480,6 +543,7 @@ type layerChange struct {
 	files     map[string]databaseChange
 	python    map[string][]byte
 	node      map[string][]byte
+	java      map[string]javaArchiveState
 	whiteouts []string
 }
 
@@ -514,13 +578,14 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, node: map[string][]byte{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, node: map[string][]byte{}, java: map[string]javaArchiveState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
 	entries := 0
 	pythonBytes := 0
 	nodeBytes := 0
+	javaBytes := 0
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -603,6 +668,34 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 			continue
 		}
+		if isJavaArchivePath(name) {
+			if _, duplicate := change.java[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI Java archive entry: %s", name)
+			}
+			if header.Typeflag == tar.TypeSymlink || header.Typeflag == tar.TypeLink {
+				change.java[name] = javaArchiveState{status: "link_unresolved"}
+			} else if header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA {
+				if header.Size > javaarchive.MaxInstalledArchiveBytes {
+					change.java[name] = javaArchiveState{status: "oversized"}
+				} else {
+					data, err := io.ReadAll(io.LimitReader(reader, javaarchive.MaxInstalledArchiveBytes+1))
+					if err != nil || len(data) > javaarchive.MaxInstalledArchiveBytes {
+						return layerChange{}, "", errors.New("OCI Java archive exceeded size limit")
+					}
+					change.java[name] = javaArchiveState{data: data}
+					javaBytes += len(data)
+					if javaBytes > maxJavaArchiveTotal {
+						return layerChange{}, "", errors.New("OCI layer Java archives exceeded size limit")
+					}
+				}
+			}
+			if len(change.java) > maxJavaArchiveFiles {
+				return layerChange{}, "", errors.New("OCI layer has too many Java archives")
+			}
+			if header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA {
+				continue
+			}
+		}
 		for _, target := range trackedDatabasePaths {
 			if name == target {
 				if seenDatabase[target] || header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxDatabaseBytes {
@@ -646,6 +739,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 		}
 	}
+	for name := range change.java {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Java archive beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
 	if _, err := io.Copy(io.Discard, stream); err != nil {
 		return layerChange{}, "", err
 	}
@@ -678,6 +778,11 @@ func cleanTarPath(raw string) (string, error) {
 
 func ancestorOfTarget(candidate, target string) bool {
 	return candidate == "." || candidate == target || strings.HasPrefix(target, candidate+"/")
+}
+
+func isJavaArchivePath(name string) bool {
+	base := strings.ToLower(path.Base(name))
+	return len(base) > 4 && (strings.HasSuffix(base, ".jar") || strings.HasSuffix(base, ".war"))
 }
 
 func allowedDatabaseParentLink(name, target string) bool {

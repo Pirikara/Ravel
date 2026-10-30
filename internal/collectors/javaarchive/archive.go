@@ -21,6 +21,7 @@ import (
 const maxNestedJAR = 64 << 20
 const maxDescriptor = 1 << 20
 const maxArchiveEntries = 100000
+const MaxInstalledArchiveBytes = 128 << 20
 
 type coordinate struct {
 	group, artifact, version string
@@ -45,9 +46,6 @@ func Collect(file, project string) (model.Document, error) {
 	if err != nil {
 		return model.Document{}, fmt.Errorf("invalid Java archive: %w", err)
 	}
-	if len(archive.File) > maxArchiveEntries {
-		return model.Document{}, fmt.Errorf("Java archive has too many entries")
-	}
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return model.Document{}, err
 	}
@@ -56,6 +54,26 @@ func Collect(file, project string) (model.Document, error) {
 		return model.Document{}, err
 	}
 	wholeHash := hex.EncodeToString(hasher.Sum(nil))
+	return collectArchive(archive, wholeHash, file, project)
+}
+
+// CollectBytes inspects an archive already read from a bounded OCI layer entry.
+func CollectBytes(data []byte, source, project string) (model.Document, error) {
+	if len(data) == 0 || len(data) > MaxInstalledArchiveBytes {
+		return model.Document{}, fmt.Errorf("Java archive is empty or exceeds installed archive size limit")
+	}
+	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return model.Document{}, fmt.Errorf("invalid Java archive: %w", err)
+	}
+	hash := sha256.Sum256(data)
+	return collectArchive(archive, hex.EncodeToString(hash[:]), source, project)
+}
+
+func collectArchive(archive *zip.Reader, wholeHash, file, project string) (model.Document, error) {
+	if len(archive.File) > maxArchiveEntries {
+		return model.Document{}, fmt.Errorf("Java archive has too many entries")
+	}
 	doc := common.NewDocument(file, project, "java-archive", nil)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "artifact_graph_partial"})
 	outerCoord, outerAmbiguous, err := identify(archive)
@@ -73,7 +91,7 @@ func Collect(file, project string) (model.Document, error) {
 	} else {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "artifact_identity_unresolved", Name: outerName})
 	}
-	outerRef := "java-archive:" + common.ID("outer|"+wholeHash)
+	outerRef := "java-archive:" + common.ID("outer|"+file+"|"+wholeHash)
 	outerEvidence := artifactEvidence(file, wholeHash, "/", "java-archive")
 	doc.Components = append(doc.Components, model.Component{ID: outerRef, Kind: "application", Name: outerName, Version: outerVersion, Hashes: []model.Hash{{Alg: "SHA-256", Content: wholeHash}}, Evidence: []model.Evidence{outerEvidence}})
 	if outerCoord != nil {
@@ -132,7 +150,7 @@ func Collect(file, project string) (model.Document, error) {
 		}
 		digest := sha256.Sum256(content)
 		hash := hex.EncodeToString(digest[:])
-		ref := "java-archive:" + common.ID(name+"|"+hash)
+		ref := "java-archive:" + common.ID(file+"|"+name+"|"+hash)
 		ev := artifactEvidence(file, wholeHash, "/"+name, "java-archive")
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: componentName, Version: version, Hashes: []model.Hash{{Alg: "SHA-256", Content: hash}}, Evidence: []model.Evidence{ev}})
 		if coord != nil {
