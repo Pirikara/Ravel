@@ -202,8 +202,18 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	goScanLimited := false
 	pythonRuntimes := map[string]pythonRuntimeState{}
 	pythonRuntimeLimited := false
+	var nodeRuntimeBinary *nodeRuntimeBinaryState
+	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath} {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
 		for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata} {
 			for name := range metadata {
 				for current := name; ; current = path.Dir(current) {
@@ -252,6 +262,12 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for _, removed := range change.whiteouts {
+			if removed == "." || removed == nodeRuntimeBinaryPath || strings.HasPrefix(nodeRuntimeBinaryPath, removed+"/") {
+				nodeRuntimeBinary = nil
+			}
+			if removed == "." || removed == nodeRuntimeHeaderPath || strings.HasPrefix(nodeRuntimeHeaderPath, removed+"/") {
+				nodeRuntimeHeader = nil
+			}
 			for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata} {
 				for name := range metadata {
 					if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
@@ -296,6 +312,12 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			pythonRuntimes[name] = state
 		}
 		pythonRuntimeLimited = pythonRuntimeLimited || change.pythonRuntimeLimited
+		if change.nodeRuntimeBinary != nil {
+			nodeRuntimeBinary = change.nodeRuntimeBinary
+		}
+		if change.nodeRuntimeHeader != nil {
+			nodeRuntimeHeader = change.nodeRuntimeHeader
+		}
 		if len(pythonMetadata) > maxPythonMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Python metadata files")
 		}
@@ -358,7 +380,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			installedDatabases++
 		}
 	}
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -560,6 +582,23 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Edges = append(doc.Edges, installed.Edges...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
+	if nodeRuntimeBinary != nil {
+		if nodeRuntimeBinary.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_" + nodeRuntimeBinary.status, Name: nodeRuntimeBinaryPath})
+		} else {
+			installed, err := nodeRuntimeDocument(*nodeRuntimeBinary, nodeRuntimeHeader, project)
+			if err != nil {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_version_mismatch", Name: nodeRuntimeBinaryPath})
+			} else {
+				doc.Components = append(doc.Components, installed.Components...)
+				doc.Edges = append(doc.Edges, installed.Edges...)
+				doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+			}
+		}
+	}
+	if nodeRuntimeHeader != nil && nodeRuntimeHeader.status != "" {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_" + nodeRuntimeHeader.status, Name: nodeRuntimeHeaderPath})
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_language_packages_unscanned"})
 	for i := range doc.Components {
 		doc.Components[i].Context += ";image=" + platform
@@ -688,6 +727,8 @@ type layerChange struct {
 	goLimited            bool
 	pythonRuntimes       map[string]pythonRuntimeState
 	pythonRuntimeLimited bool
+	nodeRuntimeBinary    *nodeRuntimeBinaryState
+	nodeRuntimeHeader    *nodeRuntimeHeaderState
 	whiteouts            []string
 }
 
@@ -912,6 +953,41 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 			continue
 		}
+		if name == nodeRuntimeBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.nodeRuntimeBinary != nil {
+				return layerChange{}, "", errors.New("duplicate OCI Node runtime executable entry")
+			}
+			if header.Size > maxNodeRuntimeBytes {
+				change.nodeRuntimeBinary = &nodeRuntimeBinaryState{status: "oversized"}
+			} else {
+				source := "oci:" + item.Digest + "!/" + name
+				state, err := inspectNodeRuntimeBinary(reader, header.Size, source)
+				if err != nil {
+					return layerChange{}, "", err
+				}
+				change.nodeRuntimeBinary = &state
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
+		if name == nodeRuntimeHeaderPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.nodeRuntimeHeader != nil {
+				return layerChange{}, "", errors.New("duplicate OCI Node runtime version header entry")
+			}
+			if header.Size > maxNodeHeaderBytes {
+				change.nodeRuntimeHeader = &nodeRuntimeHeaderState{status: "header_invalid"}
+			} else {
+				data, err := io.ReadAll(io.LimitReader(reader, maxNodeHeaderBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI Node runtime version header entry")
+				}
+				source := "oci:" + item.Digest + "!/" + name
+				state := inspectNodeRuntimeHeader(data, source)
+				change.nodeRuntimeHeader = &state
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
 		if (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) && header.Size >= 4 && !seenDatabase[name] {
 			var magic [4]byte
 			if _, err := io.ReadFull(reader, magic[:]); err != nil {
@@ -987,6 +1063,18 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Python runtime library beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	if change.nodeRuntimeBinary != nil || change.nodeRuntimeHeader != nil {
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath} {
+			if name == nodeRuntimeBinaryPath && change.nodeRuntimeBinary == nil || name == nodeRuntimeHeaderPath && change.nodeRuntimeHeader == nil {
+				continue
+			}
+			for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+				if nonDirectoryPaths[ancestor] {
+					return layerChange{}, "", fmt.Errorf("OCI layer contains Node runtime file beneath a non-directory entry: %s", ancestor)
+				}
 			}
 		}
 	}
