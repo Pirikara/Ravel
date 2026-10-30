@@ -24,25 +24,37 @@ type node struct {
 }
 
 func CollectTree(file, project string) (model.Document, error) {
-	f, err := os.Open(file)
+	data, root, err := readTree(file)
 	if err != nil {
 		return model.Document{}, err
+	}
+	return collectTree(file, project, data, root, nil)
+}
+
+func readTree(file string) ([]byte, node, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return nil, node{}, err
 	}
 	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, maxTreeOutput+1))
 	if err != nil {
-		return model.Document{}, err
+		return nil, node{}, err
 	}
 	if len(data) > maxTreeOutput {
-		return model.Document{}, fmt.Errorf("Maven dependency tree exceeded size limit")
+		return nil, node{}, fmt.Errorf("Maven dependency tree exceeded size limit")
 	}
 	var root node
 	if err := json.Unmarshal(data, &root); err != nil {
-		return model.Document{}, fmt.Errorf("invalid Maven dependency tree: %w", err)
+		return nil, node{}, fmt.Errorf("invalid Maven dependency tree: %w", err)
 	}
 	if root.GroupID == "" || root.ArtifactID == "" || root.Version == "" {
-		return model.Document{}, fmt.Errorf("Maven dependency tree root has no coordinates")
+		return nil, node{}, fmt.Errorf("Maven dependency tree root has no coordinates")
 	}
+	return data, root, nil
+}
+
+func collectTree(file, project string, data []byte, root node, stopAt func(node) bool) (model.Document, error) {
 	doc := common.NewDocument(file, project, "maven", data)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
 	byKey := map[string]int{}
@@ -113,6 +125,9 @@ func CollectTree(file, project string) (model.Document, error) {
 			}
 			doc.Edges = append(doc.Edges, model.Edge{From: parent, To: ref, Kind: kind, Condition: condition, Evidence: ev})
 			seenEdges[edgeKey] = true
+		}
+		if stopAt != nil && stopAt(n) {
+			return nil
 		}
 		for i, child := range n.Children {
 			if err := walk(child, ref, fmt.Sprintf("%s/children/%d", pointer, i), condition, depth+1); err != nil {

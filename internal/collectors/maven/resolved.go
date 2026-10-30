@@ -26,6 +26,22 @@ func CollectResolved(pom, project string, networkAllow bool) (model.Document, er
 	if err != nil {
 		return model.Document{}, err
 	}
+	if len(manifest.Modules) > 0 {
+		staticDoc, err := CollectPOM(pom, project)
+		if err != nil {
+			return model.Document{}, err
+		}
+		modulesReady := true
+		for _, issue := range staticDoc.Coverage.Issues {
+			if issue.Code == "maven_module_unresolved" || issue.Code == "multi_module_scope_root" {
+				modulesReady = false
+				break
+			}
+		}
+		if modulesReady {
+			return collectResolvedMulti(pom, project, manifest, staticDoc, networkAllow)
+		}
+	}
 	tempDir, err := os.MkdirTemp("", "ravel-maven-")
 	if err != nil {
 		return model.Document{}, err
