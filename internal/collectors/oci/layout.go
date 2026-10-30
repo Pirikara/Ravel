@@ -197,6 +197,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	pythonMetadata := map[string]databaseState{}
 	pipVendor := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
+	rubySpecs := map[string]databaseState{}
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
 	goScanLimited := false
@@ -214,7 +215,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				}
 			}
 		}
-		for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata} {
+		for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata, rubySpecs} {
 			for name := range metadata {
 				for current := name; ; current = path.Dir(current) {
 					relevantPaths[current] = true
@@ -268,7 +269,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			if removed == "." || removed == nodeRuntimeHeaderPath || strings.HasPrefix(nodeRuntimeHeaderPath, removed+"/") {
 				nodeRuntimeHeader = nil
 			}
-			for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata} {
+			for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata, rubySpecs} {
 				for name := range metadata {
 					if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 						delete(metadata, name)
@@ -299,6 +300,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		for name, data := range change.node {
 			nodeMetadata[name] = databaseState{data: data, layer: layer.Digest}
+		}
+		for name, data := range change.rubySpecs {
+			rubySpecs[name] = databaseState{data: data, layer: layer.Digest}
 		}
 		for name, state := range change.java {
 			state.layer = layer.Digest
@@ -341,6 +345,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if nodeBytes > maxNodeMetadataTotal {
 			return model.Document{}, errors.New("OCI image installed Node package metadata exceeded size limit")
 		}
+		if len(rubySpecs) > maxRubySpecFiles {
+			return model.Document{}, errors.New("OCI image has too many installed Ruby gemspecs")
+		}
+		rubyBytes := 0
+		for _, state := range rubySpecs {
+			rubyBytes += len(state.data)
+		}
+		if rubyBytes > maxRubySpecTotal {
+			return model.Document{}, errors.New("OCI image installed Ruby gemspecs exceeded size limit")
+		}
 		if len(javaArchives) > maxJavaArchiveFiles {
 			return model.Document{}, errors.New("OCI image has too many Java archives")
 		}
@@ -380,7 +394,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			installedDatabases++
 		}
 	}
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -522,6 +536,27 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 	}
 	npm.LinkInstalledDependencies(&doc, installedNodeRecords)
+	rubyNames := make([]string, 0, len(rubySpecs))
+	for name := range rubySpecs {
+		rubyNames = append(rubyNames, name)
+	}
+	sort.Strings(rubyNames)
+	rubyInstalled := false
+	for _, name := range rubyNames {
+		state := rubySpecs[name]
+		evidencePath := "oci:" + state.layer + "!/" + name
+		installed, err := inspectInstalledRubySpec(state.data, evidencePath, project, name)
+		if err != nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_installed_spec_invalid", Name: name})
+			continue
+		}
+		rubyInstalled = true
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+	}
+	if rubyInstalled {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_installed_graph_unavailable"}, model.Issue{Code: "ruby_installed_origin_unavailable"})
+	}
 	javaNames := make([]string, 0, len(javaArchives))
 	for name := range javaArchives {
 		javaNames = append(javaNames, name)
@@ -722,6 +757,7 @@ type layerChange struct {
 	python               map[string][]byte
 	pipVendor            map[string][]byte
 	node                 map[string][]byte
+	rubySpecs            map[string][]byte
 	java                 map[string]javaArchiveState
 	goBinaries           map[string]goBinaryState
 	goLimited            bool
@@ -763,7 +799,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -771,6 +807,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	pythonBytes := 0
 	pipVendorBytes := 0
 	nodeBytes := 0
+	rubyBytes := 0
 	javaBytes := 0
 	goBytes := 0
 	goFiles := 0
@@ -872,6 +909,24 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			nodeBytes += len(data)
 			if len(change.node) > maxNodeMetadataFiles || nodeBytes > maxNodeMetadataTotal {
 				return layerChange{}, "", errors.New("OCI layer has too much installed Node package metadata")
+			}
+			continue
+		}
+		if isInstalledRubySpecPath(name) {
+			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxRubySpecBytes {
+				return layerChange{}, "", fmt.Errorf("unsupported OCI installed Ruby gemspec entry: %s", name)
+			}
+			if _, duplicate := change.rubySpecs[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI installed Ruby gemspec entry: %s", name)
+			}
+			data, err := io.ReadAll(io.LimitReader(reader, maxRubySpecBytes+1))
+			if err != nil || len(data) != int(header.Size) {
+				return layerChange{}, "", errors.New("invalid OCI installed Ruby gemspec entry")
+			}
+			change.rubySpecs[name] = data
+			rubyBytes += len(data)
+			if len(change.rubySpecs) > maxRubySpecFiles || rubyBytes > maxRubySpecTotal {
+				return layerChange{}, "", errors.New("OCI layer has too much installed Ruby gemspec metadata")
 			}
 			continue
 		}
@@ -1036,7 +1091,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			return layerChange{}, "", fmt.Errorf("OCI layer replaces database parent directory and %s together", target)
 		}
 	}
-	for _, metadata := range []map[string][]byte{change.python, change.pipVendor, change.node} {
+	for _, metadata := range []map[string][]byte{change.python, change.pipVendor, change.node, change.rubySpecs} {
 		for name := range metadata {
 			for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 				if nonDirectoryPaths[ancestor] {
