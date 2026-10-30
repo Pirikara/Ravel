@@ -24,7 +24,9 @@ type pomDependency struct {
 type pomDocument struct {
 	XMLName      xml.Name        `xml:"project"`
 	GroupID      string          `xml:"groupId"`
+	ArtifactID   string          `xml:"artifactId"`
 	Version      string          `xml:"version"`
+	Packaging    string          `xml:"packaging"`
 	Dependencies []pomDependency `xml:"dependencies>dependency"`
 	Modules      []string        `xml:"modules>module"`
 	Properties   pomProperties   `xml:"properties"`
@@ -62,9 +64,9 @@ func (p *pomProperties) UnmarshalXML(decoder *xml.Decoder, start xml.StartElemen
 	}
 }
 
-// CollectPOM records exact, directly declared coordinates. Maven's selected
-// transitive graph requires the opt-in resolver and is never inferred here.
-func CollectPOM(file, project string) (model.Document, error) {
+// collectSinglePOM records exact, directly declared coordinates. Maven's
+// selected transitive graph requires the opt-in resolver and is not inferred.
+func collectSinglePOM(file, project string) (model.Document, error) {
 	pom, data, err := readPOM(file)
 	if err != nil {
 		return model.Document{}, err

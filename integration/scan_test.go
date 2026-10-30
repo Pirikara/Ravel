@@ -236,6 +236,7 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"maven-repeated", "maven", 3, 4, "partial", "partial", []string{"org.example:main", "org.example:tests", "org.example:shared"}, "", ""},
 		{"maven-pom-basic", "maven", 3, 3, "partial", "partial", []string{"org.slf4j:slf4j-api", "org.junit.jupiter:junit-jupiter", "org.example:property-resolved"}, "org.example:profile-only", ""},
 		{"maven-pom-module", "maven", 0, 0, "partial", "complete_for_scope", nil, "", ""},
+		{"maven-multi-module", "maven", 5, 7, "partial", "partial", []string{"org.demo:api", "org.demo:web", "org.demo:plugin", "org.example:shared", "org.example:plugin-lib"}, "", ""},
 		{"maven-pom-empty", "maven", 0, 0, "partial", "complete_for_scope", nil, "", ""},
 		{"maven-pom-duplicate", "maven", 0, 0, "partial", "complete_for_scope", nil, "org.example:lib", ""},
 	}
@@ -787,6 +788,31 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		}
 		if !found {
 			t.Fatalf("Maven module boundary not reported: %#v", doc.Coverage.Issues)
+		}
+	case "maven-multi-module":
+		api := find("org.demo:api", "1.0.0")
+		web := find("org.demo:web", "1.0.0")
+		plugin := find("org.demo:plugin", "1.0.0")
+		shared := find("org.example:shared", "2.0.0")
+		pluginLib := find("org.example:plugin-lib", "3.0.0")
+		if !connected("root", api) || !connected("root", web) || !connected(web, plugin) || !connected(web, api) || !connected(api, shared) || !connected(web, shared) || !connected(plugin, pluginLib) || connected("root", shared) || len(doc.Sources) != 3 {
+			t.Fatal("Maven module hierarchy or dependency ownership was lost")
+		}
+		for _, component := range doc.Components {
+			if component.ID == api && (component.Kind != "application" || component.Context != "module=api") {
+				t.Fatal("Maven reactor dependency was represented as a registry package")
+			}
+			if component.ID == shared && len(component.Evidence) != 2 {
+				t.Fatal("shared Maven dependency was duplicated or lost module evidence")
+			}
+		}
+		if slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "missing_source" && issue.Name == "org.demo:api" }) {
+			t.Fatal("local Maven module was reported as a missing external distribution")
+		}
+		if slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool {
+			return issue.Code == "multi_module_scope_root" || issue.Code == "maven_module_unresolved"
+		}) {
+			t.Fatal("fully discovered Maven modules were reported as omitted")
 		}
 	case "maven-pom-duplicate":
 		if len(doc.Components) != 0 {
