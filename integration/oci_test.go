@@ -26,6 +26,7 @@ type ociTestDescriptor struct {
 type ociTestEntry struct {
 	name     string
 	data     []byte
+	mode     int64
 	typeflag byte
 	linkname string
 }
@@ -72,7 +73,11 @@ func ociTestTar(t *testing.T, entries []ociTestEntry) []byte {
 		if typ != tar.TypeReg {
 			data = nil
 		}
-		header := &tar.Header{Name: entry.name, Typeflag: typ, Mode: 0o644, Size: int64(len(data)), Linkname: entry.linkname}
+		mode := entry.mode
+		if mode == 0 {
+			mode = 0o644
+		}
+		header := &tar.Header{Name: entry.name, Typeflag: typ, Mode: mode, Size: int64(len(data)), Linkname: entry.linkname}
 		if err := writer.WriteHeader(header); err != nil {
 			t.Fatal(err)
 		}

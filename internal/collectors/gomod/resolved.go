@@ -146,7 +146,7 @@ func CollectResolved(file, project string, networkAllow bool) (model.Document, e
 		ev.Method = "resolver-output"
 		identity := ""
 		if item.Replace == nil {
-			identity = modulePURL(item.Path, item.Version)
+			identity = common.GoModulePURL(item.Path, item.Version)
 		}
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: item.Path, Version: item.Version, PURL: identity, Evidence: []model.Evidence{ev}})
 		addResolvedOrigin(&doc, ref, item, ev)

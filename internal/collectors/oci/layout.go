@@ -42,6 +42,12 @@ const (
 	manifestMediaType      = "application/vnd.oci.image.manifest.v1+json"
 	indexMediaType         = "application/vnd.oci.image.index.v1+json"
 	configMediaType        = "application/vnd.oci.image.config.v1+json"
+	dockerManifestType     = "application/vnd.docker.distribution.manifest.v2+json"
+	dockerIndexType        = "application/vnd.docker.distribution.manifest.list.v2+json"
+	dockerConfigType       = "application/vnd.docker.container.image.v1+json"
+	dockerPlainLayerType   = "application/vnd.docker.image.rootfs.diff.tar"
+	dockerGzipLayerType    = "application/vnd.docker.image.rootfs.diff.tar.gzip"
+	dockerForeignLayerType = "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip"
 	plainLayerType         = "application/vnd.oci.image.layer.v1.tar"
 	gzipLayerType          = "application/vnd.oci.image.layer.v1.tar+gzip"
 	plainNonDistType       = "application/vnd.oci.image.layer.nondistributable.v1.tar"
@@ -156,7 +162,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		sources = append(sources, manifestPath)
 		var manifest imageManifest
-		if err := json.Unmarshal(manifestData, &manifest); err != nil || manifest.SchemaVersion != 2 || manifest.Config.MediaType != configMediaType || len(manifest.Layers) > maxImageLayers {
+		if err := json.Unmarshal(manifestData, &manifest); err != nil || manifest.SchemaVersion != 2 || manifest.Config.MediaType != configMediaType && manifest.Config.MediaType != dockerConfigType || len(manifest.Layers) > maxImageLayers {
 			return model.Document{}, errors.New("invalid OCI image manifest")
 		}
 		configData, configPath, err := readBlob(layout, manifest.Config, maxMetadataBytes)
@@ -191,6 +197,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	pythonMetadata := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
 	javaArchives := map[string]javaArchiveState{}
+	goBinaries := map[string]goBinaryState{}
+	goScanLimited := false
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
 		for _, metadata := range []map[string]databaseState{pythonMetadata, nodeMetadata} {
@@ -211,7 +219,15 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				}
 			}
 		}
-		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths)
+		for name := range goBinaries {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths, project)
 		if err != nil {
 			return model.Document{}, fmt.Errorf("OCI layer %d: %w", i, err)
 		}
@@ -237,6 +253,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(javaArchives, name)
 				}
 			}
+			for name := range goBinaries {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(goBinaries, name)
+				}
+			}
 		}
 		for name, data := range change.python {
 			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
@@ -248,6 +269,10 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			state.layer = layer.Digest
 			javaArchives[name] = state
 		}
+		for name, state := range change.goBinaries {
+			goBinaries[name] = state
+		}
+		goScanLimited = goScanLimited || change.goLimited
 		if len(pythonMetadata) > maxPythonMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Python metadata files")
 		}
@@ -278,6 +303,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if javaBytes > maxJavaArchiveTotal {
 			return model.Document{}, errors.New("OCI image Java archives exceeded size limit")
 		}
+		if len(goBinaries) > maxGoBinaryImageFiles {
+			return model.Document{}, errors.New("OCI image has too many Go binary records")
+		}
+		goModules := 0
+		for _, state := range goBinaries {
+			goModules += len(state.document.Components)
+		}
+		if goModules > 50000 {
+			return model.Document{}, errors.New("OCI image has too many Go module records")
+		}
 	}
 	platform := choice.config.OS + "/" + choice.config.Architecture
 	if choice.config.Variant != "" {
@@ -294,13 +329,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			installedDatabases++
 		}
 	}
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
 		doc.Coverage.GraphState = "unknown"
 		doc.Coverage.OriginState = "unknown"
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"}, model.Issue{Code: "image_language_packages_unscanned"})
+		if goScanLimited {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
+		}
 		common.Finalize(&doc)
 		doc.Coverage.GraphState = "unknown"
 		return doc, nil
@@ -308,6 +346,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	doc := common.NewDocument(layout, project, "oci", nil)
 	doc.Sources = sources
 	doc.Coverage.Platforms = []string{platform}
+	if goScanLimited {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
+	}
 	if installedDatabases == 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"})
 	}
@@ -421,6 +462,24 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Development = append(doc.Development, installed.Development...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
+	goNames := make([]string, 0, len(goBinaries))
+	for name := range goBinaries {
+		goNames = append(goNames, name)
+	}
+	sort.Strings(goNames)
+	for _, name := range goNames {
+		state := goBinaries[name]
+		if state.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_" + state.status, Name: name})
+			continue
+		}
+		installed := state.document
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Origins = append(doc.Origins, installed.Origins...)
+		doc.Development = append(doc.Development, installed.Development...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_language_packages_unscanned"})
 	for i := range doc.Components {
 		doc.Components[i].Context += ";image=" + platform
@@ -450,14 +509,14 @@ func collectManifests(layout string, item descriptor, requestedPlatform string, 
 	if requestedPlatform != "" && item.Platform != nil && !descriptorMatchesPlatform(item, requestedPlatform) {
 		return nil // Unselected platform blobs may be absent from sparse archives.
 	}
-	if item.MediaType != manifestMediaType && item.MediaType != indexMediaType {
+	if item.MediaType != manifestMediaType && item.MediaType != dockerManifestType && item.MediaType != indexMediaType && item.MediaType != dockerIndexType {
 		return nil // indexes may contain artifact descriptors
 	}
 	if seen[item.Digest] {
 		return nil
 	}
 	seen[item.Digest] = true
-	if item.MediaType == manifestMediaType {
+	if item.MediaType == manifestMediaType || item.MediaType == dockerManifestType {
 		*out = append(*out, item)
 		return nil
 	}
@@ -540,15 +599,17 @@ type databaseChange struct {
 }
 
 type layerChange struct {
-	files     map[string]databaseChange
-	python    map[string][]byte
-	node      map[string][]byte
-	java      map[string]javaArchiveState
-	whiteouts []string
+	files      map[string]databaseChange
+	python     map[string][]byte
+	node       map[string][]byte
+	java       map[string]javaArchiveState
+	goBinaries map[string]goBinaryState
+	goLimited  bool
+	whiteouts  []string
 }
 
-func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool) (layerChange, string, error) {
-	if item.MediaType != plainLayerType && item.MediaType != gzipLayerType && item.MediaType != plainNonDistType && item.MediaType != gzipNonDistType {
+func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, project string) (layerChange, string, error) {
+	if item.MediaType != plainLayerType && item.MediaType != gzipLayerType && item.MediaType != plainNonDistType && item.MediaType != gzipNonDistType && item.MediaType != dockerPlainLayerType && item.MediaType != dockerGzipLayerType && item.MediaType != dockerForeignLayerType {
 		return layerChange{}, "", fmt.Errorf("unsupported OCI layer media type %s", item.MediaType)
 	}
 	if !sha256Digest.MatchString(diffID) || item.Size > maxLayerBytes {
@@ -566,7 +627,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	compressedHash := sha256.New()
 	compressed := io.TeeReader(f, compressedHash)
 	var uncompressed io.Reader = compressed
-	if item.MediaType == gzipLayerType || item.MediaType == gzipNonDistType {
+	if item.MediaType == gzipLayerType || item.MediaType == gzipNonDistType || item.MediaType == dockerGzipLayerType || item.MediaType == dockerForeignLayerType {
 		gz, err := gzip.NewReader(compressed)
 		if err != nil {
 			return layerChange{}, "", err
@@ -578,7 +639,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, node: map[string][]byte{}, java: map[string]javaArchiveState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, node: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -586,6 +647,8 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	pythonBytes := 0
 	nodeBytes := 0
 	javaBytes := 0
+	goBytes := 0
+	goFiles := 0
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -721,6 +784,39 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 				parentReplaced[target] = true
 			}
 		}
+		if (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) && header.Size >= 4 && !seenDatabase[name] {
+			var magic [4]byte
+			if _, err := io.ReadFull(reader, magic[:]); err != nil {
+				return layerChange{}, "", err
+			}
+			if isELFMagic(magic[:]) {
+				goFiles++
+				switch {
+				case header.Size > maxGoBinaryBytes:
+					change.goBinaries[name] = goBinaryState{status: "oversized"}
+				case goFiles > maxGoBinaryFiles || int64(goBytes)+header.Size > maxGoBinaryLayerBytes:
+					change.goLimited = true
+				default:
+					remaining, err := io.ReadAll(io.LimitReader(reader, maxGoBinaryBytes+1))
+					if err != nil || len(remaining)+4 != int(header.Size) {
+						return layerChange{}, "", errors.New("invalid OCI executable entry")
+					}
+					data := append(magic[:], remaining...)
+					goBytes += len(data)
+					input := "oci:" + item.Digest + "!/" + name
+					binaryDoc, recognized, err := inspectGoBinary(data, input, project, name)
+					if err != nil {
+						status := "invalid"
+						if errors.Is(err, errGoBinaryModuleLimit) {
+							status = "scan_limited"
+						}
+						change.goBinaries[name] = goBinaryState{status: status}
+					} else if recognized {
+						change.goBinaries[name] = goBinaryState{document: binaryDoc}
+					}
+				}
+			}
+		}
 		if relevantLanguagePaths[name] && header.Typeflag != tar.TypeDir {
 			change.whiteouts = append(change.whiteouts, name)
 		}
@@ -743,6 +839,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Java archive beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	for name := range change.goBinaries {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Go binary beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}

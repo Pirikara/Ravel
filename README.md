@@ -134,12 +134,13 @@ The table describes inputs Ravel reads today. A listed format does not imply com
 | Debian rootfs | Installed packages from `var/lib/dpkg/status`; declared `Depends` and `Pre-Depends`. |
 | Alpine rootfs | APK text v2 `lib/apk/db/installed`; installed names and supported virtual providers. |
 | RPM rootfs | SQLite `rpmdb.sqlite`, NDB `Packages.db`, and Berkeley DB `Packages`; name, epoch, version, release, architecture, and conditional capability links. |
-| OCI image | Local OCI layout or OCI/Docker save tar archive, including gzip-compressed tar; final Debian, APK, or RPM database and JAR/WAR files after layer whiteouts. |
+| OCI image | Local OCI layout or OCI/Docker save tar archive, including gzip-compressed tar; final Debian, APK, or RPM database, JAR/WAR files, and Go ELF build information after layer whiteouts. |
 | Installed Python in OCI | `.dist-info/METADATA` records and `Requires-Dist` links when identifiable. |
 | Installed Node in OCI | Conventional `node_modules/*/package.json` records and dependency links when identifiable. |
 | Java archives in OCI | JAR/WAR files and identifiable nested JARs, with archive hashes and embedded Maven metadata. |
+| Go binaries in OCI | Embedded Go toolchain and module versions from Linux ELF files, tied to the executable's SHA-256 and image layer. The module-to-module dependency graph is not reconstructed. |
 
-OCI scans verify available descriptor SHA-256 hashes and uncompressed layer DiffIDs. A multi-image layout requires `--platform os/architecture[/variant]`. Legacy Docker save archives must contain one image. Ravel reads local image data; it does not pull images.
+OCI scans accept OCI and Docker schema 2 media types, verify available descriptor SHA-256 hashes and uncompressed layer DiffIDs. A multi-image layout requires `--platform os/architecture[/variant]`. Legacy Docker save archives must contain one image. Ravel reads local image data; it does not pull images.
 
 ## Scan workflows
 
@@ -231,7 +232,7 @@ The supported ecosystems are `rubygems`, `npm`, and `pypi`. Ravel checks the pac
 - **Static data has boundaries.** SwiftPM pins and Gradle lockfiles do not contain complete dependency graphs. Go vendor data and Pub lockfiles do not establish every transitive edge. Maven POMs are not effective POMs, and Poetry/Composer manifest freshness is not verified.
 - **Some choices remain conditional.** Python markers and extras, npm peers, NuGet target frameworks, Cargo features and targets, and CocoaPods targets can require an environment or target selection. These edges remain in Ravel JSON and are omitted from unconditional standard-format dependency lists.
 - **Installed OS databases do not prove repository origin.** Debian, APK, and RPM scans leave PURL and origin unset when the database cannot establish them. RPM dependency version flags are not exposed by the current parser, so its dependency edges stay conditional. APK binary v3 databases are not supported.
-- **OCI language coverage is still partial.** Installed Python dist-info, conventional Node package manifests, and JAR/WAR files are read. Other language packages and pnpm's content store are not yet inventoried from image files. Symlinked Node packages and Java archives are not followed. Java archive inspection is capped at 128 MiB per file, 256 MiB per image, and 1,000 files; oversized files appear in coverage.
+- **OCI language coverage is still partial.** Installed Python dist-info, conventional Node package manifests, JAR/WAR files, and Go ELF build information are read. Other language packages and pnpm's content store are not yet inventoried from image files. Symlinked Node packages and Java archives are not followed. Java archive inspection is capped at 128 MiB per file, 256 MiB per image, and 1,000 files. Go ELF inspection is capped at 64 MiB per file, 512 MiB and 1,000 files per layer, and 10,000 tracked files per image; skipped or malformed candidates appear in coverage.
 - **Some input versions are unsupported.** Binary `bun.lockb` is rejected; create a text `bun.lock` with Bun before scanning. Unknown lockfile versions and unparsed features are reported or rejected rather than silently guessed.
 
 ## Development
@@ -241,7 +242,7 @@ go test ./... -count=1
 go vet ./...
 ```
 
-The integration suite scans 183 supported fixture directories and 25 unsupported format cases. It validates CycloneDX 1.7 and SPDX 2.3 against their JSON Schemas and checks package counts, dependency edges, provenance, URL redaction, conditional relationships, and coverage. Fixtures include generated npm, pnpm, Yarn, Bundler, Composer, Bun, Deno, uv, and dotnet lockfiles; Debian, APK, and RPM installed databases; and package archives.
+The integration suite scans 183 supported fixture directories and 25 unsupported format cases. It validates CycloneDX 1.7 and SPDX 2.3 against their JSON Schemas and checks package counts, dependency edges, provenance, URL redaction, conditional relationships, and coverage. Fixtures include generated npm, pnpm, Yarn, Bundler, Composer, Bun, Deno, uv, and dotnet lockfiles; Debian, APK, and RPM installed databases; package archives; and OCI images with a Linux Go executable built for the test.
 
 The real Maven resolver tests are opt-in:
 

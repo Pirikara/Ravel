@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -74,7 +73,7 @@ func CollectVendor(file, project string) (model.Document, error) {
 		ev.Line = entry.line
 		identity := ""
 		if entry.replacement == "" {
-			identity = modulePURL(entry.path, entry.version)
+			identity = common.GoModulePURL(entry.path, entry.version)
 		}
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: entry.path, Version: entry.version, PURL: identity, Evidence: []model.Evidence{ev}})
 		switch {
@@ -227,18 +226,4 @@ func replacementMatches(mod *modfile.File, entry vendorModule) bool {
 		return filepath.Clean(replacement.New.Path) == filepath.Clean(entry.replacement)
 	}
 	return replacement.New.Path == entry.replacement
-}
-
-func modulePURL(path, version string) string {
-	if path == "" || version == "" || path != strings.ToLower(path) {
-		return ""
-	}
-	parts := strings.Split(path, "/")
-	if len(parts) < 2 {
-		return ""
-	}
-	for i, part := range parts {
-		parts[i] = url.PathEscape(part)
-	}
-	return "pkg:golang/" + strings.Join(parts, "/") + "@" + url.PathEscape(version)
 }
