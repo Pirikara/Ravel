@@ -254,6 +254,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		pythonNames = append(pythonNames, name)
 	}
 	sort.Strings(pythonNames)
+	var installedRecords []python.InstalledRecord
 	for _, name := range pythonNames {
 		state := pythonMetadata[name]
 		evidencePath := "oci:" + state.layer + "!/" + name
@@ -262,12 +263,18 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_installed_metadata_invalid", Name: name})
 			continue
 		}
+		installedRecords = append(installedRecords, python.InstalledRecord{Component: installed.Components[0], Metadata: state.data, MetadataPath: name})
 		doc.Components = append(doc.Components, installed.Components...)
 		doc.Edges = append(doc.Edges, installed.Edges...)
 		doc.Origins = append(doc.Origins, installed.Origins...)
 		doc.Development = append(doc.Development, installed.Development...)
-		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+		for _, issue := range installed.Coverage.Issues {
+			if issue.Code != "declared_dependencies_unresolved" {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, issue)
+			}
+		}
 	}
+	python.LinkInstalledRequirements(&doc, installedRecords)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_language_packages_unscanned"})
 	for i := range doc.Components {
 		doc.Components[i].Context += ";image=" + platform

@@ -480,7 +480,7 @@ func TestOCIPythonInstalledMetadataOverlay(t *testing.T) {
 	})
 	ociTestIndex(t, layout, manifest)
 	doc, output, code := ociTestScan(t, layout)
-	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 2 || doc.Coverage.GraphState != "partial" {
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 3 || doc.Coverage.GraphState != "partial" {
 		t.Fatalf("OCI Python metadata overlay failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
 	}
 	versions := map[string]string{}
@@ -497,13 +497,194 @@ func TestOCIPythonInstalledMetadataOverlay(t *testing.T) {
 	for _, issue := range doc.Coverage.Issues {
 		issues[issue.Code] = true
 	}
-	if !issues["declared_dependencies_unresolved"] || !issues["os_package_database_not_found"] {
+	if !issues["dependency_constraint_unverified"] || !issues["os_package_database_not_found"] || issues["declared_dependencies_unresolved"] {
 		t.Fatalf("OCI Python coverage did not declare its limits: %#v", doc.Coverage.Issues)
+	}
+	linked := false
+	for _, edge := range doc.Edges {
+		linked = linked || edge.Kind == "depends_on" && edge.Condition == "constraint=(>=3)" && edge.Evidence.Pointer == "Requires-Dist/0"
+	}
+	if !linked {
+		t.Fatalf("OCI Python version range was not retained as a conditional edge: %#v", doc.Edges)
 	}
 	archive := ociTestArchive(t, layout, "python.oci.tar")
 	archiveDoc, output, code := ociTestScan(t, archive)
-	if code != 0 || archiveDoc.Coverage.Packages != 2 {
+	if code != 0 || archiveDoc.Coverage.Packages != 2 || archiveDoc.Coverage.Edges != 3 {
 		t.Fatalf("OCI Python archive scan failed: code=%d output=%s coverage=%#v", code, output, archiveDoc.Coverage)
+	}
+}
+
+func TestOCIPythonInstalledRequirements(t *testing.T) {
+	const site = "usr/local/lib/python3.13/site-packages/"
+	metadata := func(name, version, requirements string) []byte {
+		return []byte("Metadata-Version: 2.3\nName: " + name + "\nVersion: " + version + "\n" + requirements + "\n")
+	}
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+		{name: site + "application-1.0.dist-info/METADATA", data: metadata("application", "1.0", strings.Join([]string{
+			"Requires-Dist: idna ==3.10",
+			"Requires-Dist: typing_extensions",
+			"Requires-Dist: charset-normalizer >=3; python_version >= \"3.11\"",
+			"Requires-Dist: idna ===3.10",
+			"Requires-Dist: requests[socks]",
+			"Requires-Dist: extra-only; extra == \"feature\"",
+			"Requires-Dist: mismatch ==2.0",
+			"Requires-Dist: venv-only",
+			"Requires-Dist: unsafe @ https://user:secret@example.invalid/pkg.whl",
+		}, "\n"))},
+		{name: site + "idna-3.10.dist-info/METADATA", data: metadata("idna", "3.10", "")},
+		{name: site + "typing_extensions-4.14.dist-info/METADATA", data: metadata("typing-extensions", "4.14", "")},
+		{name: site + "charset_normalizer-3.4.dist-info/METADATA", data: metadata("charset-normalizer", "3.4", "")},
+		{name: site + "requests-2.32.dist-info/METADATA", data: metadata("requests", "2.32", "")},
+		{name: site + "mismatch-1.0.dist-info/METADATA", data: metadata("mismatch", "1.0", "")},
+		{name: "opt/venv/lib/python3.13/site-packages/venv_only-1.0.dist-info/METADATA", data: metadata("venv-only", "1.0", "")},
+	}}})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 7 || doc.Coverage.Edges != 12 {
+		t.Fatalf("OCI Python requirements scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	ids := map[string]string{}
+	for _, component := range doc.Components {
+		ids[component.Name] = component.ID
+	}
+	conditions := map[string]bool{}
+	for _, edge := range doc.Edges {
+		if edge.From == ids["application"] {
+			for name, id := range ids {
+				if edge.To == id {
+					conditions[name+"\x00"+edge.Condition] = true
+				}
+			}
+		}
+	}
+	for _, key := range []string{
+		"idna\x00", "typing-extensions\x00", "requests\x00",
+		"idna\x00constraint=(===3.10)",
+		"charset-normalizer\x00marker=(python_version >= \"3.11\") && constraint=(>=3)",
+	} {
+		if !conditions[key] {
+			t.Fatalf("OCI Python requirement edge missing %q: %#v", key, doc.Edges)
+		}
+	}
+	if conditions["venv-only\x00"] || conditions["mismatch\x00"] {
+		t.Fatalf("cross-environment or wrong-version Python edge was created: %#v", doc.Edges)
+	}
+	issues := map[string]bool{}
+	for _, issue := range doc.Coverage.Issues {
+		issues[issue.Code] = true
+	}
+	for _, code := range []string{"python_requirement_unparsed", "requested_extra_graph_unavailable", "conditional_dependency_unresolved", "unresolved_dependency", "dependency_constraint_unverified", "conditional_graph"} {
+		if !issues[code] {
+			t.Fatalf("OCI Python issue %s missing: %#v", code, doc.Coverage.Issues)
+		}
+	}
+	if issues["declared_dependencies_unresolved"] {
+		t.Fatalf("obsolete unresolved issue remained after linking: %#v", doc.Coverage.Issues)
+	}
+	serialized, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(serialized, []byte("secret")) || bytes.Contains(serialized, []byte("example.invalid")) {
+		t.Fatalf("direct URL requirement leaked into SBOM: %s", serialized)
+	}
+	for _, format := range []string{"cyclonedx-json", "spdx-json"} {
+		out, err := exec.Command(executable, "scan", layout, "--format", format).Output()
+		if err != nil {
+			t.Fatalf("OCI Python %s export failed: %v", format, err)
+		}
+		if bytes.Contains(out, []byte("secret")) || bytes.Contains(out, []byte("example.invalid")) {
+			t.Fatalf("direct URL requirement leaked into %s export", format)
+		}
+		if format == "cyclonedx-json" {
+			var bom struct {
+				Dependencies []struct {
+					Ref       string   `json:"ref"`
+					DependsOn []string `json:"dependsOn"`
+				} `json:"dependencies"`
+			}
+			if err := json.Unmarshal(out, &bom); err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, dependency := range bom.Dependencies {
+				if dependency.Ref == ids["application"] {
+					found = true
+					if len(dependency.DependsOn) != 3 {
+						t.Fatalf("conditional Python edges entered CycloneDX: %#v", dependency)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("CycloneDX omitted definite Python dependencies")
+			}
+		} else {
+			var spdx struct {
+				Relationships []json.RawMessage `json:"relationships"`
+			}
+			if err := json.Unmarshal(out, &spdx); err != nil {
+				t.Fatal(err)
+			}
+			if len(spdx.Relationships) != 10 {
+				t.Fatalf("conditional Python edges entered SPDX: got %d relationships, want 10", len(spdx.Relationships))
+			}
+		}
+	}
+}
+
+func TestOCIPythonAmbiguousAndWhiteoutedRequirements(t *testing.T) {
+	const site = "usr/local/lib/python3.13/site-packages/"
+	metadata := func(name, version, requirements string) []byte {
+		return []byte("Metadata-Version: 2.3\nName: " + name + "\nVersion: " + version + "\n" + requirements + "\n")
+	}
+	for _, whiteout := range []bool{false, true} {
+		name := "ambiguous"
+		if whiteout {
+			name = "whiteout"
+		}
+		t.Run(name, func(t *testing.T) {
+			layout := ociTestLayout(t)
+			layers := []ociTestLayer{{entries: []ociTestEntry{
+				{name: site + "consumer-1.0.dist-info/METADATA", data: metadata("consumer", "1.0", "Requires-Dist: target")},
+				{name: site + "target-1.0.dist-info/METADATA", data: metadata("target", "1.0", "")},
+				{name: site + "target-2.0.dist-info/METADATA", data: metadata("target", "2.0", "")},
+			}}}
+			if whiteout {
+				layers = append(layers, ociTestLayer{entries: []ociTestEntry{
+					{name: site + ".wh.target-1.0.dist-info"},
+					{name: site + ".wh.target-2.0.dist-info"},
+				}})
+			}
+			manifest := ociTestImage(t, layout, "linux", "amd64", layers)
+			ociTestIndex(t, layout, manifest)
+			doc, output, code := ociTestScan(t, layout)
+			if code != 0 {
+				t.Fatalf("OCI Python candidate scan failed: %s", output)
+			}
+			linked := 0
+			for _, edge := range doc.Edges {
+				if edge.Kind == "depends_on" {
+					linked++
+					if !whiteout && edge.Condition != "candidate=target" {
+						t.Fatalf("ambiguous Python dependency became definite: %#v", edge)
+					}
+				}
+			}
+			issueCode := "ambiguous_dependency"
+			wantPackages, wantEdges, wantLinked := 3, 5, 2
+			if whiteout {
+				issueCode = "unresolved_dependency"
+				wantPackages, wantEdges, wantLinked = 1, 1, 0
+			}
+			found := false
+			for _, issue := range doc.Coverage.Issues {
+				found = found || issue.Code == issueCode && issue.Name == "target"
+			}
+			if doc.Coverage.Packages != wantPackages || doc.Coverage.Edges != wantEdges || linked != wantLinked || !found {
+				t.Fatalf("OCI Python candidate resolution incorrect: coverage=%#v edges=%#v", doc.Coverage, doc.Edges)
+			}
+		})
 	}
 }
 
