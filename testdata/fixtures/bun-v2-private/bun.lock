@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {"dependencies": {"private-lib": "1.0.0"}}
+  },
+  "packages": {
+    "private-lib": [
+      "private-lib@1.0.0",
+      "https://user:secret@packages.example.test/private-lib/-/private-lib-1.0.0.tgz?token=hidden",
+      {},
+      "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="
+    ]
+  }
+}

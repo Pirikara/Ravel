@@ -1,0 +1,7 @@
+{
+  "name": "ravel-bun-v2-private",
+  "version": "1.0.0",
+  "dependencies": {
+    "private-lib": "1.0.0"
+  }
+}

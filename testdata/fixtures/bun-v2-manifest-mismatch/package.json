@@ -1,0 +1,7 @@
+{
+  "name": "ravel-bun-v2-manifest-mismatch",
+  "version": "1.0.0",
+  "dependencies": {
+    "used": "^2.0.0"
+  }
+}

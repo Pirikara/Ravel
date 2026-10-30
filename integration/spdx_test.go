@@ -146,13 +146,13 @@ func TestSPDX23AllFixtures(t *testing.T) {
 					t.Fatalf("invalid SPDX relationship: %+v", rel)
 				}
 			}
-			if (name == "npm-v3" || name == "npm-v1-optional" || name == "npm-v1-sources" || name == "cocoapods-git" || name == "pipenv-sources" || name == "pdm-sources") && (strings.Contains(string(spdxBytes), "hidden") || strings.Contains(string(spdxBytes), "secret")) {
+			if (name == "npm-v3" || name == "npm-v1-optional" || name == "npm-v1-sources" || name == "bun-v2-private" || name == "bun-v2-git-url" || name == "cocoapods-git" || name == "pipenv-sources" || name == "pdm-sources") && (strings.Contains(string(spdxBytes), "hidden") || strings.Contains(string(spdxBytes), "secret")) {
 				t.Fatal("credential leaked into SPDX output")
 			}
 		})
 	}
-	if count != 141 {
-		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 141", count)
+	if count != 152 {
+		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 152", count)
 	}
 }
 

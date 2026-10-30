@@ -1,0 +1,10 @@
+{
+  "name": "ravel-bun-v1-generated-1_2",
+  "version": "1.0.0",
+  "dependencies": {
+    "is-odd": "3.0.1"
+  },
+  "devDependencies": {
+    "is-number": "7.0.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "dependencies": {
+        "gitpkg": "git+https://user:secret@github.com/team/gitpkg.git#0123456789abcdef0123456789abcdef01234567"
+      }
+    }
+  },
+  "packages": {
+    "gitpkg": [
+      "gitpkg@git+https://user:secret@github.com/team/gitpkg.git#0123456789abcdef0123456789abcdef01234567",
+      {}
+    ]
+  }
+}

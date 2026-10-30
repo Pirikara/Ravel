@@ -3,10 +3,15 @@ package bun
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
+	semver "github.com/Masterminds/semver/v3"
 	"github.com/tailscale/hujson"
 
 	"ravel/internal/collectors/common"
@@ -15,7 +20,7 @@ import (
 )
 
 type lockfile struct {
-	LockfileVersion int                        `json:"lockfileVersion"`
+	LockfileVersion *int                       `json:"lockfileVersion"`
 	Workspaces      map[string]workspace       `json:"workspaces"`
 	Packages        map[string]json.RawMessage `json:"packages"`
 }
@@ -36,12 +41,12 @@ type metadata struct {
 }
 
 type item struct {
-	ref  string
-	meta metadata
-	name string
+	ref, key, name, version, selector, platform, metaPointer string
+	meta                                                     metadata
 }
 
 var githubRepository = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+var bunGitCommit = regexp.MustCompile(`^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$`)
 
 func Collect(file, project string) (model.Document, error) {
 	raw, err := os.ReadFile(file)
@@ -56,14 +61,14 @@ func Collect(file, project string) (model.Document, error) {
 	if err := json.Unmarshal(standard, &lock); err != nil {
 		return model.Document{}, fmt.Errorf("invalid bun.lock: %w", err)
 	}
-	if lock.LockfileVersion != 1 || lock.Packages == nil {
+	if lock.LockfileVersion == nil || *lock.LockfileVersion < 0 || *lock.LockfileVersion > 2 || lock.Packages == nil {
 		return model.Document{}, fmt.Errorf("unsupported bun.lock version or missing packages map")
 	}
 	doc := common.NewDocument(file, project, "bun", raw)
 	if len(lock.Workspaces) > 1 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph", Name: "workspace dependencies"})
 	}
-	byName := map[string][]item{}
+	entries := map[string]item{}
 	for key, tupleRaw := range lock.Packages {
 		var tuple []json.RawMessage
 		if err := json.Unmarshal(tupleRaw, &tuple); err != nil || len(tuple) == 0 {
@@ -75,22 +80,31 @@ func Collect(file, project string) (model.Document, error) {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: key})
 			continue
 		}
-		name, version, ok := splitIdentifier(identifier)
+		name, selector, ok := splitIdentifier(identifier)
 		if !ok {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: key})
 			continue
 		}
-		if strings.HasPrefix(version, "root:") || strings.HasPrefix(version, "workspace:") || strings.HasPrefix(version, "link:") || strings.HasPrefix(version, "file:") {
+		if strings.HasPrefix(selector, "root:") || strings.HasPrefix(selector, "workspace:") || strings.HasPrefix(selector, "link:") || strings.HasPrefix(selector, "file:") {
 			continue
+		}
+		version := selector
+		if _, err := semver.StrictNewVersion(selector); err != nil {
+			version = ""
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "package_version_unavailable", Name: name})
 		}
 		var meta metadata
 		var integrity, source string
-		for _, field := range tuple[1:] {
+		metaPointer := "/packages/" + escapePointer(key)
+		for index, field := range tuple[1:] {
 			if len(field) == 0 {
 				continue
 			}
 			if field[0] == '{' {
-				_ = json.Unmarshal(field, &meta)
+				if err := json.Unmarshal(field, &meta); err != nil {
+					return model.Document{}, fmt.Errorf("invalid bun.lock package metadata: %w", err)
+				}
+				metaPointer = "/packages/" + escapePointer(key) + "/" + strconv.Itoa(index+1)
 				continue
 			}
 			var value string
@@ -106,44 +120,57 @@ func Collect(file, project string) (model.Document, error) {
 		ref := "bun:" + common.ID(key+"|"+identifier)
 		ev := common.Evidence(file, "bun-lock", "/packages/"+escapePointer(key), raw)
 		component := model.Component{ID: ref, Kind: "package", Name: name, Version: version, Evidence: []model.Evidence{ev}, Hashes: common.Integrity(integrity)}
-		if !strings.Contains(version, ":") && common.DefaultNpmRegistry(source) {
+		if version != "" && common.DefaultNpmRegistry(source) {
 			component.PURL = common.NpmPURL(name, version)
 		}
 		if meta.OS != "" || meta.CPU != "" {
 			component.Platform = strings.Trim(strings.Join([]string{meta.OS, meta.CPU}, "/"), "/")
 		}
 		doc.Components = append(doc.Components, component)
-		byName[name] = append(byName[name], item{ref: ref, meta: meta, name: name})
-		addOrigin(&doc, ref, version, source, ev)
+		entries[key] = item{ref: ref, key: key, name: name, version: version, selector: selector, platform: component.Platform, metaPointer: metaPointer, meta: meta}
+		addOrigin(&doc, ref, selector, source, ev)
 	}
 	seen := map[string]bool{}
-	addEdges := func(from string, deps map[string]string, kind string) {
-		for name := range deps {
-			matches := byName[name]
-			if len(matches) != 1 {
-				code := "unresolved_dependency"
-				if len(matches) > 1 {
-					code = "ambiguous_dependency"
-				}
+	addEdges := func(from, location, pointer string, deps map[string]string, kind string) {
+		for name, required := range deps {
+			to, ok := resolveBun(entries, location, name)
+			if !ok {
 				if kind != "optional" && kind != "peer_requirement" {
-					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: code, Name: name})
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: name})
 				}
 				continue
 			}
-			to := matches[0].ref
-			key := from + "\x00" + to + "\x00" + kind
+			matches, verified := matchesBunRequirement(required, to)
+			if !matches {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: name})
+				continue
+			}
+			if !verified {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dependency_constraint_unverified", Name: name})
+			}
+			key := from + "\x00" + to.ref + "\x00" + kind
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
-			edge := model.Edge{From: from, To: to, Kind: kind, Evidence: common.Evidence(file, "bun-lock", "/packages", raw)}
+			field := "dependencies"
+			switch kind {
+			case "direct_dev":
+				field = "devDependencies"
+			case "optional":
+				field = "optionalDependencies"
+			case "peer_requirement":
+				field = "peerDependencies"
+			}
+			edge := model.Edge{From: from, To: to.ref, Kind: kind, Evidence: common.Evidence(file, "bun-lock", pointer+"/"+field+"/"+escapePointer(name), raw)}
 			if kind == "optional" || kind == "peer_requirement" {
 				edge.Condition = kind
 			}
-			for _, c := range doc.Components {
-				if c.ID == to && c.Platform != "" {
-					edge.Condition = "platform=" + c.Platform
+			if to.platform != "" {
+				if edge.Condition != "" {
+					edge.Condition += ";"
 				}
+				edge.Condition += "platform=" + to.platform
 			}
 			if edge.Condition != "" {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: name})
@@ -155,31 +182,129 @@ func Collect(file, project string) (model.Document, error) {
 	if !ok {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
 	} else {
-		addEdges("root", root.Dependencies, "direct")
-		addEdges("root", root.DevDependencies, "direct_dev")
-		addEdges("root", root.OptionalDependencies, "optional")
-		addEdges("root", root.PeerDependencies, "peer_requirement")
+		manifestPath := filepath.Join(filepath.Dir(file), "package.json")
+		if manifestData, err := os.ReadFile(manifestPath); err == nil {
+			doc.Sources = append(doc.Sources, manifestPath)
+			var manifest workspace
+			if json.Unmarshal(manifestData, &manifest) != nil ||
+				!maps.Equal(manifest.Dependencies, root.Dependencies) ||
+				!maps.Equal(manifest.DevDependencies, root.DevDependencies) ||
+				!maps.Equal(manifest.OptionalDependencies, root.OptionalDependencies) ||
+				!maps.Equal(manifest.PeerDependencies, root.PeerDependencies) {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
+			}
+		}
+		addEdges("root", "", "/workspaces/", root.Dependencies, "direct")
+		addEdges("root", "", "/workspaces/", root.DevDependencies, "direct_dev")
+		addEdges("root", "", "/workspaces/", root.OptionalDependencies, "optional")
+		addEdges("root", "", "/workspaces/", root.PeerDependencies, "peer_requirement")
 	}
-	for _, items := range byName {
-		for _, entry := range items {
-			addEdges(entry.ref, entry.meta.Dependencies, "depends_on")
-			addEdges(entry.ref, entry.meta.OptionalDependencies, "optional")
-			addEdges(entry.ref, entry.meta.PeerDependencies, "peer_requirement")
+	for _, entry := range entries {
+		addEdges(entry.ref, entry.key, entry.metaPointer, entry.meta.Dependencies, "depends_on")
+		addEdges(entry.ref, entry.key, entry.metaPointer, entry.meta.OptionalDependencies, "optional")
+		addEdges(entry.ref, entry.key, entry.metaPointer, entry.meta.PeerDependencies, "peer_requirement")
+	}
+	adjacent := map[string][]string{}
+	for _, edge := range doc.Edges {
+		adjacent[edge.From] = append(adjacent[edge.From], edge.To)
+	}
+	reachable := map[string]bool{"root": true}
+	queue := []string{"root"}
+	for len(queue) != 0 {
+		from := queue[0]
+		queue = queue[1:]
+		for _, to := range adjacent[from] {
+			if !reachable[to] {
+				reachable[to] = true
+				queue = append(queue, to)
+			}
+		}
+	}
+	for _, component := range doc.Components {
+		if !reachable[component.ID] {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph", Name: component.Name})
 		}
 	}
 	common.Finalize(&doc)
 	return doc, nil
 }
 
+func resolveBun(entries map[string]item, location, name string) (item, bool) {
+	base := location
+	for {
+		candidate := name
+		if base != "" {
+			candidate = base + "/" + name
+		}
+		if entry, ok := entries[candidate]; ok {
+			return entry, true
+		}
+		if base == "" {
+			return item{}, false
+		}
+		base = parentBunKey(entries, base)
+	}
+}
+
+func parentBunKey(entries map[string]item, location string) string {
+	for index := strings.LastIndex(location, "/"); index >= 0; index = strings.LastIndex(location[:index], "/") {
+		candidate := location[:index]
+		if _, ok := entries[candidate]; ok {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func matchesBunRequirement(required string, entry item) (matches, verified bool) {
+	if required != "" && (required == entry.version || required == entry.selector) {
+		return true, true
+	}
+	if strings.HasPrefix(required, "npm:") {
+		name, constraint, ok := splitIdentifier(strings.TrimPrefix(required, "npm:"))
+		if !ok || name != entry.name {
+			return false, true
+		}
+		required = constraint
+	}
+	if entry.version == "" {
+		return true, false
+	}
+	version, err := semver.StrictNewVersion(entry.version)
+	if err != nil {
+		return true, false
+	}
+	constraint, err := semver.NewConstraint(required)
+	if err != nil {
+		return true, false
+	}
+	return constraint.Check(version), true
+}
+
 func splitIdentifier(s string) (string, string, bool) {
-	last := strings.LastIndex(s, "@")
-	if last <= 0 || last == len(s)-1 {
+	start := 1
+	if strings.HasPrefix(s, "@") {
+		slash := strings.IndexByte(s, '/')
+		if slash < 0 {
+			return "", "", false
+		}
+		start = slash + 1
+	}
+	separator := strings.IndexByte(s[start:], '@')
+	if separator < 0 {
 		return "", "", false
 	}
-	return s[:last], s[last+1:], true
+	separator += start
+	if separator == 0 || separator == len(s)-1 {
+		return "", "", false
+	}
+	return s[:separator], s[separator+1:], true
 }
 
 func addOrigin(doc *model.Document, ref, version, source string, ev model.Evidence) {
+	if source == "" && (strings.HasPrefix(version, "git+") || strings.HasPrefix(version, "git://") || strings.HasPrefix(version, "ssh://") || strings.HasPrefix(version, "https://") || strings.HasPrefix(version, "http://")) {
+		source = version
+	}
 	if source != "" {
 		clean := safeurl.Clean(strings.TrimPrefix(source, "git+"))
 		if clean == "" {
@@ -187,21 +312,29 @@ func addOrigin(doc *model.Document, ref, version, source string, ev model.Eviden
 			return
 		}
 		kind := "download_url"
-		if strings.HasPrefix(source, "git+") {
+		revision := ""
+		if strings.HasPrefix(source, "git+") || strings.HasPrefix(source, "git://") || strings.HasPrefix(source, "ssh://") {
 			kind = "vcs"
+			if parsed, err := url.Parse(strings.TrimPrefix(source, "git+")); err == nil && bunGitCommit.MatchString(parsed.Fragment) {
+				revision = strings.ToLower(parsed.Fragment)
+			}
 		}
-		doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: kind, SafeURL: clean, Status: "declared", Evidence: ev})
+		doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: kind, SafeURL: clean, Revision: revision, Status: "declared", Evidence: ev})
 		return
 	}
 	if strings.HasPrefix(version, "github:") {
-		repo := strings.SplitN(strings.TrimPrefix(version, "github:"), "#", 2)[0]
-		if !githubRepository.MatchString(repo) {
+		repo, revision, _ := strings.Cut(strings.TrimPrefix(version, "github:"), "#")
+		if !bunGitCommit.MatchString(revision) {
+			revision = ""
+		}
+		parts := strings.SplitN(repo, "/", 2)
+		if !githubRepository.MatchString(repo) || parts[0] == "." || parts[0] == ".." || parts[1] == "." || parts[1] == ".." {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: ref})
 			return
 		}
 		clean := safeurl.Clean("https://github.com/" + repo)
 		if clean != "" {
-			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", SafeURL: clean, Status: "declared", Evidence: ev})
+			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", SafeURL: clean, Revision: strings.ToLower(revision), Status: "declared", Evidence: ev})
 			return
 		}
 	}

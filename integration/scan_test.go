@@ -92,6 +92,17 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"bun-git", "bun", 2, 2, "complete_for_scope", "complete_for_scope", []string{"gitpkg", "webpkg"}, "", "hidden"},
 		{"bun-platform", "bun", 3, 3, "partial", "partial", []string{"sharp", "@img/darwin", "@img/linux"}, "", ""},
 		{"bun-generated-1_3", "bun", 1, 1, "complete_for_scope", "partial", []string{"is-number"}, "", ""},
+		{"bun-v1-nested-1_3", "bun", 3, 3, "complete_for_scope", "partial", []string{"is-odd", "is-number"}, "", ""},
+		{"bun-generated-1_4", "bun", 3, 3, "complete_for_scope", "partial", []string{"is-odd", "is-number"}, "", ""},
+		{"bun-v0-generated-1_1", "bun", 3, 3, "complete_for_scope", "partial", []string{"is-odd", "is-number"}, "", ""},
+		{"bun-v1-generated-1_2", "bun", 3, 3, "complete_for_scope", "partial", []string{"is-odd", "is-number"}, "", ""},
+		{"bun-v2-stale", "bun", 2, 1, "partial", "partial", []string{"parent", "child"}, "", ""},
+		{"bun-v2-private", "bun", 1, 1, "complete_for_scope", "complete_for_scope", []string{"private-lib"}, "", "hidden"},
+		{"bun-v2-platform-generated-1_4", "bun", 26, 26, "partial", "partial", []string{"esbuild", "@esbuild/darwin-arm64", "@esbuild/linux-x64"}, "", ""},
+		{"bun-v2-orphan", "bun", 2, 1, "partial", "complete_for_scope", []string{"used", "orphan"}, "", ""},
+		{"bun-v2-manifest-mismatch", "bun", 1, 1, "partial", "complete_for_scope", []string{"used"}, "", ""},
+		{"bun-v2-alias-generated-1_4", "bun", 1, 1, "complete_for_scope", "partial", []string{"is-number"}, "alias", ""},
+		{"bun-v2-git-url", "bun", 1, 1, "complete_for_scope", "complete_for_scope", []string{"gitpkg"}, "", "secret"},
 		{"bun-enrich", "bun", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
 		{"deno-v4", "deno", 2, 2, "partial", "complete_for_scope", []string{"@std/path", "https://cdn.example.test/lib/mod.ts"}, "", ""},
 		{"deno-v5", "deno", 3, 3, "partial", "partial", []string{"@std/encoding", "@std/bytes", "chalk"}, "stale", ""},
@@ -367,6 +378,65 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			if component.PURL != "pkg:npm/"+component.Name+"@"+component.Version || len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-512" {
 				t.Fatalf("npm v1 registry identity or integrity lost: %+v", component)
 			}
+		}
+	case "bun-v0-generated-1_1", "bun-v1-generated-1_2", "bun-v1-nested-1_3", "bun-generated-1_4":
+		odd := find("is-odd", "3.0.1")
+		number6, number7 := find("is-number", "6.0.0"), find("is-number", "7.0.0")
+		if !connected("root", odd) || !connected("root", number7) || !connected(odd, number6) || connected(odd, number7) {
+			t.Fatal("Bun nested dependency resolved to the wrong installed version")
+		}
+		for _, component := range doc.Components {
+			if component.PURL != "" || len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-512" {
+				t.Fatalf("Bun generated lock lost integrity or guessed registry identity: %+v", component)
+			}
+		}
+	case "bun-v2-stale":
+		parent, child := find("parent", "1.0.0"), find("child", "1.0.0")
+		if !connected("root", parent) || connected(parent, child) || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "unresolved_dependency" && issue.Name == "child" }) {
+			t.Fatal("Bun lock connected a dependency outside its declared range")
+		}
+	case "bun-v2-private":
+		if strings.Contains(string(bomData), "secret") || strings.Contains(string(bomData), "hidden") || len(doc.Components) != 1 || doc.Components[0].PURL != "" || len(doc.Components[0].Hashes) != 1 || len(doc.Origins) != 1 || doc.Origins[0].SafeURL != "https://packages.example.test/private-lib/-/private-lib-1.0.0.tgz" {
+			t.Fatal("Bun v2 private tarball lost integrity, guessed registry identity, or leaked credentials")
+		}
+	case "bun-v2-platform-generated-1_4":
+		esbuild := find("esbuild", "0.25.0")
+		darwin := find("@esbuild/darwin-arm64", "0.25.0")
+		if !connected("root", esbuild) || !connected(esbuild, darwin) {
+			t.Fatal("Bun platform package graph missing")
+		}
+		if !slices.ContainsFunc(doc.Edges, func(edge model.Edge) bool {
+			return edge.From == esbuild && edge.To == darwin && edge.Kind == "optional" && edge.Condition == "optional;platform=darwin/arm64"
+		}) {
+			t.Fatal("Bun optional and platform conditions were not both retained")
+		}
+		var bom struct {
+			Dependencies []struct {
+				Ref       string   `json:"ref"`
+				DependsOn []string `json:"dependsOn"`
+			} `json:"dependencies"`
+		}
+		if err := json.Unmarshal(bomData, &bom); err != nil {
+			t.Fatal(err)
+		}
+		if len(bom.Dependencies) != 1 || bom.Dependencies[0].Ref != "root" || len(bom.Dependencies[0].DependsOn) != 1 || bom.Dependencies[0].DependsOn[0] != esbuild {
+			t.Fatal("Bun platform variants became unconditional CycloneDX dependencies")
+		}
+	case "bun-v2-orphan":
+		if !connected("root", find("used", "1.0.0")) || connected("root", find("orphan", "2.0.0")) || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "unreachable_graph" && issue.Name == "orphan" }) {
+			t.Fatal("Bun orphan package was presented as part of a complete graph")
+		}
+	case "bun-v2-manifest-mismatch":
+		if !connected("root", find("used", "1.0.0")) || len(doc.Sources) != 1 || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "manifest_freshness_unverified" }) {
+			t.Fatal("Bun package.json and lock mismatch was not reported")
+		}
+	case "bun-v2-alias-generated-1_4":
+		if !connected("root", find("is-number", "7.0.0")) || doc.Components[0].PURL != "" || len(doc.Components[0].Hashes) != 1 || slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "dependency_constraint_unverified" }) {
+			t.Fatal("Bun npm alias lost its installed package identity or range verification")
+		}
+	case "bun-v2-git-url":
+		if !connected("root", find("gitpkg", "")) || doc.Components[0].Version != "" || doc.Components[0].PURL != "" || len(doc.Origins) != 1 || doc.Origins[0].Kind != "vcs" || doc.Origins[0].SafeURL != "https://github.com/team/gitpkg.git" || doc.Origins[0].Revision != "0123456789abcdef0123456789abcdef01234567" || strings.Contains(string(bomData), "secret") || !slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "package_version_unavailable" }) {
+			t.Fatal("Bun Git selector leaked credentials or was mistaken for a package version")
 		}
 	case "npm-v1-optional":
 		core, native := find("core", "1.0.0"), find("native", "1.0.0")
@@ -711,6 +781,9 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		}
 	case "bun-git":
 		var sawVCS bool
+		if find("gitpkg", "") == "" {
+			t.Fatal("Bun Git selector was mistaken for a package version")
+		}
 		for _, origin := range doc.Origins {
 			if origin.Kind == "vcs" && origin.SafeURL == "https://github.com/team/gitpkg" {
 				sawVCS = true
@@ -1662,7 +1735,7 @@ func TestManagerSelectionAndUnsupportedFormats(t *testing.T) {
 	if yarnCoverage.Manager != "yarn" {
 		t.Fatal("packageManager yarn hint ignored")
 	}
-	for _, name := range []string{"bun-legacy", "uv-unsupported", "pylock-unsupported", "nuget-assets-unsupported", "pnpm-unsupported", "poetry-unsupported", "yarn-unsupported", "cargo-unsupported", "composer-unsupported", "cocoapods-unsupported", "pipenv-unsupported", "pdm-unsupported", "go-vendor-unsupported", "pub-unsupported", "gradle-unsupported", "maven-unsupported", "maven-option-unsupported"} {
+	for _, name := range []string{"bun-legacy", "bun-v3-unsupported", "bun-missing-version-unsupported", "bun-malformed-metadata-unsupported", "uv-unsupported", "pylock-unsupported", "nuget-assets-unsupported", "pnpm-unsupported", "poetry-unsupported", "yarn-unsupported", "cargo-unsupported", "composer-unsupported", "cocoapods-unsupported", "pipenv-unsupported", "pdm-unsupported", "go-vendor-unsupported", "pub-unsupported", "gradle-unsupported", "maven-unsupported", "maven-option-unsupported"} {
 		cmd := exec.Command(executable, "scan", filepath.Join("..", "testdata", "fixtures", name), "--output", filepath.Join(t.TempDir(), "sbom.json"))
 		if err := cmd.Run(); err == nil {
 			t.Fatalf("unsupported format %s unexpectedly succeeded", name)

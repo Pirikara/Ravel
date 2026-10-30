@@ -1,0 +1,11 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {"dependencies": {"used": "1.0.0"}}
+  },
+  "packages": {
+    "used": ["used@1.0.0", "https://registry.npmjs.org/used/-/used-1.0.0.tgz", {}],
+    "orphan": ["orphan@2.0.0", "https://registry.npmjs.org/orphan/-/orphan-2.0.0.tgz", {}]
+  }
+}

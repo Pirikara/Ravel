@@ -1,0 +1,7 @@
+{
+  "name": "ravel-bun-v2-stale",
+  "version": "1.0.0",
+  "dependencies": {
+    "parent": "^1.0.0"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "lockfileVersion": 2,
+  "workspaces": {"": {"dependencies": {"bad": "1.0.0"}}},
+  "packages": {
+    "bad": ["bad@1.0.0", "", {"dependencies": ["not-a-map"]}]
+  }
+}
