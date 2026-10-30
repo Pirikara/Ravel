@@ -1,0 +1,5 @@
+[package]
+name = "demo"
+version = "0.1.0"
+[dependencies]
+git-lib = {git = "https://github.com/team/git-lib"}

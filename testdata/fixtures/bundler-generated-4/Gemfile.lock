@@ -1,0 +1,24 @@
+PATH
+  remote: gems/alpha
+  specs:
+    ravel_alpha (1.0.0)
+      ravel_beta (~> 2.0)
+
+PATH
+  remote: gems/beta
+  specs:
+    ravel_beta (2.1.0)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  ravel_alpha!
+  ravel_beta!
+
+BUNDLED WITH
+  4.0.20

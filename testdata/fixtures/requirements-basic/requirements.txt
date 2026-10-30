@@ -1,0 +1,4 @@
+--index-url https://user:hidden@packages.example.test/simple?token=hidden
+requests==2.32.3 \
+  --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+-r nested.txt

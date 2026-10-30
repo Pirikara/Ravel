@@ -1,0 +1,20 @@
+---
+lockfileVersion: '9.0'
+importers:
+  .:
+    packageManagerDependencies:
+      pnpm: {specifier: 12.3.4, version: 12.3.4}
+packages:
+  pnpm@12.3.4: {}
+snapshots:
+  pnpm@12.3.4: {}
+---
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      app: {specifier: 1.0.0, version: 1.0.0}
+packages:
+  app@1.0.0: {}
+snapshots:
+  app@1.0.0: {}

@@ -1,0 +1,6 @@
+/.vscode/
+/ravel
+/*.cdx.json
+/*.spdx.json
+/*.ravel.json
+coverage.json

@@ -1,0 +1,15 @@
+PODS:
+  - RemoteKit (1.0.0)
+  - PodspecKit (2.0.0)
+
+DEPENDENCIES:
+  - RemoteKit (from `https://files.example.test/RemoteKit.zip`)
+  - PodspecKit (from `https://specs.example.test/PodspecKit.podspec`)
+
+EXTERNAL SOURCES:
+  RemoteKit:
+    :http: https://user:secret@files.example.test/RemoteKit.zip?token=hidden
+  PodspecKit:
+    :podspec: https://user:secret@specs.example.test/PodspecKit.podspec?token=hidden
+
+COCOAPODS: 1.16.2

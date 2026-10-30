@@ -1,0 +1,12 @@
+GEM
+  remote: https://user:secret@gems.example.test/ruby?token=hidden
+  specs:
+    alpha (1.0.0)
+      beta (~> 2.0)
+    beta (2.1.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  alpha

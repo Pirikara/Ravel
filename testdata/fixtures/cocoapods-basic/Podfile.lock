@@ -1,0 +1,19 @@
+PODS:
+  - Alpha (1.2.3):
+    - Beta (~> 2.0)
+  - Beta (2.0.1)
+
+DEPENDENCIES:
+  - Alpha (~> 1.2)
+
+SPEC REPOS:
+  trunk:
+    - Alpha
+    - Beta
+
+SPEC CHECKSUMS:
+  Alpha: 0123456789abcdef0123456789abcdef01234567
+  Beta: 89abcdef0123456789abcdef0123456789abcdef
+
+PODFILE CHECKSUM: 0123456789abcdef0123456789abcdef01234567
+COCOAPODS: 1.16.2

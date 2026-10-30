@@ -1,0 +1,23 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      wrapper-a: {specifier: 1.0.0, version: 1.0.0}
+      wrapper-b: {specifier: 1.0.0, version: 1.0.0}
+packages:
+  wrapper-a@1.0.0: {resolution: {integrity: ''}}
+  wrapper-b@1.0.0: {resolution: {integrity: ''}}
+  widget@1.0.0: {peerDependencies: {react: '*'}}
+  react@18.0.0: {}
+  react@19.0.0: {}
+snapshots:
+  wrapper-a@1.0.0:
+    dependencies: {widget: 1.0.0(react@18.0.0)}
+  wrapper-b@1.0.0:
+    dependencies: {widget: 1.0.0(react@19.0.0)}
+  widget@1.0.0(react@18.0.0):
+    dependencies: {react: 18.0.0}
+  widget@1.0.0(react@19.0.0):
+    dependencies: {react: 19.0.0}
+  react@18.0.0: {}
+  react@19.0.0: {}

@@ -1,0 +1,15 @@
+version = 4
+[[package]]
+name = "demo"
+version = "0.1.0"
+dependencies = ["alpha"]
+[[package]]
+name = "alpha"
+version = "1.0.0"
+source = "registry+https://user:secret@registry.example.test/index?token=hidden"
+checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+dependencies = ["beta"]
+[[package]]
+name = "beta"
+version = "2.0.0"
+source = "registry+https://registry.example.test/index"

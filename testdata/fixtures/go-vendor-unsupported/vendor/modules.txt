@@ -1,0 +1,2 @@
+# github.com/acme/alpha not-a-version
+github.com/acme/alpha

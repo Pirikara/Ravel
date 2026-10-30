@@ -1,0 +1,8 @@
+# yarn lockfile v1
+main@1.0.0:
+  version "1.0.0"
+  resolved "https://registry.example.test/main/-/main-1.0.0.tgz"
+  optionalDependencies:
+    native "2.0.0"
+native@2.0.0:
+  version "2.0.0"

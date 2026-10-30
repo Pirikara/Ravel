@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "pins": [
+    {
+      "identity": "swift-algorithms",
+      "kind": "remoteSourceControl",
+      "location": "https://user:secret@github.com/apple/swift-algorithms.git?token=hidden",
+      "state": {"revision": "b14b7f4c528c942f121c8b860b9410b2bf57825e", "version": "1.0.0"}
+    },
+    {
+      "identity": "swift-atomics",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/apple/swift-atomics.git",
+      "state": {"revision": "6c89474e62719ddcc1e9614989fff2f68208fe10", "version": "1.1.0"}
+    }
+  ]
+}

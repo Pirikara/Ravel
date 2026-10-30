@@ -1,0 +1,30 @@
+[metadata]
+groups = ["default"]
+lock_version = "4.5.1"
+
+[[package]]
+name = "app"
+version = "1.0.0"
+groups = ["default"]
+dependencies = ["plugin[speed]>=1"]
+files = [{file = "app-1.0.0.whl", url = "https://files.example.test/app-1.0.0.whl"}]
+
+[[package]]
+name = "plugin"
+version = "1.0.0"
+groups = ["default"]
+files = [{file = "plugin-1.0.0.whl", url = "https://files.example.test/plugin-1.0.0.whl"}]
+
+[[package]]
+name = "plugin"
+version = "1.0.0"
+groups = ["default"]
+extras = ["speed"]
+dependencies = ["plugin==1.0.0", "speedlib>=2"]
+files = [{file = "plugin-1.0.0.whl", url = "https://files.example.test/plugin-1.0.0.whl"}]
+
+[[package]]
+name = "speedlib"
+version = "2.0.0"
+groups = ["default"]
+files = [{file = "speedlib-2.0.0.whl", url = "https://files.example.test/speedlib-2.0.0.whl"}]

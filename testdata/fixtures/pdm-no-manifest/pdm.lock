@@ -1,0 +1,9 @@
+[metadata]
+groups = ["default"]
+lock_version = "4.5.1"
+
+[[package]]
+name = "standalone"
+version = "1.0.0"
+groups = ["default"]
+files = [{file = "standalone-1.0.0.whl", hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]

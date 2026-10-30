@@ -1,0 +1,22 @@
+[[package]]
+name = "parent"
+version = "1.0.0"
+[package.dependencies]
+foo = ">=1"
+[package.source]
+type = "legacy"
+url = "https://pypi.org/simple"
+[[package]]
+name = "foo"
+version = "1.0.0"
+[package.source]
+type = "legacy"
+url = "https://pypi.org/simple"
+[[package]]
+name = "foo"
+version = "2.0.0"
+[package.source]
+type = "legacy"
+url = "https://pypi.org/simple"
+[metadata]
+lock-version = "2.0"

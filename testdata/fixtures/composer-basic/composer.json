@@ -1,0 +1,1 @@
+{"name":"demo/app","require":{"php":">=8.2","monolog/monolog":"^3.0"}}

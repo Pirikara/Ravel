@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "Ravel.Beta": {
+        "type": "Direct",
+        "requested": "[1.2.3, )",
+        "resolved": "1.2.3",
+        "contentHash": "xq2W8wKhrgX3WcIAMw0zwb1iexcwwp+AyRVCkbeGVMNEOcKL7Qx+3rw5nyMjzz4wgBc+HKlzsEiE/haHpSgR1g=="
+      }
+    }
+  }
+}

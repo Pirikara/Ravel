@@ -1,0 +1,13 @@
+__metadata:
+  version: 6
+  cacheKey: 8
+"demo@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "demo@workspace:."
+  dependencies:
+    is-number: "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz"
+  linkType: soft
+"is-number@https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz":
+  version: 7.0.0
+  resolution: "is-number@https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz"
+  linkType: hard

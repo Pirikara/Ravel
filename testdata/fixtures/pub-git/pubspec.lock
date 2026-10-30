@@ -1,0 +1,18 @@
+packages:
+  git_package:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: main
+      resolved-ref: "1234567890abcdef1234567890abcdef12345678"
+      url: "https://user:hidden@git.example.test/repo.git?token=secret"
+    source: git
+    version: "2.0.0"
+  helper:
+    dependency: transitive
+    description:
+      name: helper
+      sha256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"

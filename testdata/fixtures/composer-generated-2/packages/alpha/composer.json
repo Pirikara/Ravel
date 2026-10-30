@@ -1,0 +1,5 @@
+{
+  "name": "acme/alpha",
+  "version": "1.0.0",
+  "require": {"acme/beta": "^2.0"}
+}

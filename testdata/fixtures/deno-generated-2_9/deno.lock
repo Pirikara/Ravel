@@ -1,0 +1,16 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:is-number@7.0.0": "7.0.0"
+  },
+  "npm": {
+    "is-number@7.0.0": {
+      "integrity": "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:is-number@7.0.0"
+    ]
+  }
+}

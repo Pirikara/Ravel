@@ -1,0 +1,6 @@
+{
+  "packages": [
+    {"name":"team/local","version":"1.0.0","dist":{"type":"path","url":"../local"}}
+  ],
+  "packages-dev": []
+}

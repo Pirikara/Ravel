@@ -1,0 +1,14 @@
+GEM
+  remote: https://first.example.test/
+  specs:
+    foo (1.0.0)
+    parent (2.0.0)
+      foo
+
+GEM
+  remote: https://second.example.test/
+  specs:
+    foo (1.0.0)
+
+DEPENDENCIES
+  parent

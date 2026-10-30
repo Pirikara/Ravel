@@ -1,0 +1,8 @@
+[project]
+name = "demo"
+version = "0.1.0"
+dependencies = ["shared>=1"]
+[project.optional-dependencies]
+extra = ["shared>=1"]
+[tool.poetry.group.dev.dependencies]
+shared = "^1"

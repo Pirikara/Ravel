@@ -1,0 +1,22 @@
+PODS:
+  - Firebase/CoreOnly (10.0.0):
+    - FirebaseCore (= 10.0.0)
+  - FirebaseCore (10.0.0):
+    - GoogleUtilities/Environment (~> 7.0)
+  - GoogleUtilities/Environment (7.0.0)
+
+DEPENDENCIES:
+  - Firebase/CoreOnly (~> 10.0)
+
+SPEC REPOS:
+  trunk:
+    - Firebase
+    - FirebaseCore
+    - GoogleUtilities
+
+SPEC CHECKSUMS:
+  Firebase: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  FirebaseCore: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  GoogleUtilities: cccccccccccccccccccccccccccccccccccc
+
+COCOAPODS: 1.16.2

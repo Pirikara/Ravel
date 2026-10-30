@@ -1,0 +1,13 @@
+{
+  "name": "@ravel/packed-sample",
+  "version": "2.3.4",
+  "description": "Small npm tarball fixture for Ravel",
+  "repository": {
+    "type": "git",
+    "url": "git+https://user:secret@github.com/ravel/packed-sample.git?token=hidden"
+  },
+  "dependencies": {
+    "example-dependency": "^1.0.0"
+  },
+  "files": ["index.js"]
+}

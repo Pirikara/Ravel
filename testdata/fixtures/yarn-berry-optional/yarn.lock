@@ -1,0 +1,21 @@
+__metadata:
+  version: 8
+"demo@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "demo@workspace:."
+  dependencies:
+    main: ^1.0.0
+    native: ^2.0.0
+  dependenciesMeta:
+    native: {optional: true}
+  linkType: soft
+"main@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "main@npm:1.0.0"
+  linkType: hard
+"native@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "native@npm:2.0.0"
+  peerDependencies:
+    node: '*'
+  linkType: hard

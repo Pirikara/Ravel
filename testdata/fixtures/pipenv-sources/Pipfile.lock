@@ -1,0 +1,9 @@
+{
+  "_meta": {"pipfile-spec": 6, "sources": [{"name": "pypi", "url": "https://pypi.org/simple"}]},
+  "default": {
+    "git-lib": {"git": "git+https://user:secret@github.com/team/git-lib.git?token=hidden", "ref": "abcdef1234567890"},
+    "archive-lib": {"file": "https://user:secret@files.example.test/archive-lib.tar.gz?token=hidden"},
+    "local-lib": {"path": "../local-lib", "editable": true}
+  },
+  "develop": {}
+}

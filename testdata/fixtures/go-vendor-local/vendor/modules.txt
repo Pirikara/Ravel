@@ -1,0 +1,4 @@
+# github.com/acme/alpha v1.2.3 => ./fork
+## explicit; go 1.20
+github.com/acme/alpha
+# github.com/acme/alpha => ./fork

@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net8.0": {
+      "Example.Core": {"type": "Direct", "resolved": "2.0.0"}
+    },
+    "net6.0": {
+      "Example.Core": {"type": "Direct", "resolved": "1.5.0"}
+    }
+  }
+}

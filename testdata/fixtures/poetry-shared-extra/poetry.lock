@@ -1,0 +1,10 @@
+[[package]]
+name = "shared"
+version = "1.0.0"
+groups = ["main", "dev"]
+markers = {main = "sys_platform == 'linux'", dev = "sys_platform == 'win32'"}
+[package.source]
+type = "legacy"
+url = "https://pypi.org/simple"
+[metadata]
+lock-version = "2.1"

@@ -1,0 +1,12 @@
+__metadata:
+  version: 6
+"demo@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "demo@workspace:."
+  dependencies:
+    foo: "https://user:secret@files.example.test/foo-1.0.0.tgz?token=hidden"
+  linkType: soft
+"foo@https://user:secret@files.example.test/foo-1.0.0.tgz?token=hidden":
+  version: 1.0.0
+  resolution: "foo@https://user:secret@files.example.test/foo-1.0.0.tgz?token=hidden"
+  linkType: hard

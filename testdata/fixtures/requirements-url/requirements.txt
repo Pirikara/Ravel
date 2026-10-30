@@ -1,0 +1,1 @@
+direct-lib @ https://user:hidden@downloads.example.test/direct-lib-1.0.whl?token=hidden

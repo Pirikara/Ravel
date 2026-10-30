@@ -1,0 +1,15 @@
+[[package]]
+name = "click"
+version = "8.1.8"
+groups = ["main"]
+[package.dependencies]
+colorama = {version = "*", markers = "platform_system == 'Windows'"}
+
+[[package]]
+name = "colorama"
+version = "0.4.6"
+groups = ["dev"]
+markers = "sys_platform == 'win32'"
+
+[metadata]
+lock-version = "2.1"

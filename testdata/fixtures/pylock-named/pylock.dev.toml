@@ -1,0 +1,6 @@
+lock-version = "1.0"
+
+[[packages]]
+name = "standalone"
+version = "1.0.0"
+index = "https://pypi.org/simple"

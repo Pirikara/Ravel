@@ -1,0 +1,12 @@
+PODS:
+  - Foo (1.0.0)
+  - Foo (2.0.0)
+
+DEPENDENCIES:
+  - Foo
+
+SPEC REPOS:
+  trunk:
+    - Foo
+
+COCOAPODS: 1.16.2

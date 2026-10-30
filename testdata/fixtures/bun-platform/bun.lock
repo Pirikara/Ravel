@@ -1,0 +1,11 @@
+{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": {"dependencies": {"sharp": "0.1.0"}}
+  },
+  "packages": {
+    "sharp": ["sharp@0.1.0", "", {"optionalDependencies": {"@img/darwin": "0.1.0", "@img/linux": "0.1.0"}}],
+    "@img/darwin": ["@img/darwin@0.1.0", "", {"os": "darwin", "cpu": "arm64"}],
+    "@img/linux": ["@img/linux@0.1.0", "", {"os": "linux", "cpu": "x64"}]
+  }
+}

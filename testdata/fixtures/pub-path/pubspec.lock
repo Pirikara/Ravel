@@ -1,0 +1,16 @@
+packages:
+  local_plugin:
+    dependency: "direct overridden"
+    description:
+      path: "../local_plugin"
+      relative: true
+    source: path
+    version: "0.3.0"
+  transitive_pkg:
+    dependency: transitive
+    description:
+      name: transitive_pkg
+      sha256: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.0"

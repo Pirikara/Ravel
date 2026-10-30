@@ -1,0 +1,6 @@
+{
+  "packages": [
+    {"name":"team/standalone","version":"1.0.0","source":{"type":"git","url":"https://github.com/team/standalone.git","reference":"abcdef1234567890"}}
+  ],
+  "packages-dev": []
+}

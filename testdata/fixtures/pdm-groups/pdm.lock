@@ -1,0 +1,26 @@
+[metadata]
+groups = ["default", "test"]
+lock_version = "4.5.1"
+
+[[metadata.targets]]
+requires_python = ">=3.10"
+
+[[package]]
+name = "alpha"
+version = "1.0.0"
+groups = ["default"]
+dependencies = ["beta>=2; sys_platform == 'linux'"]
+files = [{file = "alpha-1.0.0-py3-none-any.whl", url = "https://files.example.test/alpha-1.0.0.whl?token=hidden", hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]
+
+[[package]]
+name = "beta"
+version = "2.0.0"
+groups = ["default"]
+marker = "sys_platform == 'linux'"
+files = [{file = "beta-2.0.0-py3-none-any.whl", hash = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]
+
+[[package]]
+name = "pytest"
+version = "8.0.0"
+groups = ["test"]
+files = [{file = "pytest-8.0.0-py3-none-any.whl", hash = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}]

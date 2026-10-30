@@ -1,0 +1,1 @@
+{"groupId":"com.example","artifactId":"app","version":"1.0.0","children":[{"groupId":"org.example","artifactId":"bad","version":"1.0.0","optional":{"unexpected":true}}]}

@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@std/encoding": "jsr:@std/encoding@^1.0.0",
+    "chalk": "npm:chalk@^5.0.0"
+  }
+}

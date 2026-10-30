@@ -1,0 +1,22 @@
+PODS:
+  - SecretKit (1.0.0):
+    - BaseKit (= 2.0.0)
+  - BaseKit (2.0.0)
+
+DEPENDENCIES:
+  - SecretKit (from `https://github.com/team/SecretKit.git`)
+
+SPEC REPOS:
+  trunk:
+    - BaseKit
+
+EXTERNAL SOURCES:
+  SecretKit:
+    :git: https://user:secret@github.com/team/SecretKit.git?token=hidden
+
+CHECKOUT OPTIONS:
+  SecretKit:
+    :git: https://user:secret@github.com/team/SecretKit.git?token=hidden
+    :commit: abcdef1234567890
+
+COCOAPODS: 1.16.2

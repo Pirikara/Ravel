@@ -1,0 +1,25 @@
+__metadata:
+  version: 6
+  cacheKey: 8
+"demo@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "demo@workspace:."
+  dependencies:
+    alpha: ^1.0.0
+  languageName: unknown
+  linkType: soft
+"alpha@npm:^1.0.0":
+  version: 1.1.0
+  resolution: "alpha@npm:1.1.0"
+  dependencies:
+    beta: ^2.0.0
+  checksum: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  linkType: hard
+"beta@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "beta@npm:2.0.0"
+  linkType: hard
+"stale@npm:1.0.0":
+  version: 1.0.0
+  resolution: "stale@npm:1.0.0"
+  linkType: hard

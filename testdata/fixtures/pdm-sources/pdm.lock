@@ -1,0 +1,22 @@
+[metadata]
+groups = ["default"]
+lock_version = "4.5.1"
+
+[[package]]
+name = "git-lib"
+version = "1.0.0"
+groups = ["default"]
+git = "git+https://user:secret@github.com/team/git-lib.git?token=hidden"
+revision = "abcdef1234567890"
+
+[[package]]
+name = "archive-lib"
+version = "1.0.0"
+groups = ["default"]
+url = "https://user:secret@files.example.test/archive-lib-1.0.0.tar.gz?token=hidden"
+
+[[package]]
+name = "local-lib"
+version = "1.0.0"
+groups = ["default"]
+path = "../local-lib"

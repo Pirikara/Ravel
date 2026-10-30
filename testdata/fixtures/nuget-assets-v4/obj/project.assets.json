@@ -1,0 +1,13 @@
+{
+  "version": 4,
+  "targets": {
+    "production": {"Example.Core/2.0.0": {"type": "package"}},
+    "production/linux-x64": {"Example.Core/2.0.0": {"type": "package"}}
+  },
+  "libraries": {"Example.Core/2.0.0": {"type": "package"}},
+  "projectFileDependencyGroups": {"production": ["Example.Core >= 2.0.0"]},
+  "project": {
+    "restore": {"frameworks": {"production": {"framework": "net8.0", "targetAlias": "production"}}},
+    "frameworks": {"production": {"framework": "net8.0", "dependencies": {"Example.Core": {"version": "[2.0.0, )"}}}}
+  }
+}

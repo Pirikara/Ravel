@@ -1,0 +1,9 @@
+packages:
+  private_widget:
+    dependency: "direct main"
+    description:
+      name: private_widget
+      sha256: "abababababababababababababababababababababababababababababababab"
+      url: "https://user:hidden@pub.example.test/repository?token=secret"
+    source: hosted
+    version: "1.0.0"
