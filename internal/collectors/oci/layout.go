@@ -195,13 +195,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	}
 	databases := map[string]databaseState{}
 	pythonMetadata := map[string]databaseState{}
+	pipVendor := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
 	goScanLimited := false
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for _, metadata := range []map[string]databaseState{pythonMetadata, nodeMetadata} {
+		for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata} {
 			for name := range metadata {
 				for current := name; ; current = path.Dir(current) {
 					relevantPaths[current] = true
@@ -241,7 +242,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for _, removed := range change.whiteouts {
-			for _, metadata := range []map[string]databaseState{pythonMetadata, nodeMetadata} {
+			for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata} {
 				for name := range metadata {
 					if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 						delete(metadata, name)
@@ -261,6 +262,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		for name, data := range change.python {
 			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
+		}
+		for name, data := range change.pipVendor {
+			pipVendor[name] = databaseState{data: data, layer: layer.Digest}
 		}
 		for name, data := range change.node {
 			nodeMetadata[name] = databaseState{data: data, layer: layer.Digest}
@@ -282,6 +286,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if metadataBytes > maxPythonMetadataTotal {
 			return model.Document{}, errors.New("OCI image installed Python metadata exceeded size limit")
+		}
+		if len(pipVendor) > maxPipVendorFiles {
+			return model.Document{}, errors.New("OCI image has too many pip vendor manifests")
 		}
 		if len(nodeMetadata) > maxNodeMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Node package manifests")
@@ -329,7 +336,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			installedDatabases++
 		}
 	}
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -410,6 +417,35 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 	}
 	python.LinkInstalledRequirements(&doc, installedRecords)
+	vendorNames := make([]string, 0, len(pipVendor))
+	for name := range pipVendor {
+		vendorNames = append(vendorNames, name)
+	}
+	sort.Strings(vendorNames)
+	for _, name := range vendorNames {
+		state := pipVendor[name]
+		pipID := ""
+		matches := 0
+		sitePackages := path.Dir(path.Dir(path.Dir(name)))
+		for _, record := range installedRecords {
+			if strings.EqualFold(record.Component.Name, "pip") && record.Component.Context == "location="+sitePackages {
+				pipID = record.Component.ID
+				matches++
+			}
+		}
+		if matches != 1 {
+			pipID = ""
+		}
+		evidencePath := "oci:" + state.layer + "!/" + name
+		vendorDoc, err := collectPipVendor(state.data, evidencePath, project, name, pipID)
+		if err != nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "pip_vendor_manifest_invalid", Name: name})
+			continue
+		}
+		doc.Components = append(doc.Components, vendorDoc.Components...)
+		doc.Edges = append(doc.Edges, vendorDoc.Edges...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, vendorDoc.Coverage.Issues...)
+	}
 	nodeNames := make([]string, 0, len(nodeMetadata))
 	for name := range nodeMetadata {
 		nodeNames = append(nodeNames, name)
@@ -601,6 +637,7 @@ type databaseChange struct {
 type layerChange struct {
 	files      map[string]databaseChange
 	python     map[string][]byte
+	pipVendor  map[string][]byte
 	node       map[string][]byte
 	java       map[string]javaArchiveState
 	goBinaries map[string]goBinaryState
@@ -639,12 +676,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, node: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
 	entries := 0
 	pythonBytes := 0
+	pipVendorBytes := 0
 	nodeBytes := 0
 	javaBytes := 0
 	goBytes := 0
@@ -692,6 +730,24 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 					update.deleted = true
 					change.files[target] = update
 				}
+			}
+			continue
+		}
+		if isPipVendorPath(name) {
+			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxPipVendorBytes {
+				return layerChange{}, "", fmt.Errorf("unsupported OCI pip vendor manifest entry: %s", name)
+			}
+			if _, duplicate := change.pipVendor[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI pip vendor manifest entry: %s", name)
+			}
+			data, err := io.ReadAll(io.LimitReader(reader, maxPipVendorBytes+1))
+			if err != nil || len(data) > maxPipVendorBytes {
+				return layerChange{}, "", errors.New("OCI pip vendor manifest exceeded size limit")
+			}
+			change.pipVendor[name] = data
+			pipVendorBytes += len(data)
+			if len(change.pipVendor) > maxPipVendorFiles || pipVendorBytes > maxPipVendorFiles*maxPipVendorBytes {
+				return layerChange{}, "", errors.New("OCI layer has too much pip vendor metadata")
 			}
 			continue
 		}
@@ -826,7 +882,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			return layerChange{}, "", fmt.Errorf("OCI layer replaces database parent directory and %s together", target)
 		}
 	}
-	for _, metadata := range []map[string][]byte{change.python, change.node} {
+	for _, metadata := range []map[string][]byte{change.python, change.pipVendor, change.node} {
 		for name := range metadata {
 			for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 				if nonDirectoryPaths[ancestor] {
