@@ -19,6 +19,7 @@ import (
 	"ravel/internal/collectors/apk"
 	"ravel/internal/collectors/common"
 	"ravel/internal/collectors/dpkg"
+	"ravel/internal/collectors/npm"
 	"ravel/internal/collectors/python"
 	"ravel/internal/model"
 )
@@ -32,6 +33,8 @@ const (
 	maxImageLayers         = 128
 	maxPythonMetadataFiles = 2000
 	maxPythonMetadataTotal = 128 << 20
+	maxNodeMetadataFiles   = 20000
+	maxNodeMetadataTotal   = 128 << 20
 	manifestMediaType      = "application/vnd.oci.image.manifest.v1+json"
 	indexMediaType         = "application/vnd.oci.image.index.v1+json"
 	configMediaType        = "application/vnd.oci.image.config.v1+json"
@@ -163,13 +166,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	}
 	databases := map[string]databaseState{}
 	pythonMetadata := map[string]databaseState{}
+	nodeMetadata := map[string]databaseState{}
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for name := range pythonMetadata {
-			for current := name; ; current = path.Dir(current) {
-				relevantPaths[current] = true
-				if current == "." {
-					break
+		for _, metadata := range []map[string]databaseState{pythonMetadata, nodeMetadata} {
+			for name := range metadata {
+				for current := name; ; current = path.Dir(current) {
+					relevantPaths[current] = true
+					if current == "." {
+						break
+					}
 				}
 			}
 		}
@@ -187,14 +193,19 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for _, removed := range change.whiteouts {
-			for name := range pythonMetadata {
-				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
-					delete(pythonMetadata, name)
+			for _, metadata := range []map[string]databaseState{pythonMetadata, nodeMetadata} {
+				for name := range metadata {
+					if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+						delete(metadata, name)
+					}
 				}
 			}
 		}
 		for name, data := range change.python {
 			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
+		}
+		for name, data := range change.node {
+			nodeMetadata[name] = databaseState{data: data, layer: layer.Digest}
 		}
 		if len(pythonMetadata) > maxPythonMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Python metadata files")
@@ -206,12 +217,22 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if metadataBytes > maxPythonMetadataTotal {
 			return model.Document{}, errors.New("OCI image installed Python metadata exceeded size limit")
 		}
+		if len(nodeMetadata) > maxNodeMetadataFiles {
+			return model.Document{}, errors.New("OCI image has too many installed Node package manifests")
+		}
+		nodeBytes := 0
+		for _, state := range nodeMetadata {
+			nodeBytes += len(state.data)
+		}
+		if nodeBytes > maxNodeMetadataTotal {
+			return model.Document{}, errors.New("OCI image installed Node package metadata exceeded size limit")
+		}
 	}
 	platform := choice.config.OS + "/" + choice.config.Architecture
 	if choice.config.Variant != "" {
 		platform += "/" + choice.config.Variant
 	}
-	if len(databases) == 0 && len(pythonMetadata) == 0 {
+	if len(databases) == 0 && len(pythonMetadata) == 0 && len(nodeMetadata) == 0 {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -275,6 +296,32 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 	}
 	python.LinkInstalledRequirements(&doc, installedRecords)
+	nodeNames := make([]string, 0, len(nodeMetadata))
+	for name := range nodeMetadata {
+		nodeNames = append(nodeNames, name)
+	}
+	sort.Strings(nodeNames)
+	var installedNodeRecords []npm.InstalledRecord
+	for _, name := range nodeNames {
+		state := nodeMetadata[name]
+		evidencePath := "oci:" + state.layer + "!/" + name
+		installed, err := npm.CollectInstalledPackage(state.data, evidencePath, project, name)
+		if err != nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_installed_metadata_invalid", Name: name})
+			continue
+		}
+		installedNodeRecords = append(installedNodeRecords, npm.InstalledRecord{Component: installed.Components[0], Metadata: state.data, MetadataPath: name})
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Origins = append(doc.Origins, installed.Origins...)
+		doc.Development = append(doc.Development, installed.Development...)
+		for _, issue := range installed.Coverage.Issues {
+			if issue.Code != "declared_dependencies_unresolved" {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, issue)
+			}
+		}
+	}
+	npm.LinkInstalledDependencies(&doc, installedNodeRecords)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_language_packages_unscanned"})
 	for i := range doc.Components {
 		doc.Components[i].Context += ";image=" + platform
@@ -378,10 +425,11 @@ type databaseChange struct {
 type layerChange struct {
 	files     map[string]databaseChange
 	python    map[string][]byte
+	node      map[string][]byte
 	whiteouts []string
 }
 
-func scanLayer(layout string, item descriptor, diffID string, relevantPythonPaths map[string]bool) (layerChange, string, error) {
+func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool) (layerChange, string, error) {
 	if item.MediaType != plainLayerType && item.MediaType != gzipLayerType && item.MediaType != plainNonDistType && item.MediaType != gzipNonDistType {
 		return layerChange{}, "", fmt.Errorf("unsupported OCI layer media type %s", item.MediaType)
 	}
@@ -412,11 +460,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantPythonPath
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, node: map[string][]byte{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
+	nonDirectoryPaths := map[string]bool{}
 	entries := 0
 	pythonBytes := 0
+	nodeBytes := 0
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
@@ -436,6 +486,9 @@ func scanLayer(layout string, item descriptor, diffID string, relevantPythonPath
 		if name == "." {
 			continue
 		}
+		if header.Typeflag != tar.TypeDir {
+			nonDirectoryPaths[name] = true
+		}
 		base := path.Base(name)
 		if strings.HasPrefix(base, ".wh.") {
 			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size != 0 {
@@ -448,7 +501,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantPythonPath
 			if base == ".wh..wh..opq" {
 				deletedPath = path.Dir(name)
 			}
-			if relevantPythonPaths[deletedPath] {
+			if relevantLanguagePaths[deletedPath] {
 				change.whiteouts = append(change.whiteouts, deletedPath)
 			}
 			for _, target := range databasePaths {
@@ -478,6 +531,24 @@ func scanLayer(layout string, item descriptor, diffID string, relevantPythonPath
 			}
 			continue
 		}
+		if npm.IsInstalledPackagePath(name) {
+			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > npm.MaxInstalledPackageJSONBytes {
+				return layerChange{}, "", fmt.Errorf("unsupported OCI installed Node package manifest entry: %s", name)
+			}
+			if _, duplicate := change.node[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI installed Node package manifest entry: %s", name)
+			}
+			data, err := io.ReadAll(io.LimitReader(reader, npm.MaxInstalledPackageJSONBytes+1))
+			if err != nil || len(data) > npm.MaxInstalledPackageJSONBytes {
+				return layerChange{}, "", errors.New("OCI installed Node package manifest exceeded size limit")
+			}
+			change.node[name] = data
+			nodeBytes += len(data)
+			if len(change.node) > maxNodeMetadataFiles || nodeBytes > maxNodeMetadataTotal {
+				return layerChange{}, "", errors.New("OCI layer has too much installed Node package metadata")
+			}
+			continue
+		}
 		for _, target := range databasePaths {
 			if name == target {
 				if seenDatabase[target] || header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxDatabaseBytes {
@@ -501,13 +572,22 @@ func scanLayer(layout string, item descriptor, diffID string, relevantPythonPath
 				parentReplaced[target] = true
 			}
 		}
-		if relevantPythonPaths[name] && header.Typeflag != tar.TypeDir {
+		if relevantLanguagePaths[name] && header.Typeflag != tar.TypeDir {
 			change.whiteouts = append(change.whiteouts, name)
 		}
 	}
 	for target := range parentReplaced {
 		if seenDatabase[target] {
 			return layerChange{}, "", fmt.Errorf("OCI layer replaces database parent directory and %s together", target)
+		}
+	}
+	for _, metadata := range []map[string][]byte{change.python, change.node} {
+		for name := range metadata {
+			for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+				if nonDirectoryPaths[ancestor] {
+					return layerChange{}, "", fmt.Errorf("OCI layer contains installed metadata beneath a non-directory entry: %s", ancestor)
+				}
+			}
 		}
 	}
 	if _, err := io.Copy(io.Discard, stream); err != nil {

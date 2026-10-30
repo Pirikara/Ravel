@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -710,5 +711,267 @@ func TestOCIPythonOpaqueDirectoryAndInvalidMetadata(t *testing.T) {
 	}
 	if !foundInvalid || doc.Coverage.OriginState != "partial" {
 		t.Fatalf("invalid OCI Python metadata was not reported: %#v", doc.Coverage)
+	}
+}
+
+func TestOCINodeInstalledPackageOverlay(t *testing.T) {
+	const base = "app/node_modules/"
+	manifestJSON := func(name, version, dependencies string) []byte {
+		return []byte(`{"name":` + strconv.Quote(name) + `,"version":` + strconv.Quote(version) + `,"dependencies":` + dependencies + `}`)
+	}
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{
+		{entries: []ociTestEntry{
+			{name: base + "alpha/package.json", data: manifestJSON("alpha", "1.0.0", `{"beta":"^2"}`)},
+			{name: base + "beta/package.json", data: manifestJSON("beta", "2.0.0", `{}`)},
+			{name: base + "@scope/util/package.json", data: manifestJSON("@scope/util", "3.0.0", `{}`)},
+			{name: base + "alpha/node_modules/nested/package.json", data: manifestJSON("nested", "0.1.0", `{}`)},
+			{name: base + ".pnpm/store/node_modules/stored/package.json", data: manifestJSON("stored", "9.0.0", `{}`)},
+			{name: "app/package.json", data: manifestJSON("project", "1.0.0", `{}`)},
+		}},
+		{entries: []ociTestEntry{
+			{name: base + ".wh.alpha"},
+			{name: base + ".wh.beta"},
+			{name: base + "alpha/package.json", data: manifestJSON("alpha", "1.1.0", `{"missing":"^4"}`)},
+			{name: base + "invalid/package.json", data: []byte(`{"name":42,"version":"1.0.0"}`)},
+			{name: base + "duplicate/package.json", data: []byte(`{"name":"first","name":"second","version":"1.0.0"}`)},
+		}},
+	})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 2 || doc.Coverage.OriginState != "partial" || doc.Coverage.GraphState != "partial" {
+		t.Fatalf("OCI Node package overlay failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	versions := map[string]string{}
+	for _, component := range doc.Components {
+		versions[component.Name] = component.Version
+		if component.PURL != "" || component.Evidence[0].Collector != "node-package-json" || !strings.Contains(component.Evidence[0].InputPath, "!/"+base) || !strings.Contains(component.Context, "image=linux/amd64") {
+			t.Fatalf("OCI Node identity or evidence incorrect: %#v", component)
+		}
+	}
+	if versions["alpha"] != "1.1.0" || versions["@scope/util"] != "3.0.0" || versions["beta"] != "" || versions["nested"] != "" || versions["stored"] != "" || versions["project"] != "" {
+		t.Fatalf("OCI Node overlay kept stale or unrelated package: %#v", versions)
+	}
+	issues := map[string]bool{}
+	for _, issue := range doc.Coverage.Issues {
+		issues[issue.Code] = true
+	}
+	for _, issue := range []string{"unresolved_dependency", "node_installed_metadata_invalid", "os_package_database_not_found", "distribution_source_unavailable"} {
+		if !issues[issue] {
+			t.Fatalf("OCI Node coverage issue %s missing: %#v", issue, doc.Coverage.Issues)
+		}
+	}
+	if issues["declared_dependencies_unresolved"] {
+		t.Fatalf("obsolete Node dependency issue remained after linking: %#v", doc.Coverage.Issues)
+	}
+	archive := ociTestArchive(t, layout, "node.oci.tar")
+	archiveDoc, output, code := ociTestScan(t, archive)
+	if code != 0 || archiveDoc.Coverage.Packages != 2 || archiveDoc.Coverage.Edges != 2 {
+		t.Fatalf("OCI Node archive scan failed: code=%d output=%s coverage=%#v", code, output, archiveDoc.Coverage)
+	}
+	for _, format := range []string{"cyclonedx-json", "spdx-json"} {
+		data, err := exec.Command(executable, "scan", layout, "--format", format).Output()
+		if err != nil || !json.Valid(data) {
+			t.Fatalf("OCI Node %s export failed: %v", format, err)
+		}
+	}
+}
+
+func TestOCINodeDuplicateDependencyKeys(t *testing.T) {
+	const base = "app/node_modules/"
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+		{name: base + "consumer/package.json", data: []byte(`{"name":"consumer","version":"1.0.0","dependencies":{"target":"1.0.0","target":"2.0.0"}}`)},
+		{name: base + "consumer/node_modules/target/package.json", data: []byte(`{"name":"target","version":"2.0.0"}`)},
+	}}})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 2 {
+		t.Fatalf("OCI Node duplicate dependency scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	found := false
+	for _, issue := range doc.Coverage.Issues {
+		found = found || issue.Code == "node_dependency_manifest_invalid" && issue.Name == "consumer"
+	}
+	if !found {
+		t.Fatalf("duplicate Node dependency keys were not reported: %#v", doc.Coverage.Issues)
+	}
+}
+
+func TestOCINodeOptionalDependencyOverridesRequired(t *testing.T) {
+	const base = "app/node_modules/"
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+		{name: base + "consumer/package.json", data: []byte(`{"name":"consumer","version":"1.0.0","dependencies":{"target":"1.0.0"},"optionalDependencies":{"target":"1.0.0"}}`)},
+		{name: base + "consumer/node_modules/target/package.json", data: []byte(`{"name":"target","version":"1.0.0"}`)},
+	}}})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 3 {
+		t.Fatalf("OCI Node optional override scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	linked := 0
+	for _, edge := range doc.Edges {
+		if edge.Kind == "depends_on" {
+			linked++
+			if edge.Condition != "optional" || edge.Evidence.Pointer != "/optionalDependencies/target" {
+				t.Fatalf("optional Node dependency was exported as required: %#v", edge)
+			}
+		}
+	}
+	if linked != 1 {
+		t.Fatalf("optional Node dependency generated %d edges", linked)
+	}
+}
+
+func TestOCINodeInstalledDependencies(t *testing.T) {
+	const base = "app/node_modules/"
+	manifestJSON := func(name, version, rest string) []byte {
+		return []byte(`{"name":` + strconv.Quote(name) + `,"version":` + strconv.Quote(version) + rest + `}`)
+	}
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+		{name: base + "consumer/package.json", data: manifestJSON("consumer", "1.0.0", `,"dependencies":{"direct":"1.2.3","@scope/util":"1.0.0","hoisted":"^2","alias":"npm:actual@3.0.0","unsafe":"git+https://user:secret@example.invalid/repo.git","wrong":"1.0.0"},"optionalDependencies":{"missing-optional":"^1"},"peerDependencies":{"peer":"1.0.0"}`)},
+		{name: base + "consumer/node_modules/direct/package.json", data: manifestJSON("direct", "1.2.3", "")},
+		{name: base + "consumer/node_modules/@scope/util/package.json", data: manifestJSON("@scope/util", "1.0.0", "")},
+		{name: base + "consumer/node_modules/alias/package.json", data: manifestJSON("actual", "3.0.0", "")},
+		{name: base + "consumer/node_modules/unsafe/package.json", data: manifestJSON("unsafe", "1.0.0", "")},
+		{name: base + "consumer/node_modules/wrong/package.json", data: manifestJSON("wrong", "2.0.0", "")},
+		{name: base + "hoisted/package.json", data: manifestJSON("hoisted", "2.5.0", "")},
+		{name: base + "peer/package.json", data: manifestJSON("peer", "1.0.0", "")},
+	}}})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 8 || doc.Coverage.Edges != 14 {
+		t.Fatalf("OCI Node dependency scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	ids := map[string]string{}
+	for _, component := range doc.Components {
+		ids[component.Name] = component.ID
+	}
+	conditions := map[string]bool{}
+	for _, edge := range doc.Edges {
+		if edge.From != ids["consumer"] {
+			continue
+		}
+		for name, id := range ids {
+			if edge.To == id {
+				conditions[name+"\x00"+edge.Condition] = true
+			}
+		}
+	}
+	for _, key := range []string{
+		"direct\x00", "@scope/util\x00",
+		"hoisted\x00resolution=ancestor_lookup && constraint=(^2)",
+		"actual\x00alias=unverified && specifier=unverified",
+		"unsafe\x00specifier=unverified",
+		"peer\x00peer && resolution=ancestor_lookup",
+	} {
+		if !conditions[key] {
+			t.Fatalf("OCI Node dependency edge %q missing: %#v", key, doc.Edges)
+		}
+	}
+	for _, edge := range doc.Edges {
+		if edge.From == ids["consumer"] && edge.To == ids["wrong"] {
+			t.Fatalf("wrong-version Node dependency was linked: %#v", edge)
+		}
+	}
+	issues := map[string]bool{}
+	for _, issue := range doc.Coverage.Issues {
+		issues[issue.Code] = true
+	}
+	for _, issue := range []string{"node_resolution_unverified", "node_package_alias_unverified", "node_dependency_specifier_unverified", "dependency_constraint_unverified", "conditional_dependency_unresolved", "unresolved_dependency"} {
+		if !issues[issue] {
+			t.Fatalf("OCI Node coverage issue %s missing: %#v", issue, doc.Coverage.Issues)
+		}
+	}
+	if issues["declared_dependencies_unresolved"] {
+		t.Fatalf("obsolete Node dependency issue remained after linking: %#v", doc.Coverage.Issues)
+	}
+	serialized, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(serialized, []byte("secret")) || bytes.Contains(serialized, []byte("example.invalid")) {
+		t.Fatalf("Node dependency URL leaked into SBOM: %s", serialized)
+	}
+	for _, format := range []string{"cyclonedx-json", "spdx-json"} {
+		data, err := exec.Command(executable, "scan", layout, "--format", format).Output()
+		if err != nil {
+			t.Fatalf("OCI Node %s export failed: %v", format, err)
+		}
+		if bytes.Contains(data, []byte("secret")) || bytes.Contains(data, []byte("example.invalid")) {
+			t.Fatalf("Node dependency URL leaked into %s export", format)
+		}
+		if format == "cyclonedx-json" {
+			var bom struct {
+				Dependencies []struct {
+					Ref       string   `json:"ref"`
+					DependsOn []string `json:"dependsOn"`
+				} `json:"dependencies"`
+			}
+			if err := json.Unmarshal(data, &bom); err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, dependency := range bom.Dependencies {
+				if dependency.Ref == ids["consumer"] {
+					found = true
+					if len(dependency.DependsOn) != 2 {
+						t.Fatalf("conditional Node edges entered CycloneDX: %#v", dependency)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("CycloneDX omitted definite Node dependencies")
+			}
+		} else {
+			var spdx struct {
+				Relationships []json.RawMessage `json:"relationships"`
+			}
+			if err := json.Unmarshal(data, &spdx); err != nil {
+				t.Fatal(err)
+			}
+			if len(spdx.Relationships) != 10 {
+				t.Fatalf("conditional Node edges entered SPDX: got %d relationships, want 10", len(spdx.Relationships))
+			}
+		}
+	}
+}
+
+func TestOCINodeMetadataParentReplacement(t *testing.T) {
+	const base = "app/node_modules/"
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{
+		{entries: []ociTestEntry{{name: base + "linked/package.json", data: []byte(`{"name":"linked","version":"1.0.0"}`)}}},
+		{entries: []ociTestEntry{{name: base + "linked", typeflag: tar.TypeSymlink, linkname: "../store/linked"}}},
+	})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 0 || doc.Coverage.GraphState != "unknown" {
+		t.Fatalf("OCI Node symlink replacement retained stale metadata: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+}
+
+func TestOCILanguageMetadataUnderSameLayerSymlinkRejected(t *testing.T) {
+	for _, tc := range []struct {
+		name, parent, metadataPath string
+		metadata                   []byte
+	}{
+		{"node", "app/node_modules/linked", "app/node_modules/linked/package.json", []byte(`{"name":"linked","version":"1.0.0"}`)},
+		{"python", "usr/local/lib/python3.13/site-packages/linked-1.0.dist-info", "usr/local/lib/python3.13/site-packages/linked-1.0.dist-info/METADATA", []byte("Metadata-Version: 2.3\nName: linked\nVersion: 1.0\n")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			layout := ociTestLayout(t)
+			manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+				{name: tc.parent, typeflag: tar.TypeSymlink, linkname: "../elsewhere"},
+				{name: tc.metadataPath, data: tc.metadata},
+			}}})
+			ociTestIndex(t, layout, manifest)
+			_, output, code := ociTestScan(t, layout)
+			if code == 0 || !strings.Contains(output, "metadata beneath a non-directory entry") {
+				t.Fatalf("OCI same-layer link allowed false package inventory: code=%d output=%s", code, output)
+			}
+		})
 	}
 }
