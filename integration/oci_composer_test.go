@@ -3,6 +3,8 @@ package integration_test
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -69,8 +71,21 @@ func TestOCIComposerCustomVendorDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	alphaData, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "composer-generated-2", "packages", "alpha", "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	betaData, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "composer-generated-2", "packages", "beta", "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	layout := ociTestLayout(t)
-	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{{name: configPath, data: configData}, {name: manifestPath, data: installedData}}}})
+	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+		{name: "app/dependencies/acme/alpha/composer.json", data: alphaData},
+		{name: "app/dependencies/acme/beta/composer.json", data: betaData},
+		{name: configPath, data: configData},
+		{name: manifestPath, data: installedData},
+	}}})
 	ociTestIndex(t, layout, image)
 	doc, output, code := ociTestScan(t, layout)
 	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 3 {
@@ -82,6 +97,14 @@ func TestOCIComposerCustomVendorDirectory(t *testing.T) {
 		if component.Context != "registry="+manifestPath+";image=linux/amd64" || !strings.Contains(component.Evidence[0].InputPath, "!/"+manifestPath) {
 			t.Fatalf("custom vendor metadata lost its scope: %#v", component)
 		}
+		packageData := alphaData
+		if component.Name == "acme/beta" {
+			packageData = betaData
+		}
+		packageHash := sha256.Sum256(packageData)
+		if len(component.Evidence) != 2 || component.Evidence[1].Collector != "composer-package-manifest" || component.Evidence[1].Method != "final-layer-file-record" || component.Evidence[1].InputDigest != "sha256:"+hex.EncodeToString(packageHash[:]) || !strings.Contains(component.Evidence[1].InputPath, "!/app/dependencies/"+component.Name+"/composer.json") {
+			t.Fatalf("package-owned Composer manifest was not verified: %#v", component)
+		}
 	}
 	linked := false
 	for _, edge := range doc.Edges {
@@ -89,6 +112,16 @@ func TestOCIComposerCustomVendorDirectory(t *testing.T) {
 	}
 	if !linked {
 		t.Fatalf("custom vendor package graph missing: %#v", doc.Edges)
+	}
+	archive := ociTestArchive(t, layout, "composer-files.oci.tar")
+	archiveDoc, archiveOutput, archiveCode := ociTestScan(t, archive)
+	if archiveCode != 0 || archiveDoc.Coverage.Packages != 2 {
+		t.Fatalf("Composer file evidence was lost in OCI archive: code=%d output=%s coverage=%#v", archiveCode, archiveOutput, archiveDoc.Coverage)
+	}
+	for _, component := range archiveDoc.Components {
+		if len(component.Evidence) != 2 {
+			t.Fatalf("Composer package file evidence was lost in OCI archive: %#v", component)
+		}
 	}
 
 	removed := ociTestLayout(t)
@@ -100,6 +133,76 @@ func TestOCIComposerCustomVendorDirectory(t *testing.T) {
 	removedDoc, removedOutput, removedCode := ociTestScan(t, removed)
 	if removedCode != 0 || removedDoc.Coverage.Packages != 0 {
 		t.Fatalf("whiteouted custom vendor directory survived: code=%d output=%s coverage=%#v", removedCode, removedOutput, removedDoc.Coverage)
+	}
+}
+
+func TestOCIComposerPackageManifestOverlay(t *testing.T) {
+	const manifestPath = "app/dependencies/composer/installed.json"
+	installedData, err := os.ReadFile(filepath.Join("..", "testdata", "oci", "composer-custom-vendor", "dependencies", "composer", "installed.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	alphaData, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "composer-generated-2", "packages", "alpha", "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	betaData, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "composer-generated-2", "packages", "beta", "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout := ociTestLayout(t)
+	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{
+		{entries: []ociTestEntry{{name: manifestPath, data: installedData}, {name: "app/dependencies/acme/alpha/composer.json", data: alphaData}, {name: "app/dependencies/acme/beta/composer.json", data: betaData}}},
+		{entries: []ociTestEntry{{name: "app/dependencies/acme/alpha/.wh.composer.json"}, {name: "app/dependencies/acme/beta/composer.json", data: []byte(`{"name":"other/package"}`)}}},
+	})
+	ociTestIndex(t, layout, image)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 2 {
+		t.Fatalf("Composer package manifest overlay failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	for _, component := range doc.Components {
+		if len(component.Evidence) != 1 {
+			t.Fatalf("whiteouted or mismatched Composer manifest was treated as valid evidence: %#v", component)
+		}
+	}
+	mismatch := false
+	for _, issue := range doc.Coverage.Issues {
+		mismatch = mismatch || issue.Code == "composer_package_manifest_mismatch" && issue.Name == "acme/beta"
+	}
+	if !mismatch {
+		t.Fatalf("Composer package manifest mismatch was not reported: %#v", doc.Coverage.Issues)
+	}
+}
+
+func TestOCIComposerPackageManifestUnverifiedEntries(t *testing.T) {
+	const installedPath = "app/dependencies/composer/installed.json"
+	const packagePath = "app/dependencies/acme/alpha/composer.json"
+	installedData := []byte(`{"packages":[{"name":"acme/alpha","version":"1.0.0","install-path":"../acme/alpha"}]}`)
+	for _, tc := range []struct {
+		name  string
+		entry ociTestEntry
+		issue string
+	}{
+		{name: "symlink", entry: ociTestEntry{name: packagePath, typeflag: tar.TypeSymlink, linkname: "../../other/composer.json"}, issue: "composer_package_manifest_link_unresolved"},
+		{name: "malformed", entry: ociTestEntry{name: packagePath, data: []byte(`{"name":42}`)}, issue: "composer_package_manifest_invalid"},
+		{name: "oversized", entry: ociTestEntry{name: packagePath, data: bytes.Repeat([]byte("x"), (1<<20)+1)}, issue: "composer_package_manifest_oversized"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			layout := ociTestLayout(t)
+			image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{{name: installedPath, data: installedData}, tc.entry}}})
+			ociTestIndex(t, layout, image)
+			doc, output, code := ociTestScan(t, layout)
+			if code != 0 || doc.Coverage.Packages != 1 || len(doc.Components[0].Evidence) != 1 {
+				t.Fatalf("unverified package file was accepted: code=%d output=%s doc=%#v", code, output, doc)
+			}
+			found := false
+			for _, issue := range doc.Coverage.Issues {
+				found = found || issue.Code == tc.issue && issue.Name == "acme/alpha"
+			}
+			if !found {
+				t.Fatalf("unverified package file not reported: %#v", doc.Coverage.Issues)
+			}
+		})
 	}
 }
 

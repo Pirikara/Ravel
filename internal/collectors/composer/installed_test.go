@@ -28,3 +28,23 @@ func TestInstalledManifestRequiresPackageArray(t *testing.T) {
 		}
 	}
 }
+
+func TestInstalledPackageManifestPaths(t *testing.T) {
+	data := []byte(`{"packages":[
+		{"name":"acme/alpha","version":"1.0.0","install-path":"../acme/alpha"},
+		{"name":"acme/beta","version":"1.0.0","install-path":null},
+		{"name":"acme/escape","version":"1.0.0","install-path":"../../../other"},
+		{"name":"acme/absolute","version":"1.0.0","install-path":"/tmp/absolute"},
+		{"name":"acme/private","version":"1.0.0","install-path":"../user:secret"},
+		{"name":"acme/metadata","version":"1.0.0","install-path":"."}
+	]}`)
+	paths := InstalledPackageManifestPaths(data, "app/dependencies/composer/installed.json")
+	if len(paths) != 1 || paths["acme/alpha"] != "app/dependencies/acme/alpha/composer.json" {
+		t.Fatalf("unsafe Composer install paths were selected: %#v", paths)
+	}
+	rootData := []byte(`[{"name":"acme/alpha","version":"1.0.0","install-path":"../acme/alpha"},{"name":"acme/escape","version":"1.0.0","install-path":"../../other"}]`)
+	rootPaths := InstalledPackageManifestPaths(rootData, "composer/installed.json")
+	if len(rootPaths) != 1 || rootPaths["acme/alpha"] != "acme/alpha/composer.json" {
+		t.Fatalf("Composer root vendor path escaped: %#v", rootPaths)
+	}
+}

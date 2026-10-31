@@ -228,6 +228,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	pythonEggRequirementsBytes := 0
 	pythonEggRequirementsLines := 0
 	composerInstalled := map[string]composerInstalledState{}
+	composerPackageManifests := map[string]composerPackageManifestState{}
+	composerPackageLimited := false
 	dotnetDeps := map[string]dotnetDepsState{}
 	pipVendor := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
@@ -271,6 +273,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for name := range composerInstalled {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		for name := range composerPackageManifests {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -370,6 +380,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(composerInstalled, name)
 				}
 			}
+			for name := range composerPackageManifests {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(composerPackageManifests, name)
+				}
+			}
 			for name := range dotnetDeps {
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 					delete(dotnetDeps, name)
@@ -433,6 +448,21 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			state.layer = layer.Digest
 			composerInstalled[name] = state
 		}
+		composerPackageNames := make([]string, 0, len(change.composerPackageManifests))
+		for name := range change.composerPackageManifests {
+			composerPackageNames = append(composerPackageNames, name)
+		}
+		sort.Strings(composerPackageNames)
+		for _, name := range composerPackageNames {
+			state := change.composerPackageManifests[name]
+			if _, found := composerPackageManifests[name]; !found && len(composerPackageManifests) >= maxComposerPackageFiles {
+				composerPackageLimited = true
+				continue
+			}
+			state.layer = layer.Digest
+			composerPackageManifests[name] = state
+		}
+		composerPackageLimited = composerPackageLimited || change.composerPackageLimited
 		for name, state := range change.dotnetDeps {
 			state.layer = layer.Digest
 			dotnetDeps[name] = state
@@ -605,6 +635,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	if rubyRuntimeLimited {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_runtime_scan_limited"})
 	}
+	if composerPackageLimited {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "composer_package_manifest_scan_limited"})
+	}
 	if installedDatabases == 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"})
 	}
@@ -730,6 +763,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "composer_installed_metadata_invalid", Name: name})
 			continue
 		}
+		verifyComposerPackageManifests(&installed, name, state.data, composerPackageManifests)
 		doc.Components = append(doc.Components, installed.Components...)
 		doc.Edges = append(doc.Edges, installed.Edges...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
@@ -1025,25 +1059,27 @@ type databaseChange struct {
 }
 
 type layerChange struct {
-	files                 map[string]databaseChange
-	python                map[string][]byte
-	pythonEggRequirements map[string]pythonEggRequirementsState
-	pipVendor             map[string][]byte
-	composerInstalled     map[string]composerInstalledState
-	dotnetDeps            map[string]dotnetDepsState
-	node                  map[string][]byte
-	nodeLinks             map[string]string
-	rubySpecs             map[string][]byte
-	java                  map[string]javaArchiveState
-	goBinaries            map[string]goBinaryState
-	goLimited             bool
-	pythonRuntimes        map[string]pythonRuntimeState
-	pythonRuntimeLimited  bool
-	rubyRuntimes          map[string]rubyRuntimeState
-	rubyRuntimeLimited    bool
-	nodeRuntimeBinary     *nodeRuntimeBinaryState
-	nodeRuntimeHeader     *nodeRuntimeHeaderState
-	whiteouts             []string
+	files                    map[string]databaseChange
+	python                   map[string][]byte
+	pythonEggRequirements    map[string]pythonEggRequirementsState
+	pipVendor                map[string][]byte
+	composerInstalled        map[string]composerInstalledState
+	composerPackageManifests map[string]composerPackageManifestState
+	composerPackageLimited   bool
+	dotnetDeps               map[string]dotnetDepsState
+	node                     map[string][]byte
+	nodeLinks                map[string]string
+	rubySpecs                map[string][]byte
+	java                     map[string]javaArchiveState
+	goBinaries               map[string]goBinaryState
+	goLimited                bool
+	pythonRuntimes           map[string]pythonRuntimeState
+	pythonRuntimeLimited     bool
+	rubyRuntimes             map[string]rubyRuntimeState
+	rubyRuntimeLimited       bool
+	nodeRuntimeBinary        *nodeRuntimeBinaryState
+	nodeRuntimeHeader        *nodeRuntimeHeaderState
+	whiteouts                []string
 }
 
 func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, existingNodeLinks map[string]string, project string) (layerChange, string, error) {
@@ -1077,7 +1113,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, dotnetDeps: map[string]dotnetDepsState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -1087,6 +1123,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	pythonEggLines := 0
 	pipVendorBytes := 0
 	composerInstalledBytes := 0
+	composerPackageBytes := 0
 	dotnetDepsBytes := 0
 	nodeBytes := 0
 	rubyBytes := 0
@@ -1230,6 +1267,36 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			change.composerInstalled[name] = state
 			if len(change.composerInstalled) > maxComposerInstalledFiles || composerInstalledBytes > maxComposerInstalledTotal {
 				return layerChange{}, "", errors.New("OCI layer has too much Composer installed metadata")
+			}
+			continue
+		}
+		if path.Base(name) == "composer.json" {
+			if _, duplicate := change.composerPackageManifests[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI Composer package manifest entry: %s", name)
+			}
+			state := composerPackageManifestState{}
+			switch {
+			case header.Typeflag == tar.TypeSymlink || header.Typeflag == tar.TypeLink:
+				state.status = "link_unresolved"
+			case header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA:
+				state.status = "unsupported"
+			case header.Size > maxComposerPackageJSONBytes:
+				state.status = "oversized"
+			case int64(composerPackageBytes)+header.Size > maxComposerPackageLayerBytes:
+				state.status = "scan_limited"
+				change.composerPackageLimited = true
+			default:
+				data, err := io.ReadAll(io.LimitReader(reader, maxComposerPackageJSONBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI Composer package manifest entry")
+				}
+				composerPackageBytes += len(data)
+				state = inspectComposerPackageManifest(data)
+			}
+			if len(change.composerPackageManifests) < maxComposerPackageFiles {
+				change.composerPackageManifests[name] = state
+			} else {
+				change.composerPackageLimited = true
 			}
 			continue
 		}
@@ -1512,6 +1579,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Composer metadata beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	for name := range change.composerPackageManifests {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Composer package metadata beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}

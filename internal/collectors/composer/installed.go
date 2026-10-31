@@ -22,11 +22,12 @@ const maxInstalledPackages = 5000
 var installedPackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type installedPackage struct {
-	Name    string            `json:"name"`
-	Version string            `json:"version"`
-	Require map[string]string `json:"require"`
-	Provide map[string]string `json:"provide"`
-	Replace map[string]string `json:"replace"`
+	Name        string            `json:"name"`
+	Version     string            `json:"version"`
+	InstallPath string            `json:"install-path"`
+	Require     map[string]string `json:"require"`
+	Provide     map[string]string `json:"provide"`
+	Replace     map[string]string `json:"replace"`
 }
 
 // IsInstalledManifestPath recognizes Composer's installed-package database
@@ -42,34 +43,9 @@ func CollectInstalled(data []byte, source, project, metadataPath string) (model.
 	if !IsInstalledManifestPath(metadataPath) || len(data) == 0 || len(data) > MaxInstalledJSONBytes {
 		return model.Document{}, errors.New("invalid Composer installed metadata path or size")
 	}
-	raw := bytes.TrimSpace(data)
-	if len(raw) == 0 {
-		return model.Document{}, errors.New("empty Composer installed metadata")
-	}
-	packagePath := ""
-	var packagesData []byte
-	switch raw[0] {
-	case '[':
-		packagesData = raw
-	case '{':
-		var envelope map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &envelope); err != nil {
-			return model.Document{}, fmt.Errorf("invalid Composer installed metadata: %w", err)
-		}
-		packagesData = bytes.TrimSpace(envelope["packages"])
-		packagePath = "/packages"
-	default:
-		return model.Document{}, errors.New("invalid Composer installed metadata shape")
-	}
-	if len(packagesData) == 0 || packagesData[0] != '[' {
-		return model.Document{}, errors.New("Composer installed metadata has no package array")
-	}
-	var packages []installedPackage
-	if err := json.Unmarshal(packagesData, &packages); err != nil {
-		return model.Document{}, fmt.Errorf("invalid Composer installed packages: %w", err)
-	}
-	if len(packages) > maxInstalledPackages {
-		return model.Document{}, errors.New("Composer installed metadata has too many packages")
+	packages, packagePath, err := parseInstalledPackages(data)
+	if err != nil {
+		return model.Document{}, err
 	}
 	hash := sha256.Sum256(data)
 	evidence := model.Evidence{Collector: "composer-installed", InputPath: source, InputDigest: "sha256:" + hex.EncodeToString(hash[:]), Method: "installed-metadata"}
@@ -174,6 +150,66 @@ func CollectInstalled(data []byte, source, project, metadataPath string) (model.
 	}
 	common.Finalize(&doc)
 	return doc, nil
+}
+
+func parseInstalledPackages(data []byte) ([]installedPackage, string, error) {
+	raw := bytes.TrimSpace(data)
+	if len(raw) == 0 {
+		return nil, "", errors.New("empty Composer installed metadata")
+	}
+	packagePath := ""
+	var packagesData []byte
+	switch raw[0] {
+	case '[':
+		packagesData = raw
+	case '{':
+		var envelope map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			return nil, "", fmt.Errorf("invalid Composer installed metadata: %w", err)
+		}
+		packagesData = bytes.TrimSpace(envelope["packages"])
+		packagePath = "/packages"
+	default:
+		return nil, "", errors.New("invalid Composer installed metadata shape")
+	}
+	if len(packagesData) == 0 || packagesData[0] != '[' {
+		return nil, "", errors.New("Composer installed metadata has no package array")
+	}
+	var packages []installedPackage
+	if err := json.Unmarshal(packagesData, &packages); err != nil {
+		return nil, "", fmt.Errorf("invalid Composer installed packages: %w", err)
+	}
+	if len(packages) > maxInstalledPackages {
+		return nil, "", errors.New("Composer installed metadata has too many packages")
+	}
+	return packages, packagePath, nil
+}
+
+// InstalledPackageManifestPaths maps packages with a conventional in-vendor
+// install path to their package-owned composer.json. Packages with null or
+// custom installer paths remain unverified.
+func InstalledPackageManifestPaths(data []byte, metadataPath string) map[string]string {
+	result := map[string]string{}
+	if !IsInstalledManifestPath(metadataPath) || len(data) > MaxInstalledJSONBytes {
+		return result
+	}
+	packages, _, err := parseInstalledPackages(data)
+	if err != nil {
+		return result
+	}
+	composerDir := path.Dir(metadataPath)
+	vendorDir := path.Dir(composerDir)
+	for _, pkg := range packages {
+		if !validInstalledPackageName(pkg.Name) || pkg.InstallPath == "" || len(pkg.InstallPath) > 1024 || path.IsAbs(pkg.InstallPath) || strings.ContainsAny(pkg.InstallPath, "\\\x00\r\n") {
+			continue
+		}
+		installedDir := path.Clean(path.Join(composerDir, pkg.InstallPath))
+		if installedDir != path.Join(vendorDir, pkg.Name) {
+			continue
+		}
+		result[strings.ToLower(pkg.Name)] = path.Join(installedDir, "composer.json")
+	}
+	return result
 }
 
 func validInstalledPackageName(name string) bool {
