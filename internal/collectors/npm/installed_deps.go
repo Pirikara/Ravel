@@ -175,5 +175,11 @@ func resolveInstalledNode(byPath map[string]InstalledRecord, metadataPath, name 
 		base = path.Dir(base)
 		first = false
 	}
+	if _, systemPackage := systemNodePackageName(metadataPath); systemPackage {
+		candidate := path.Join("usr/share/nodejs", name, "package.json")
+		if target, found := byPath[candidate]; found {
+			return target, true, true
+		}
+	}
 	return InstalledRecord{}, false, false
 }

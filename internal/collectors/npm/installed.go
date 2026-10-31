@@ -23,14 +23,18 @@ var (
 )
 
 // IsInstalledPackagePath recognizes package roots in conventional node_modules
-// trees, pnpm's virtual store, and versioned Yarn installations. A pnpm store
-// manifest still needs a reachable package symlink before it is inventoried.
+// trees, Debian's system Node directory, pnpm's virtual store, and versioned
+// Yarn installations. A pnpm store manifest still needs a reachable package
+// symlink before it is inventoried.
 func IsInstalledPackagePath(name string) bool {
 	if path.Clean(name) != name || path.Base(name) != "package.json" {
 		return false
 	}
 	parts := strings.Split(name, "/")
 	if _, ok := versionedYarnPath(name); ok {
+		return true
+	}
+	if _, ok := systemNodePackageName(name); ok {
 		return true
 	}
 	for _, part := range parts {
@@ -90,6 +94,9 @@ func CollectInstalledPackage(data []byte, source, project, metadataPath string) 
 	if expected, ok := versionedYarnPath(metadataPath); ok && (name != "yarn" || version != expected) {
 		return model.Document{}, errors.New("installed Yarn version does not match its installation path")
 	}
+	if expected, ok := systemNodePackageName(metadataPath); ok && name != expected {
+		return model.Document{}, errors.New("installed system Node package name does not match its installation path")
+	}
 	hash := sha256.Sum256(data)
 	digest := "sha256:" + hex.EncodeToString(hash[:])
 	evidence := model.Evidence{Collector: "node-package-json", InputPath: source, InputDigest: digest, Method: "installed-metadata"}
@@ -116,6 +123,25 @@ func versionedYarnPath(name string) (string, bool) {
 	}
 	version := strings.TrimPrefix(parts[1], "yarn-v")
 	return version, installedNodePathToken.MatchString(version)
+}
+
+// systemNodePackageName recognizes the package roots that Debian places on
+// Node's default global module path. Nested source manifests are excluded.
+func systemNodePackageName(name string) (string, bool) {
+	if path.Clean(name) != name || strings.HasPrefix(name, "/") {
+		return "", false
+	}
+	parts := strings.Split(name, "/")
+	if len(parts) < 5 || parts[0] != "usr" || parts[1] != "share" || parts[2] != "nodejs" || parts[len(parts)-1] != "package.json" {
+		return "", false
+	}
+	if len(parts) == 5 && installedNodePathToken.MatchString(parts[3]) {
+		return parts[3], true
+	}
+	if len(parts) == 6 && strings.HasPrefix(parts[3], "@") && installedNodePathToken.MatchString(strings.TrimPrefix(parts[3], "@")) && installedNodePathToken.MatchString(parts[4]) {
+		return parts[3] + "/" + parts[4], true
+	}
+	return "", false
 }
 
 func decodeUniqueObject(data []byte) (map[string]json.RawMessage, error) {
