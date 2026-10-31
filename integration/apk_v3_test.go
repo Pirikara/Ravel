@@ -87,9 +87,38 @@ func TestAPKConvertedV3DatabaseAndEvidence(t *testing.T) {
 	if plainDoc, output, code := scanAPK(t, uncompressed); code != 0 || plainDoc.Coverage.Packages != 16 || plainDoc.Coverage.Edges != 40 {
 		t.Fatalf("uncompressed APK v3 scan failed: code=%d output=%s", code, output)
 	}
+	for _, name := range []string{"installed-none.adb", "installed-deflate6.adb", "installed-zstd.adb"} {
+		t.Run(name, func(t *testing.T) {
+			variant, err := os.ReadFile(filepath.Join(fixture, "reference", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(uncompressed, variant, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			variantDoc, output, code := scanAPK(t, uncompressed)
+			if code != 0 || variantDoc.Coverage.Packages != 16 || variantDoc.Coverage.Edges != 40 {
+				t.Fatalf("APK v3 %s scan failed: code=%d output=%s coverage=%#v", name, code, output, variantDoc.Coverage)
+			}
+			packages, edges := canonical(variantDoc)
+			if !maps.Equal(v2Packages, packages) || !maps.Equal(v2Edges, edges) {
+				t.Fatalf("APK v3 %s differs from the original v2 package graph", name)
+			}
+		})
+	}
+	wrappedNone := append([]byte("ADBc\x00\x01"), plain...)
+	if err := os.WriteFile(uncompressed, wrappedNone, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if noneDoc, output, code := scanAPK(t, uncompressed); code != 0 || noneDoc.Coverage.Packages != 16 || noneDoc.Coverage.Edges != 40 {
+		t.Fatalf("custom uncompressed APK v3 scan failed: code=%d output=%s", code, output)
+	}
 
 	for _, corrupted := range [][]byte{
 		[]byte("ADBc"),
+		[]byte("ADBc\x03\x00"),
+		[]byte("ADBc\x01\x06"),
+		[]byte("ADBc\x02\x03"),
 		data[:len(data)/2],
 		append([]byte(nil), []byte("ADB.unknown")...),
 	} {
@@ -131,6 +160,19 @@ func TestOCIAPKConvertedV3Overlay(t *testing.T) {
 		if component.Evidence[0].Collector != "apk-installed-adb" || !strings.Contains(component.Evidence[0].InputPath, "!/lib/apk/db/installed.adb") {
 			t.Fatalf("OCI APK v3 layer evidence wrong: %#v", component)
 		}
+	}
+	zstdData, err := os.ReadFile(filepath.Join(apkFixture(t, "apk-v3-converted"), "reference", "installed-zstd.adb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zstdLayout := ociTestLayout(t)
+	zstdManifest := ociTestImage(t, zstdLayout, "linux", "arm64", []ociTestLayer{
+		{entries: []ociTestEntry{{name: "lib/apk/db/installed.adb", data: zstdData}}},
+	})
+	ociTestIndex(t, zstdLayout, zstdManifest)
+	zstdDoc, output, code := ociTestScan(t, zstdLayout)
+	if code != 0 || zstdDoc.Coverage.Packages != 16 || zstdDoc.Coverage.Edges != 40 {
+		t.Fatalf("OCI APK v3 zstd scan failed: code=%d output=%s coverage=%#v", code, output, zstdDoc.Coverage)
 	}
 
 	replaced := ociTestLayout(t)

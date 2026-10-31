@@ -8,3 +8,11 @@ The adjacent reference/installed-v2 is the original database before
 conversion. The apk-tools adbdump command reports 16 installed packages.
 Ravel's test checks selected identities and the complete package and
 dependency counts against this original.
+
+reference/installed-deflate6.adb and reference/installed-none.adb were
+generated from the same Alpine image with `apk convdb --compression deflate:6`
+and `apk convdb --compression none`. The Alpine image's apk-tools build
+does not include zstd support, so reference/installed-zstd.adb contains
+the tool-generated uncompressed ADB database wrapped as `ADBc` with
+algorithm 2, level 3, and a zstd level-3 frame produced by the zstd CLI.
+The integration test compares all variants with the original v2 graph.

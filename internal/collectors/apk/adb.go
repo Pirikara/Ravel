@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -27,16 +29,30 @@ func parseInstalledADB(data []byte) ([]installedPackage, error) {
 	}
 	switch data[3] {
 	case 'd':
-		reader := flate.NewReader(bytes.NewReader(data[4:]))
-		defer reader.Close()
-		plain, err := io.ReadAll(io.LimitReader(reader, maxInstalledBytes+1))
-		if err != nil || len(plain) > maxInstalledBytes {
-			return nil, errors.New("APK v3 database decompression failed or exceeded size limit")
+		var err error
+		data, err = inflateADB(data[4:])
+		if err != nil {
+			return nil, err
 		}
-		data = plain
 	case '.':
 	case 'c':
-		return nil, errors.New("unsupported APK v3 compression")
+		if len(data) < 6 {
+			return nil, errors.New("truncated APK v3 compression spec")
+		}
+		var err error
+		switch data[4] {
+		case 0: // apk-tools also accepts an uncompressed custom envelope.
+			data = data[6:]
+		case 1:
+			data, err = inflateADB(data[6:])
+		case 2:
+			data, err = unzstdADB(data[6:])
+		default:
+			return nil, errors.New("unsupported APK v3 compression algorithm")
+		}
+		if err != nil {
+			return nil, err
+		}
 	default:
 		return nil, errors.New("unsupported APK v3 header")
 	}
@@ -102,6 +118,30 @@ func parseInstalledADB(data []byte) ([]installedPackage, error) {
 		packages = append(packages, installedPackage{name: name, version: version, arch: arch, depends: strings.Join(depends, " "), provides: strings.Join(provides, " ")})
 	}
 	return packages, nil
+}
+
+func inflateADB(data []byte) ([]byte, error) {
+	reader := flate.NewReader(bytes.NewReader(data))
+	defer reader.Close()
+	return readADBStream(reader)
+}
+
+func unzstdADB(data []byte) ([]byte, error) {
+	reader, err := zstd.NewReader(bytes.NewReader(data),
+		zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(maxInstalledBytes))
+	if err != nil {
+		return nil, fmt.Errorf("APK v3 zstd decompression failed: %w", err)
+	}
+	defer reader.Close()
+	return readADBStream(reader)
+}
+
+func readADBStream(reader io.Reader) ([]byte, error) {
+	plain, err := io.ReadAll(io.LimitReader(reader, maxInstalledBytes+1))
+	if err != nil || len(plain) > maxInstalledBytes {
+		return nil, errors.New("APK v3 database decompression failed or exceeded size limit")
+	}
+	return plain, nil
 }
 
 type adbReader struct{ data []byte }
