@@ -12,6 +12,8 @@ Provides: ravel-fixture-evr-pre = 1.0~beta2-1
 Provides: ravel-fixture-evr-separator = 1+0-1
 Provides: ravel-fixture-evr-bad = 1.0^git1-1
 Provides: ravel-fixture-evr-release-bad = 1.0^git1-1
+Provides: ravel-fixture-trigger
+Provides: ravel-fixture-extra
 
 %description
 Capabilities for Ravel's RPM version comparison integration tests.

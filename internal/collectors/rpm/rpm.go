@@ -158,7 +158,11 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 		}
 	}
 	providers := map[string][]rpmProvider{}
+	providerCatalogComplete := true
 	for _, pkg := range packages {
+		if !pkg.metadataKnown {
+			providerCatalogComplete = false
+		}
 		if !slices.ContainsFunc(pkg.provides, func(capability headerDependency) bool { return capability.name == pkg.name }) {
 			providers[pkg.name] = append(providers[pkg.name], rpmProvider{ref: pkg.ref})
 		}
@@ -178,6 +182,7 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 		externalRequirement := false
 		constraintUnverified := false
 		for _, requirement := range pkg.requires {
+			evidenceRequirement := requirement.name
 			if requirement.name == "" || len(requirement.name) > 512 || strings.ContainsAny(requirement.name, "\x00\r\n@#?") || strings.Contains(requirement.name, "://") {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_requirement_unparsed", Name: pkg.name})
 				continue
@@ -186,8 +191,19 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 				continue // Internal RPM feature supplied by the package manager.
 			}
 			if strings.HasPrefix(requirement.name, "(") {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_requirement_unparsed", Name: requirement.name, Scope: pkg.name})
-				continue // RPM Boolean dependencies need expression evaluation.
+				consequence, guard, valid := parseSimpleRPMIf(requirement.name)
+				if !valid {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_requirement_unparsed", Name: requirement.name, Scope: pkg.name})
+					continue
+				}
+				switch evaluateRPMGuard(guard, pkg.metadataKnown, providerCatalogComplete, providers) {
+				case rpmGuardAbsent:
+					continue // An implication with a false guard is satisfied.
+				case rpmGuardUnknown:
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_boolean_guard_unverified", Name: requirement.name, Scope: pkg.name})
+					continue
+				}
+				requirement = consequence
 			}
 			externalRequirement = true
 			fileRequirement := strings.HasPrefix(requirement.name, "/")
@@ -242,13 +258,13 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 					}
 					condition += "provider=ambiguous"
 				}
-				key := pkg.ref + "\x00" + target + "\x00" + requirement.name
+				key := pkg.ref + "\x00" + target + "\x00" + evidenceRequirement
 				if seenEdges[key] {
 					continue
 				}
 				seenEdges[key] = true
 				linked := evidence
-				linked.Pointer = "requires/" + requirement.name
+				linked.Pointer = "requires/" + evidenceRequirement
 				doc.Edges = append(doc.Edges, model.Edge{From: pkg.ref, To: target, Kind: "depends_on", Condition: condition, Evidence: linked})
 			}
 		}

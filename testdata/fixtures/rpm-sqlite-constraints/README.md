@@ -5,9 +5,10 @@ satisfied by `ravel-fixture-base` (`>= 2.0` versus `= 1.0`) and an unversioned
 requirement that is satisfied. The base spec is in
 `../rpm-sqlite-basic/specs/ravel-base.spec`.
 
-The third spec requires a capability it provides itself and includes an RPM
-Boolean `if` dependency. The self-provided requirement needs no inter-package
-edge; the Boolean expression remains explicitly unparsed by Ravel.
+The third spec requires a capability it provides itself and includes three RPM
+Boolean dependencies. Its active `if` condition links to the EVR provider;
+the inactive `if` condition adds no edge; and the `or` expression remains
+explicitly unparsed. The self-provided requirement needs no inter-package edge.
 
 The file provider owns a regular file and a `%ghost` record. The file consumer
 requires both paths and a nonexistent path. Ravel links only the regular file
