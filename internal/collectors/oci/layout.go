@@ -241,6 +241,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	goBinaries := map[string]goBinaryState{}
 	goScanLimited := false
 	var bunBinary *bunBinaryState
+	var denoBinary *denoBinaryState
 	var postgresBinary *postgresBinaryState
 	var redisBinary *redisBinaryState
 	pythonRuntimes := map[string]pythonRuntimeState{}
@@ -251,7 +252,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, postgresBinaryPath, redisBinaryPath} {
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, postgresBinaryPath, redisBinaryPath} {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -349,7 +350,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				}
 			}
 		}
-		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths, nodePackageLinks, project)
+		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths, nodePackageLinks, project, choice.config.Architecture)
 		if err != nil {
 			return model.Document{}, fmt.Errorf("OCI layer %d: %w", i, err)
 		}
@@ -376,6 +377,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			if removed == "." || removed == bunBinaryPath || strings.HasPrefix(bunBinaryPath, removed+"/") {
 				bunBinary = nil
+			}
+			if removed == "." || removed == denoBinaryPath || strings.HasPrefix(denoBinaryPath, removed+"/") {
+				denoBinary = nil
 			}
 			if removed == "." || removed == postgresBinaryPath || strings.HasPrefix(postgresBinaryPath, removed+"/") {
 				postgresBinary = nil
@@ -540,6 +544,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if change.bunBinary != nil {
 			bunBinary = change.bunBinary
 		}
+		if change.denoBinary != nil {
+			denoBinary = change.denoBinary
+		}
 		if change.postgresBinary != nil {
 			postgresBinary = change.postgresBinary
 		}
@@ -652,7 +659,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -1031,6 +1038,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 		}
 	}
+	if denoBinary != nil {
+		if denoBinary.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "deno_runtime_" + denoBinary.status, Name: denoBinaryPath})
+		} else {
+			installed := denoBinary.document
+			doc.Components = append(doc.Components, installed.Components...)
+			doc.Edges = append(doc.Edges, installed.Edges...)
+			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+		}
+	}
 	if nodeRuntimeBinary != nil {
 		if nodeRuntimeBinary.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_" + nodeRuntimeBinary.status, Name: nodeRuntimeBinaryPath})
@@ -1184,6 +1201,7 @@ type layerChange struct {
 	goBinaries               map[string]goBinaryState
 	goLimited                bool
 	bunBinary                *bunBinaryState
+	denoBinary               *denoBinaryState
 	postgresBinary           *postgresBinaryState
 	redisBinary              *redisBinaryState
 	pythonRuntimes           map[string]pythonRuntimeState
@@ -1195,7 +1213,7 @@ type layerChange struct {
 	whiteouts                []string
 }
 
-func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, existingNodeLinks map[string]string, project string) (layerChange, string, error) {
+func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, existingNodeLinks map[string]string, project, architecture string) (layerChange, string, error) {
 	if item.MediaType != plainLayerType && item.MediaType != gzipLayerType && item.MediaType != plainNonDistType && item.MediaType != gzipNonDistType && item.MediaType != dockerPlainLayerType && item.MediaType != dockerGzipLayerType && item.MediaType != dockerForeignLayerType {
 		return layerChange{}, "", fmt.Errorf("unsupported OCI layer media type %s", item.MediaType)
 	}
@@ -1692,6 +1710,27 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			change.whiteouts = append(change.whiteouts, name)
 			continue
 		}
+		if name == denoBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.denoBinary != nil {
+				return layerChange{}, "", errors.New("duplicate OCI Deno executable entry")
+			}
+			if header.Size > maxDenoBinaryBytes {
+				change.denoBinary = &denoBinaryState{status: "oversized"}
+			} else {
+				input := "oci:" + item.Digest + "!/" + name
+				binaryDoc, err := inspectDenoBinary(reader, header.Size, input, project, architecture)
+				if errors.Is(err, errDenoBinaryIO) {
+					return layerChange{}, "", err
+				}
+				if err != nil {
+					change.denoBinary = &denoBinaryState{status: "invalid"}
+				} else {
+					change.denoBinary = &denoBinaryState{document: binaryDoc}
+				}
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
 		if name == nodeRuntimeBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
 			if change.nodeRuntimeBinary != nil {
 				return layerChange{}, "", errors.New("duplicate OCI Node runtime executable entry")
@@ -1867,6 +1906,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(bunBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Bun executable beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	if change.denoBinary != nil {
+		for ancestor := path.Dir(denoBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Deno executable beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}
