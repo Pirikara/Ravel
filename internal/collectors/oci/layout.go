@@ -197,6 +197,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	}
 	databases := map[string]databaseState{}
 	pythonMetadata := map[string]databaseState{}
+	pythonEggRequirements := map[string]bool{}
 	pipVendor := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
 	nodePackageLinks := map[string]string{}
@@ -227,6 +228,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					if current == "." {
 						break
 					}
+				}
+			}
+		}
+		for name := range pythonEggRequirements {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
 				}
 			}
 		}
@@ -302,6 +311,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					}
 				}
 			}
+			for name := range pythonEggRequirements {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(pythonEggRequirements, name)
+				}
+			}
 			for name := range javaArchives {
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 					delete(javaArchives, name)
@@ -332,6 +346,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		for name, data := range change.python {
 			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
+		}
+		for name := range change.pythonEggRequirements {
+			pythonEggRequirements[name] = true
 		}
 		for name, data := range change.pipVendor {
 			pipVendor[name] = databaseState{data: data, layer: layer.Digest}
@@ -366,6 +383,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if len(pythonMetadata) > maxPythonMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Python metadata files")
+		}
+		if len(pythonEggRequirements) > maxPythonMetadataFiles {
+			return model.Document{}, errors.New("OCI image has too many installed Python egg-info requirements files")
 		}
 		metadataBytes := 0
 		for _, state := range pythonMetadata {
@@ -544,6 +564,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			if issue.Code != "declared_dependencies_unresolved" {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, issue)
 			}
+		}
+		if strings.HasSuffix(name, ".egg-info/PKG-INFO") && pythonEggRequirements[path.Join(path.Dir(name), "requires.txt")] {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_egg_requirements_unscanned", Name: installed.Components[0].Name})
 		}
 	}
 	python.LinkInstalledRequirements(&doc, installedRecords)
@@ -846,22 +869,23 @@ type databaseChange struct {
 }
 
 type layerChange struct {
-	files                map[string]databaseChange
-	python               map[string][]byte
-	pipVendor            map[string][]byte
-	node                 map[string][]byte
-	nodeLinks            map[string]string
-	rubySpecs            map[string][]byte
-	java                 map[string]javaArchiveState
-	goBinaries           map[string]goBinaryState
-	goLimited            bool
-	pythonRuntimes       map[string]pythonRuntimeState
-	pythonRuntimeLimited bool
-	rubyRuntimes         map[string]rubyRuntimeState
-	rubyRuntimeLimited   bool
-	nodeRuntimeBinary    *nodeRuntimeBinaryState
-	nodeRuntimeHeader    *nodeRuntimeHeaderState
-	whiteouts            []string
+	files                 map[string]databaseChange
+	python                map[string][]byte
+	pythonEggRequirements map[string]bool
+	pipVendor             map[string][]byte
+	node                  map[string][]byte
+	nodeLinks             map[string]string
+	rubySpecs             map[string][]byte
+	java                  map[string]javaArchiveState
+	goBinaries            map[string]goBinaryState
+	goLimited             bool
+	pythonRuntimes        map[string]pythonRuntimeState
+	pythonRuntimeLimited  bool
+	rubyRuntimes          map[string]rubyRuntimeState
+	rubyRuntimeLimited    bool
+	nodeRuntimeBinary     *nodeRuntimeBinaryState
+	nodeRuntimeHeader     *nodeRuntimeHeaderState
+	whiteouts             []string
 }
 
 func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, existingNodeLinks map[string]string, project string) (layerChange, string, error) {
@@ -895,7 +919,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pythonEggRequirements: map[string]bool{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -970,6 +994,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 			continue
 		}
+		if header.Typeflag != tar.TypeDir && python.IsInstalledEggRequirementsPath(name) {
+			change.pythonEggRequirements[name] = true
+			if len(change.pythonEggRequirements) > maxPythonMetadataFiles {
+				return layerChange{}, "", errors.New("OCI layer has too many installed Python egg-info requirements files")
+			}
+			continue
+		}
 		if isPipVendorPath(name) {
 			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxPipVendorBytes {
 				return layerChange{}, "", fmt.Errorf("unsupported OCI pip vendor manifest entry: %s", name)
@@ -988,7 +1019,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 			continue
 		}
-		if python.IsInstalledMetadataPath(name) {
+		if header.Typeflag != tar.TypeDir && python.IsInstalledMetadataPath(name) {
 			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > python.MaxInstalledMetadataBytes {
 				return layerChange{}, "", fmt.Errorf("unsupported OCI installed Python metadata entry: %s", name)
 			}

@@ -17,8 +17,8 @@ const MaxInstalledMetadataBytes = 2 << 20
 var installedDistributionName = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
 
 // CollectInstalledMetadata records one installed Python distribution from
-// its dist-info/METADATA file. The file establishes its installed identity,
-// but not the index or artifact from which it was obtained.
+// its dist-info/METADATA, egg-info/PKG-INFO, or legacy egg-info file. The
+// metadata establishes its installed identity, but not its index or artifact.
 func CollectInstalledMetadata(data []byte, source, project, metadataPath string) (model.Document, error) {
 	if len(data) > MaxInstalledMetadataBytes || !IsInstalledMetadataPath(metadataPath) {
 		return model.Document{}, errors.New("invalid installed Python metadata path or size")
@@ -30,18 +30,25 @@ func CollectInstalledMetadata(data []byte, source, project, metadataPath string)
 	if !ok || !installedDistributionName.MatchString(name) || version == "" || metadataVersion == "" || strings.ContainsAny(version, " \t\x00/\\\r\n") {
 		return model.Document{}, errors.New("invalid installed Python core metadata")
 	}
-	folder := path.Base(path.Dir(metadataPath))
-	stem := strings.TrimSuffix(folder, ".dist-info")
-	separator := strings.LastIndexByte(stem, '-')
-	if separator <= 0 || separator == len(stem)-1 || wheelNameToken(stem[:separator]) != wheelNameToken(name) || wheelVersionToken(stem[separator+1:]) != wheelVersionToken(version) {
-		return model.Document{}, errors.New("installed Python metadata does not match its dist-info directory")
+	eggInfo := strings.HasSuffix(metadataPath, ".egg-info/PKG-INFO") || strings.HasSuffix(metadataPath, ".egg-info")
+	if !eggInfo {
+		folder := path.Base(path.Dir(metadataPath))
+		stem := strings.TrimSuffix(folder, ".dist-info")
+		separator := strings.LastIndexByte(stem, '-')
+		if separator <= 0 || separator == len(stem)-1 || wheelNameToken(stem[:separator]) != wheelNameToken(name) || wheelVersionToken(stem[separator+1:]) != wheelVersionToken(version) {
+			return model.Document{}, errors.New("installed Python metadata does not match its dist-info directory")
+		}
 	}
 	hash := sha256.Sum256(data)
 	digest := "sha256:" + hex.EncodeToString(hash[:])
-	evidence := model.Evidence{Collector: "python-dist-info", InputPath: source, InputDigest: digest, Method: "installed-metadata"}
+	collector := "python-dist-info"
+	if eggInfo {
+		collector = "python-egg-info"
+	}
+	evidence := model.Evidence{Collector: collector, InputPath: source, InputDigest: digest, Method: "installed-metadata"}
 	id := "python-installed:" + common.ID(metadataPath+"\x00"+name+"\x00"+version)
 	doc := common.NewDocument(source, project, "python-installed", nil)
-	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, Context: "location=" + path.Dir(path.Dir(metadataPath)), Evidence: []model.Evidence{evidence}})
+	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, Context: "location=" + installedMetadataEnvironment(metadataPath), Evidence: []model.Evidence{evidence}})
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: name})
 	for _, header := range headers {
@@ -54,17 +61,43 @@ func CollectInstalledMetadata(data []byte, source, project, metadataPath string)
 	return doc, nil
 }
 
-// IsInstalledMetadataPath accepts an installed dist-info record immediately
-// below a Python package directory, including virtual environments.
+// IsInstalledMetadataPath accepts installed dist-info, egg-info directories,
+// and legacy egg-info files directly inside a Python package directory.
 func IsInstalledMetadataPath(name string) bool {
-	if path.Clean(name) != name || !strings.HasSuffix(name, ".dist-info/METADATA") {
+	if path.Clean(name) != name {
 		return false
 	}
 	parts := strings.Split(name, "/")
+	if len(parts) >= 2 && (parts[len(parts)-2] == "site-packages" || parts[len(parts)-2] == "dist-packages") {
+		folder := parts[len(parts)-1]
+		return strings.HasSuffix(folder, ".egg-info") && len(folder) > len(".egg-info") && !strings.HasPrefix(folder, ".")
+	}
 	if len(parts) < 3 {
 		return false
 	}
 	parent := parts[len(parts)-3]
 	folder := parts[len(parts)-2]
-	return (parent == "site-packages" || parent == "dist-packages") && strings.Contains(strings.TrimSuffix(folder, ".dist-info"), "-")
+	if parent != "site-packages" && parent != "dist-packages" {
+		return false
+	}
+	if strings.HasSuffix(name, ".dist-info/METADATA") {
+		return strings.Contains(strings.TrimSuffix(folder, ".dist-info"), "-")
+	}
+	return strings.HasSuffix(name, ".egg-info/PKG-INFO") && len(folder) > len(".egg-info") && !strings.HasPrefix(folder, ".")
+}
+
+// IsInstalledEggRequirementsPath identifies a legacy egg-info dependency
+// sidecar. Its presence must be checked against the final OCI layer state.
+func IsInstalledEggRequirementsPath(name string) bool {
+	if !strings.HasSuffix(name, ".egg-info/requires.txt") {
+		return false
+	}
+	return IsInstalledMetadataPath(strings.TrimSuffix(name, "requires.txt") + "PKG-INFO")
+}
+
+func installedMetadataEnvironment(metadataPath string) string {
+	if strings.HasSuffix(metadataPath, ".egg-info") {
+		return path.Dir(metadataPath)
+	}
+	return path.Dir(path.Dir(metadataPath))
 }

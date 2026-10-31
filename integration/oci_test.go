@@ -577,6 +577,97 @@ func TestOCIPythonInstalledMetadataOverlay(t *testing.T) {
 	}
 }
 
+func TestOCIPythonEggInfoMetadata(t *testing.T) {
+	const site = "usr/local/lib/python3.13/site-packages/"
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{
+		{entries: []ociTestEntry{
+			{name: site + "old.egg-info/PKG-INFO", data: []byte("Metadata-Version: 1.2\nName: old\nVersion: 0.1\n")},
+			{name: site + "clean_pkg.egg-info/PKG-INFO", data: []byte("Metadata-Version: 1.2\nName: clean-pkg\nVersion: 1.0\n")},
+			{name: site + "clean_pkg.egg-info/requires.txt", data: []byte("obsolete-dependency>=1\n")},
+		}},
+		{entries: []ociTestEntry{
+			{name: site + ".wh.old.egg-info"},
+			{name: site + "clean_pkg.egg-info/.wh.requires.txt"},
+			{name: site + "legacy_pkg.egg-info/PKG-INFO", data: []byte("Metadata-Version: 1.2\nName: legacy-pkg\nVersion: 1.0\nRequires-Dist: idna ==3.10\n")},
+			{name: site + "legacy_pkg.egg-info/requires.txt", data: []byte("unread-legacy-dependency>=1\n")},
+			{name: site + "idna-3.10.dist-info/METADATA", data: []byte("Metadata-Version: 2.3\nName: idna\nVersion: 3.10\n")},
+			{name: site + "broken.egg-info/PKG-INFO", data: []byte("Metadata-Version: 1.2\nVersion: 1.0\n")},
+		}},
+	})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 3 || doc.Coverage.Edges != 4 || doc.Coverage.GraphState != "partial" {
+		t.Fatalf("OCI Python egg-info scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	names := map[string]string{}
+	seenNames := map[string]bool{}
+	for _, component := range doc.Components {
+		names[component.ID] = component.Name
+		seenNames[component.Name] = true
+		if component.Name == "legacy-pkg" && (component.Version != "1.0" || component.Evidence[0].Collector != "python-egg-info" || !strings.HasPrefix(component.Context, "location="+strings.TrimSuffix(site, "/")+";image=")) {
+			t.Fatalf("egg-info identity or evidence incorrect: %#v", component)
+		}
+	}
+	if len(seenNames) != 3 || !seenNames["legacy-pkg"] || !seenNames["clean-pkg"] || !seenNames["idna"] {
+		t.Fatalf("whiteout or malformed egg-info was inventoried: %#v", seenNames)
+	}
+	linked := false
+	for _, edge := range doc.Edges {
+		linked = linked || edge.Kind == "depends_on" && names[edge.From] == "legacy-pkg" && names[edge.To] == "idna" && edge.Condition == "" && edge.Evidence.Pointer == "Requires-Dist/0"
+	}
+	if !linked {
+		t.Fatalf("egg-info Requires-Dist was not linked: %#v", doc.Edges)
+	}
+	issues := map[string]bool{}
+	for _, issue := range doc.Coverage.Issues {
+		issues[issue.Code] = true
+		if issue.Code == "python_egg_requirements_unscanned" && issue.Name != "legacy-pkg" {
+			t.Fatalf("whiteouted egg-info requirements affected another package: %#v", doc.Coverage.Issues)
+		}
+	}
+	if !issues["python_egg_requirements_unscanned"] || !issues["python_installed_metadata_invalid"] {
+		t.Fatalf("egg-info limits or malformed metadata were not reported: %#v", doc.Coverage.Issues)
+	}
+}
+
+func TestOCIPythonSingleFileEggInfoMetadata(t *testing.T) {
+	const site = "usr/lib/python3/dist-packages/"
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{
+		{entries: []ociTestEntry{{name: site + "removed-0.1.egg-info", data: []byte("Metadata-Version: 1.2\nName: removed\nVersion: 0.1\n")}}},
+		{entries: []ociTestEntry{
+			{name: site + ".wh.removed-0.1.egg-info"},
+			{name: site + "legacy_pkg-1.0.egg-info", data: []byte("Metadata-Version: 1.2\nName: legacy-pkg\nVersion: 1.0\nRequires-Dist: idna ==3.10\n")},
+			{name: site + "idna-3.10.dist-info/METADATA", data: []byte("Metadata-Version: 2.3\nName: idna\nVersion: 3.10\n")},
+		}},
+	})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 3 {
+		t.Fatalf("OCI single-file egg-info scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	names := map[string]string{}
+	for _, component := range doc.Components {
+		names[component.ID] = component.Name
+		if component.Name == "legacy-pkg" && (component.Version != "1.0" || component.Evidence[0].Collector != "python-egg-info" || !strings.HasPrefix(component.Context, "location="+strings.TrimSuffix(site, "/")+";image=")) {
+			t.Fatalf("single-file egg-info identity or evidence incorrect: %#v", component)
+		}
+	}
+	linked := false
+	for _, edge := range doc.Edges {
+		linked = linked || edge.Kind == "depends_on" && names[edge.From] == "legacy-pkg" && names[edge.To] == "idna" && edge.Condition == "" && edge.Evidence.Pointer == "Requires-Dist/0"
+	}
+	if !linked {
+		t.Fatalf("single-file egg-info Requires-Dist was not linked: %#v", doc.Edges)
+	}
+	for _, issue := range doc.Coverage.Issues {
+		if issue.Code == "python_egg_requirements_unscanned" {
+			t.Fatalf("single-file egg-info cannot contain requires.txt: %#v", doc.Coverage.Issues)
+		}
+	}
+}
+
 func TestOCIPythonInstalledRequirements(t *testing.T) {
 	const site = "usr/local/lib/python3.13/site-packages/"
 	metadata := func(name, version, requirements string) []byte {

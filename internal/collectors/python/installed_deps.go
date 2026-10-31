@@ -2,7 +2,6 @@ package python
 
 import (
 	"fmt"
-	"path"
 	"regexp"
 	"strings"
 
@@ -29,7 +28,7 @@ var installedVersionClause = regexp.MustCompile(`^(===|~=|==|!=|<=|>=|<|>)\s*([A
 func LinkInstalledRequirements(doc *model.Document, records []InstalledRecord) {
 	byEnvironment := map[string]map[string][]InstalledRecord{}
 	for _, record := range records {
-		environment := path.Dir(path.Dir(record.MetadataPath))
+		environment := installedMetadataEnvironment(record.MetadataPath)
 		if byEnvironment[environment] == nil {
 			byEnvironment[environment] = map[string][]InstalledRecord{}
 		}
@@ -39,7 +38,7 @@ func LinkInstalledRequirements(doc *model.Document, records []InstalledRecord) {
 	seenEdges := map[string]bool{}
 	for _, record := range records {
 		headers, _ := parseWheelHeaders(record.Metadata)
-		environment := path.Dir(path.Dir(record.MetadataPath))
+		environment := installedMetadataEnvironment(record.MetadataPath)
 		index := 0
 		for _, header := range headers {
 			if header.name != "requires-dist" {
