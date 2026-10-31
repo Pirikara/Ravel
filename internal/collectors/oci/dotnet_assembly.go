@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"math/bits"
 )
 
 const (
@@ -94,7 +95,8 @@ func isManagedAssembly(data []byte) bool {
 		return false
 	}
 	current := streamHeader + 4
-	hasTableStream := false
+	hasAssemblyTable := false
+	hasStrings := false
 	for i := 0; i < count; i++ {
 		if current+9 > uint64(len(metadata)) {
 			return false
@@ -111,11 +113,34 @@ func isManagedAssembly(data []byte) bool {
 		}
 		name := string(metadata[nameStart:nameEnd])
 		if name == "#~" || name == "#-" {
-			hasTableStream = true
+			if hasAssemblyTable {
+				return false
+			}
+			tables := metadata[offset : offset+size]
+			if len(tables) < 24 {
+				return false
+			}
+			// ECMA-335 II.24.2.6: Valid bit 0x20 denotes the Assembly
+			// table, and row counts follow the 24-byte stream header.
+			valid := binary.LittleEndian.Uint64(tables[8:16])
+			rowsEnd := 24 + 4*bits.OnesCount64(valid)
+			if valid&(uint64(1)<<32) == 0 || rowsEnd+22 > len(tables) {
+				return false
+			}
+			assemblyRows := 24 + 4*bits.OnesCount64(valid&((uint64(1)<<32)-1))
+			if binary.LittleEndian.Uint32(tables[assemblyRows:assemblyRows+4]) != 1 {
+				return false
+			}
+			hasAssemblyTable = true
+		} else if name == "#Strings" {
+			if hasStrings || size == 0 {
+				return false
+			}
+			hasStrings = true
 		}
 		current = nameStart + ((nameEnd - nameStart + 4) &^ uint64(3))
 	}
-	return hasTableStream
+	return hasAssemblyTable && hasStrings
 }
 
 func boundedPESlice(data []byte, offset, size uint64) []byte {

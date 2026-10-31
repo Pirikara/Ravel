@@ -1,7 +1,9 @@
 package oci
 
 import (
+	"bytes"
 	"encoding/binary"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,6 +35,19 @@ func TestManagedAssemblyHeaders(t *testing.T) {
 			binary.LittleEndian.PutUint32(data[optional+96+14*8:], 0)
 			return data
 		}},
+		{"missing Assembly table", func(data []byte) []byte {
+			mask := assemblyTableMaskOffset(t, data)
+			valid := binary.LittleEndian.Uint64(data[mask:])
+			binary.LittleEndian.PutUint64(data[mask:], valid&^(uint64(1)<<32))
+			return data
+		}},
+		{"empty Assembly table", func(data []byte) []byte {
+			mask := assemblyTableMaskOffset(t, data)
+			valid := binary.LittleEndian.Uint64(data[mask:])
+			row := mask + 16 + 4*bits.OnesCount64(valid&((uint64(1)<<32)-1))
+			binary.LittleEndian.PutUint32(data[row:], 0)
+			return data
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := tc.change(append([]byte(nil), fixture...))
@@ -46,4 +61,26 @@ func TestManagedAssemblyHeaders(t *testing.T) {
 		// legitimately precede unrelated bytes at the end of the PE file.
 		isManagedAssembly(fixture[:length])
 	}
+}
+
+func assemblyTableMaskOffset(t *testing.T, data []byte) int {
+	t.Helper()
+	root := bytes.Index(data, []byte("BSJB"))
+	if root < 0 {
+		t.Fatal("fixture has no CLI metadata root")
+	}
+	versionSize := binary.LittleEndian.Uint32(data[root+12:])
+	streamHeader := root + 16 + int((versionSize+3)&^uint32(3))
+	count := int(binary.LittleEndian.Uint16(data[streamHeader+2:]))
+	current := streamHeader + 4
+	for i := 0; i < count; i++ {
+		nameStart := current + 8
+		nameEnd := nameStart + bytes.IndexByte(data[nameStart:], 0)
+		if string(data[nameStart:nameEnd]) == "#~" {
+			return root + int(binary.LittleEndian.Uint32(data[current:])) + 8
+		}
+		current = nameStart + ((nameEnd - nameStart + 4) &^ 3)
+	}
+	t.Fatal("fixture has no #~ metadata tables stream")
+	return 0
 }
