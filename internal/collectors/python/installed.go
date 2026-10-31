@@ -13,6 +13,8 @@ import (
 )
 
 const MaxInstalledMetadataBytes = 2 << 20
+const MaxEggRequirementsBytes = 256 << 10
+const MaxEggRequirementsLines = 1024
 
 var installedDistributionName = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
 

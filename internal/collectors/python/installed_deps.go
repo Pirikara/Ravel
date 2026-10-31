@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"ravel/internal/model"
 )
@@ -11,9 +12,21 @@ import (
 // InstalledRecord supplies the verified metadata bytes and component from
 // CollectInstalledMetadata for dependency linking within one image.
 type InstalledRecord struct {
-	Component    model.Component
-	Metadata     []byte
-	MetadataPath string
+	Component               model.Component
+	Metadata                []byte
+	MetadataPath            string
+	EggRequirements         []byte
+	EggRequirementsEvidence model.Evidence
+}
+
+type installedRequirementText struct {
+	value    string
+	evidence model.Evidence
+}
+
+type eggRequirementLine struct {
+	value string
+	line  int
 }
 
 type installedRequirement struct {
@@ -40,6 +53,7 @@ func LinkInstalledRequirements(doc *model.Document, records []InstalledRecord) {
 		headers, _ := parseWheelHeaders(record.Metadata)
 		environment := installedMetadataEnvironment(record.MetadataPath)
 		index := 0
+		var requirements []installedRequirementText
 		for _, header := range headers {
 			if header.name != "requires-dist" {
 				continue
@@ -47,9 +61,23 @@ func LinkInstalledRequirements(doc *model.Document, records []InstalledRecord) {
 			evidence := record.Component.Evidence[0]
 			evidence.Pointer = fmt.Sprintf("Requires-Dist/%d", index)
 			index++
-			requirement, ok := parseInstalledRequirement(header.value)
+			requirements = append(requirements, installedRequirementText{value: header.value, evidence: evidence})
+		}
+		if record.EggRequirementsEvidence.InputPath != "" {
+			lines, invalidLines := parseEggRequirements(record.EggRequirements)
+			for _, line := range invalidLines {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_requirement_unparsed", Name: record.Component.Name, Line: line})
+			}
+			for _, line := range lines {
+				evidence := record.EggRequirementsEvidence
+				evidence.Line = line.line
+				requirements = append(requirements, installedRequirementText{value: line.value, evidence: evidence})
+			}
+		}
+		for _, entry := range requirements {
+			requirement, ok := parseInstalledRequirement(entry.value)
 			if !ok {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_requirement_unparsed", Name: record.Component.Name})
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_requirement_unparsed", Name: record.Component.Name, Line: entry.evidence.Line})
 				continue
 			}
 			if requirement.extras != "" {
@@ -99,10 +127,67 @@ func LinkInstalledRequirements(doc *model.Document, records []InstalledRecord) {
 					continue
 				}
 				seenEdges[key] = true
-				doc.Edges = append(doc.Edges, model.Edge{From: record.Component.ID, To: candidate.Component.ID, Kind: "depends_on", Condition: condition, Evidence: evidence})
+				doc.Edges = append(doc.Edges, model.Edge{From: record.Component.ID, To: candidate.Component.ID, Kind: "depends_on", Condition: condition, Evidence: entry.evidence})
 			}
 		}
 	}
+}
+
+// parseEggRequirements converts the historical section headers into explicit
+// conditions while preserving line numbers for source evidence.
+func parseEggRequirements(data []byte) ([]eggRequirementLine, []int) {
+	if !utf8.Valid(data) || strings.ContainsRune(string(data), '\x00') {
+		return nil, []int{0}
+	}
+	var requirements []eggRequirementLine
+	var invalidLines []int
+	sectionCondition := ""
+	sectionValid := true
+	for i, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") {
+			if !strings.HasSuffix(line, "]") {
+				invalidLines = append(invalidLines, i+1)
+				sectionValid = false
+				continue
+			}
+			section := line[1 : len(line)-1]
+			extra, marker, hasMarker := strings.Cut(section, ":")
+			if extra != "" && !installedDistributionName.MatchString(extra) || hasMarker && (len(marker) > 1024 || strings.ContainsAny(marker, "\x00\r\n@") || strings.Contains(marker, "://")) {
+				invalidLines = append(invalidLines, i+1)
+				sectionValid = false
+				continue
+			}
+			sectionValid = true
+			sectionCondition = ""
+			if marker != "" {
+				sectionCondition = "(" + marker + ")"
+			}
+			if extra != "" {
+				if sectionCondition != "" {
+					sectionCondition += " and "
+				}
+				sectionCondition += `extra == "` + extra + `"`
+			}
+			continue
+		}
+		if !sectionValid {
+			invalidLines = append(invalidLines, i+1)
+			continue
+		}
+		if sectionCondition != "" {
+			if before, marker, found := strings.Cut(line, ";"); found {
+				line = strings.TrimSpace(before) + "; (" + strings.TrimSpace(marker) + ") and " + sectionCondition
+			} else {
+				line += "; " + sectionCondition
+			}
+		}
+		requirements = append(requirements, eggRequirementLine{value: line, line: i + 1})
+	}
+	return requirements, invalidLines
 }
 
 func parseInstalledRequirement(raw string) (installedRequirement, bool) {

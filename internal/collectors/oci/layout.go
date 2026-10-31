@@ -27,35 +27,37 @@ import (
 )
 
 const (
-	maxMetadataBytes       = 8 << 20
-	maxDatabaseBytes       = 128 << 20
-	maxLayerBytes          = 2 << 30
-	maxExpandedLayer       = 4 << 30
-	maxLayerEntries        = 1000000
-	maxImageLayers         = 128
-	maxPythonMetadataFiles = 2000
-	maxPythonMetadataTotal = 128 << 20
-	maxNodeMetadataFiles   = 20000
-	maxNodeMetadataTotal   = 128 << 20
-	maxNodePackageLinks    = 20000
-	maxJavaArchiveFiles    = 1000
-	maxJavaArchiveTotal    = 256 << 20
-	manifestMediaType      = "application/vnd.oci.image.manifest.v1+json"
-	indexMediaType         = "application/vnd.oci.image.index.v1+json"
-	configMediaType        = "application/vnd.oci.image.config.v1+json"
-	dockerManifestType     = "application/vnd.docker.distribution.manifest.v2+json"
-	dockerIndexType        = "application/vnd.docker.distribution.manifest.list.v2+json"
-	dockerConfigType       = "application/vnd.docker.container.image.v1+json"
-	dockerPlainLayerType   = "application/vnd.docker.image.rootfs.diff.tar"
-	dockerGzipLayerType    = "application/vnd.docker.image.rootfs.diff.tar.gzip"
-	dockerForeignLayerType = "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip"
-	plainLayerType         = "application/vnd.oci.image.layer.v1.tar"
-	gzipLayerType          = "application/vnd.oci.image.layer.v1.tar+gzip"
-	plainNonDistType       = "application/vnd.oci.image.layer.nondistributable.v1.tar"
-	gzipNonDistType        = "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"
-	statusPath             = "var/lib/dpkg/status"
-	apkInstalledPath       = "lib/apk/db/installed"
-	apkInstalledADBPath    = "lib/apk/db/installed.adb"
+	maxMetadataBytes                   = 8 << 20
+	maxDatabaseBytes                   = 128 << 20
+	maxLayerBytes                      = 2 << 30
+	maxExpandedLayer                   = 4 << 30
+	maxLayerEntries                    = 1000000
+	maxImageLayers                     = 128
+	maxPythonMetadataFiles             = 2000
+	maxPythonMetadataTotal             = 128 << 20
+	maxPythonEggRequirementsTotal      = 8 << 20
+	maxPythonEggRequirementsLinesTotal = 100000
+	maxNodeMetadataFiles               = 20000
+	maxNodeMetadataTotal               = 128 << 20
+	maxNodePackageLinks                = 20000
+	maxJavaArchiveFiles                = 1000
+	maxJavaArchiveTotal                = 256 << 20
+	manifestMediaType                  = "application/vnd.oci.image.manifest.v1+json"
+	indexMediaType                     = "application/vnd.oci.image.index.v1+json"
+	configMediaType                    = "application/vnd.oci.image.config.v1+json"
+	dockerManifestType                 = "application/vnd.docker.distribution.manifest.v2+json"
+	dockerIndexType                    = "application/vnd.docker.distribution.manifest.list.v2+json"
+	dockerConfigType                   = "application/vnd.docker.container.image.v1+json"
+	dockerPlainLayerType               = "application/vnd.docker.image.rootfs.diff.tar"
+	dockerGzipLayerType                = "application/vnd.docker.image.rootfs.diff.tar.gzip"
+	dockerForeignLayerType             = "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip"
+	plainLayerType                     = "application/vnd.oci.image.layer.v1.tar"
+	gzipLayerType                      = "application/vnd.oci.image.layer.v1.tar+gzip"
+	plainNonDistType                   = "application/vnd.oci.image.layer.nondistributable.v1.tar"
+	gzipNonDistType                    = "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"
+	statusPath                         = "var/lib/dpkg/status"
+	apkInstalledPath                   = "lib/apk/db/installed"
+	apkInstalledADBPath                = "lib/apk/db/installed.adb"
 )
 
 var databasePaths = append([]string{statusPath, apkInstalledPath, apkInstalledADBPath}, rpm.DatabasePaths...)
@@ -111,6 +113,13 @@ type javaArchiveState struct {
 	data   []byte
 	layer  string
 	status string
+}
+
+type pythonEggRequirementsState struct {
+	data   []byte
+	layer  string
+	status string
+	lines  int
 }
 
 // Collect reads an OCI image layout directory. It reconstructs the final
@@ -197,7 +206,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	}
 	databases := map[string]databaseState{}
 	pythonMetadata := map[string]databaseState{}
-	pythonEggRequirements := map[string]bool{}
+	pythonEggRequirements := map[string]pythonEggRequirementsState{}
+	pythonEggRequirementsBytes := 0
+	pythonEggRequirementsLines := 0
 	pipVendor := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
 	nodePackageLinks := map[string]string{}
@@ -313,6 +324,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			for name := range pythonEggRequirements {
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					pythonEggRequirementsBytes -= len(pythonEggRequirements[name].data)
+					pythonEggRequirementsLines -= pythonEggRequirements[name].lines
 					delete(pythonEggRequirements, name)
 				}
 			}
@@ -347,8 +360,25 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		for name, data := range change.python {
 			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
 		}
+		eggRequirementNames := make([]string, 0, len(change.pythonEggRequirements))
 		for name := range change.pythonEggRequirements {
-			pythonEggRequirements[name] = true
+			eggRequirementNames = append(eggRequirementNames, name)
+		}
+		sort.Strings(eggRequirementNames)
+		for _, name := range eggRequirementNames {
+			state := change.pythonEggRequirements[name]
+			pythonEggRequirementsBytes -= len(pythonEggRequirements[name].data)
+			pythonEggRequirementsLines -= pythonEggRequirements[name].lines
+			if pythonEggRequirementsBytes+len(state.data) > maxPythonEggRequirementsTotal || pythonEggRequirementsLines+state.lines > maxPythonEggRequirementsLinesTotal {
+				state.data = nil
+				state.status = "limited"
+				state.lines = 0
+			} else {
+				pythonEggRequirementsBytes += len(state.data)
+				pythonEggRequirementsLines += state.lines
+			}
+			state.layer = layer.Digest
+			pythonEggRequirements[name] = state
 		}
 		for name, data := range change.pipVendor {
 			pipVendor[name] = databaseState{data: data, layer: layer.Digest}
@@ -555,7 +585,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_installed_metadata_invalid", Name: name})
 			continue
 		}
-		installedRecords = append(installedRecords, python.InstalledRecord{Component: installed.Components[0], Metadata: state.data, MetadataPath: name})
+		record := python.InstalledRecord{Component: installed.Components[0], Metadata: state.data, MetadataPath: name}
 		doc.Components = append(doc.Components, installed.Components...)
 		doc.Edges = append(doc.Edges, installed.Edges...)
 		doc.Origins = append(doc.Origins, installed.Origins...)
@@ -565,9 +595,19 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				doc.Coverage.Issues = append(doc.Coverage.Issues, issue)
 			}
 		}
-		if strings.HasSuffix(name, ".egg-info/PKG-INFO") && pythonEggRequirements[path.Join(path.Dir(name), "requires.txt")] {
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_egg_requirements_unscanned", Name: installed.Components[0].Name})
+		if strings.HasSuffix(name, ".egg-info/PKG-INFO") {
+			requirementsPath := path.Join(path.Dir(name), "requires.txt")
+			if requirements, found := pythonEggRequirements[requirementsPath]; found {
+				if requirements.status != "" {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_egg_requirements_unscanned", Name: installed.Components[0].Name})
+				} else {
+					hash := sha256.Sum256(requirements.data)
+					record.EggRequirements = requirements.data
+					record.EggRequirementsEvidence = model.Evidence{Collector: "python-egg-info", InputPath: "oci:" + requirements.layer + "!/" + requirementsPath, InputDigest: "sha256:" + hex.EncodeToString(hash[:]), Method: "installed-requirements"}
+				}
+			}
 		}
+		installedRecords = append(installedRecords, record)
 	}
 	python.LinkInstalledRequirements(&doc, installedRecords)
 	vendorNames := make([]string, 0, len(pipVendor))
@@ -871,7 +911,7 @@ type databaseChange struct {
 type layerChange struct {
 	files                 map[string]databaseChange
 	python                map[string][]byte
-	pythonEggRequirements map[string]bool
+	pythonEggRequirements map[string]pythonEggRequirementsState
 	pipVendor             map[string][]byte
 	node                  map[string][]byte
 	nodeLinks             map[string]string
@@ -919,12 +959,14 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pythonEggRequirements: map[string]bool{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
 	entries := 0
 	pythonBytes := 0
+	pythonEggBytes := 0
+	pythonEggLines := 0
 	pipVendorBytes := 0
 	nodeBytes := 0
 	rubyBytes := 0
@@ -995,7 +1037,33 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			continue
 		}
 		if header.Typeflag != tar.TypeDir && python.IsInstalledEggRequirementsPath(name) {
-			change.pythonEggRequirements[name] = true
+			if _, duplicate := change.pythonEggRequirements[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI installed Python egg-info requirements entry: %s", name)
+			}
+			state := pythonEggRequirementsState{}
+			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+				state.status = "unsupported"
+			} else if header.Size > python.MaxEggRequirementsBytes {
+				state.status = "oversized"
+			} else {
+				data, err := io.ReadAll(io.LimitReader(reader, python.MaxEggRequirementsBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI installed Python egg-info requirements entry")
+				}
+				lines := strings.Count(string(data), "\n")
+				if len(data) == 0 || data[len(data)-1] != '\n' {
+					lines++
+				}
+				if lines > python.MaxEggRequirementsLines || pythonEggBytes+len(data) > maxPythonEggRequirementsTotal || pythonEggLines+lines > maxPythonEggRequirementsLinesTotal {
+					state.status = "limited"
+				} else {
+					state.data = data
+					state.lines = lines
+					pythonEggBytes += len(data)
+					pythonEggLines += lines
+				}
+			}
+			change.pythonEggRequirements[name] = state
 			if len(change.pythonEggRequirements) > maxPythonMetadataFiles {
 				return layerChange{}, "", errors.New("OCI layer has too many installed Python egg-info requirements files")
 			}

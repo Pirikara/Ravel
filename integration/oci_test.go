@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"ravel/internal/collectors/python"
 	"ravel/internal/model"
 )
 
@@ -590,14 +591,17 @@ func TestOCIPythonEggInfoMetadata(t *testing.T) {
 			{name: site + ".wh.old.egg-info"},
 			{name: site + "clean_pkg.egg-info/.wh.requires.txt"},
 			{name: site + "legacy_pkg.egg-info/PKG-INFO", data: []byte("Metadata-Version: 1.2\nName: legacy-pkg\nVersion: 1.0\nRequires-Dist: idna ==3.10\n")},
-			{name: site + "legacy_pkg.egg-info/requires.txt", data: []byte("unread-legacy-dependency>=1\n")},
+			{name: site + "legacy_pkg.egg-info/requires.txt", data: []byte("# installed requirements\ncharset-normalizer==3.4.2\n[security]\ncryptography==44.0.0\n[:python_version < '3.13']\ntyping-extensions==4.12\n")},
 			{name: site + "idna-3.10.dist-info/METADATA", data: []byte("Metadata-Version: 2.3\nName: idna\nVersion: 3.10\n")},
+			{name: site + "charset_normalizer-3.4.2.dist-info/METADATA", data: []byte("Metadata-Version: 2.3\nName: charset-normalizer\nVersion: 3.4.2\n")},
+			{name: site + "cryptography-44.0.0.dist-info/METADATA", data: []byte("Metadata-Version: 2.3\nName: cryptography\nVersion: 44.0.0\n")},
+			{name: site + "typing_extensions-4.12.dist-info/METADATA", data: []byte("Metadata-Version: 2.3\nName: typing-extensions\nVersion: 4.12\n")},
 			{name: site + "broken.egg-info/PKG-INFO", data: []byte("Metadata-Version: 1.2\nVersion: 1.0\n")},
 		}},
 	})
 	ociTestIndex(t, layout, manifest)
 	doc, output, code := ociTestScan(t, layout)
-	if code != 0 || doc.Coverage.Packages != 3 || doc.Coverage.Edges != 4 || doc.Coverage.GraphState != "partial" {
+	if code != 0 || doc.Coverage.Packages != 6 || doc.Coverage.Edges != 10 || doc.Coverage.GraphState != "partial" {
 		t.Fatalf("OCI Python egg-info scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
 	}
 	names := map[string]string{}
@@ -609,24 +613,36 @@ func TestOCIPythonEggInfoMetadata(t *testing.T) {
 			t.Fatalf("egg-info identity or evidence incorrect: %#v", component)
 		}
 	}
-	if len(seenNames) != 3 || !seenNames["legacy-pkg"] || !seenNames["clean-pkg"] || !seenNames["idna"] {
+	if len(seenNames) != 6 || !seenNames["legacy-pkg"] || !seenNames["clean-pkg"] || !seenNames["idna"] || !seenNames["charset-normalizer"] || !seenNames["cryptography"] || !seenNames["typing-extensions"] {
 		t.Fatalf("whiteout or malformed egg-info was inventoried: %#v", seenNames)
 	}
 	linked := false
+	sidecarLinks := map[string]model.Edge{}
 	for _, edge := range doc.Edges {
 		linked = linked || edge.Kind == "depends_on" && names[edge.From] == "legacy-pkg" && names[edge.To] == "idna" && edge.Condition == "" && edge.Evidence.Pointer == "Requires-Dist/0"
+		if edge.Kind == "depends_on" && names[edge.From] == "legacy-pkg" && strings.Contains(edge.Evidence.InputPath, "legacy_pkg.egg-info/requires.txt") {
+			sidecarLinks[names[edge.To]] = edge
+		}
 	}
 	if !linked {
 		t.Fatalf("egg-info Requires-Dist was not linked: %#v", doc.Edges)
 	}
+	if len(sidecarLinks) != 3 || sidecarLinks["charset-normalizer"].Condition != "" || sidecarLinks["charset-normalizer"].Evidence.Line != 2 || !strings.Contains(sidecarLinks["cryptography"].Condition, `extra == "security"`) || sidecarLinks["cryptography"].Evidence.Line != 4 || !strings.Contains(sidecarLinks["typing-extensions"].Condition, "python_version < '3.13'") || sidecarLinks["typing-extensions"].Evidence.Line != 6 {
+		t.Fatalf("egg-info requires.txt links or evidence incorrect: %#v", sidecarLinks)
+	}
+	for _, edge := range sidecarLinks {
+		if edge.Evidence.Method != "installed-requirements" || !strings.HasPrefix(edge.Evidence.InputDigest, "sha256:") {
+			t.Fatalf("egg-info requires.txt provenance incorrect: %#v", edge.Evidence)
+		}
+	}
 	issues := map[string]bool{}
 	for _, issue := range doc.Coverage.Issues {
 		issues[issue.Code] = true
-		if issue.Code == "python_egg_requirements_unscanned" && issue.Name != "legacy-pkg" {
-			t.Fatalf("whiteouted egg-info requirements affected another package: %#v", doc.Coverage.Issues)
+		if issue.Code == "python_egg_requirements_unscanned" || issue.Name == "obsolete-dependency" {
+			t.Fatalf("valid or whiteouted egg-info requirements were reported as missing: %#v", doc.Coverage.Issues)
 		}
 	}
-	if !issues["python_egg_requirements_unscanned"] || !issues["python_installed_metadata_invalid"] {
+	if !issues["conditional_graph"] || !issues["python_installed_metadata_invalid"] {
 		t.Fatalf("egg-info limits or malformed metadata were not reported: %#v", doc.Coverage.Issues)
 	}
 }
@@ -665,6 +681,61 @@ func TestOCIPythonSingleFileEggInfoMetadata(t *testing.T) {
 		if issue.Code == "python_egg_requirements_unscanned" {
 			t.Fatalf("single-file egg-info cannot contain requires.txt: %#v", doc.Coverage.Issues)
 		}
+	}
+}
+
+func TestOCIPythonEggInfoRequirementsUnavailable(t *testing.T) {
+	const site = "usr/local/lib/python3.13/site-packages/"
+	for _, tc := range []struct {
+		name  string
+		entry ociTestEntry
+	}{
+		{name: "symlink", entry: ociTestEntry{name: site + "legacy.egg-info/requires.txt", typeflag: tar.TypeSymlink, linkname: "/missing-requirements"}},
+		{name: "oversized", entry: ociTestEntry{name: site + "legacy.egg-info/requires.txt", data: bytes.Repeat([]byte("x"), python.MaxEggRequirementsBytes+1)}},
+		{name: "too_many_lines", entry: ociTestEntry{name: site + "legacy.egg-info/requires.txt", data: bytes.Repeat([]byte("idna\n"), python.MaxEggRequirementsLines+1)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			layout := ociTestLayout(t)
+			manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+				{name: site + "legacy.egg-info/PKG-INFO", data: []byte("Metadata-Version: 1.2\nName: legacy\nVersion: 1.0\n")},
+				tc.entry,
+			}}})
+			ociTestIndex(t, layout, manifest)
+			doc, output, code := ociTestScan(t, layout)
+			if code != 0 || doc.Coverage.Packages != 1 || doc.Coverage.Edges != 1 || doc.Coverage.GraphState != "partial" {
+				t.Fatalf("OCI egg-info unavailable requirements scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+			}
+			found := false
+			for _, issue := range doc.Coverage.Issues {
+				found = found || issue.Code == "python_egg_requirements_unscanned" && issue.Name == "legacy"
+			}
+			if !found {
+				t.Fatalf("unavailable egg-info requirements not reported: %#v", doc.Coverage.Issues)
+			}
+		})
+	}
+}
+
+func TestOCIPythonEggInfoMalformedRequirements(t *testing.T) {
+	const site = "usr/local/lib/python3.13/site-packages/"
+	layout := ociTestLayout(t)
+	manifest := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+		{name: site + "legacy.egg-info/PKG-INFO", data: []byte("Metadata-Version: 1.2\nName: legacy\nVersion: 1.0\n")},
+		{name: site + "legacy.egg-info/requires.txt", data: []byte("[invalid\nidna==3.10\n")},
+	}}})
+	ociTestIndex(t, layout, manifest)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 1 || doc.Coverage.Edges != 1 || doc.Coverage.GraphState != "partial" {
+		t.Fatalf("OCI malformed egg-info requirements scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	lines := map[int]bool{}
+	for _, issue := range doc.Coverage.Issues {
+		if issue.Code == "python_requirement_unparsed" && issue.Name == "legacy" {
+			lines[issue.Line] = true
+		}
+	}
+	if !lines[1] || !lines[2] {
+		t.Fatalf("malformed egg-info requirements lines not reported: %#v", doc.Coverage.Issues)
 	}
 }
 
