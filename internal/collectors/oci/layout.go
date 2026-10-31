@@ -18,6 +18,7 @@ import (
 
 	"ravel/internal/collectors/apk"
 	"ravel/internal/collectors/common"
+	"ravel/internal/collectors/composer"
 	"ravel/internal/collectors/dpkg"
 	"ravel/internal/collectors/javaarchive"
 	"ravel/internal/collectors/npm"
@@ -37,6 +38,8 @@ const (
 	maxPythonMetadataTotal             = 128 << 20
 	maxPythonEggRequirementsTotal      = 8 << 20
 	maxPythonEggRequirementsLinesTotal = 100000
+	maxComposerInstalledFiles          = 100
+	maxComposerInstalledTotal          = 64 << 20
 	maxNodeMetadataFiles               = 20000
 	maxNodeMetadataTotal               = 128 << 20
 	maxNodePackageLinks                = 20000
@@ -120,6 +123,12 @@ type pythonEggRequirementsState struct {
 	layer  string
 	status string
 	lines  int
+}
+
+type composerInstalledState struct {
+	data   []byte
+	layer  string
+	status string
 }
 
 // Collect reads an OCI image layout directory. It reconstructs the final
@@ -209,6 +218,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	pythonEggRequirements := map[string]pythonEggRequirementsState{}
 	pythonEggRequirementsBytes := 0
 	pythonEggRequirementsLines := 0
+	composerInstalled := map[string]composerInstalledState{}
 	pipVendor := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
 	nodePackageLinks := map[string]string{}
@@ -243,6 +253,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for name := range pythonEggRequirements {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		for name := range composerInstalled {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -329,6 +347,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(pythonEggRequirements, name)
 				}
 			}
+			for name := range composerInstalled {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(composerInstalled, name)
+				}
+			}
 			for name := range javaArchives {
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 					delete(javaArchives, name)
@@ -383,6 +406,10 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		for name, data := range change.pipVendor {
 			pipVendor[name] = databaseState{data: data, layer: layer.Digest}
 		}
+		for name, state := range change.composerInstalled {
+			state.layer = layer.Digest
+			composerInstalled[name] = state
+		}
 		for name, data := range change.node {
 			nodeMetadata[name] = databaseState{data: data, layer: layer.Digest}
 		}
@@ -426,6 +453,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if len(pipVendor) > maxPipVendorFiles {
 			return model.Document{}, errors.New("OCI image has too many pip vendor manifests")
+		}
+		if len(composerInstalled) > maxComposerInstalledFiles {
+			return model.Document{}, errors.New("OCI image has too many Composer installed manifests")
+		}
+		composerBytes := 0
+		for _, state := range composerInstalled {
+			composerBytes += len(state.data)
+		}
+		if composerBytes > maxComposerInstalledTotal {
+			return model.Document{}, errors.New("OCI image Composer installed manifests exceeded size limit")
 		}
 		if len(nodeMetadata) > maxNodeMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Node package manifests")
@@ -497,7 +534,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -638,6 +675,27 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Components = append(doc.Components, vendorDoc.Components...)
 		doc.Edges = append(doc.Edges, vendorDoc.Edges...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, vendorDoc.Coverage.Issues...)
+	}
+	composerNames := make([]string, 0, len(composerInstalled))
+	for name := range composerInstalled {
+		composerNames = append(composerNames, name)
+	}
+	sort.Strings(composerNames)
+	for _, name := range composerNames {
+		state := composerInstalled[name]
+		if state.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "composer_installed_metadata_" + state.status, Name: name})
+			continue
+		}
+		evidencePath := "oci:" + state.layer + "!/" + name
+		installed, err := composer.CollectInstalled(state.data, evidencePath, project, name)
+		if err != nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "composer_installed_metadata_invalid", Name: name})
+			continue
+		}
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
 	nodeNames := make([]string, 0, len(nodeMetadata))
 	for name := range nodeMetadata {
@@ -913,6 +971,7 @@ type layerChange struct {
 	python                map[string][]byte
 	pythonEggRequirements map[string]pythonEggRequirementsState
 	pipVendor             map[string][]byte
+	composerInstalled     map[string]composerInstalledState
 	node                  map[string][]byte
 	nodeLinks             map[string]string
 	rubySpecs             map[string][]byte
@@ -959,7 +1018,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -968,6 +1027,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	pythonEggBytes := 0
 	pythonEggLines := 0
 	pipVendorBytes := 0
+	composerInstalledBytes := 0
 	nodeBytes := 0
 	rubyBytes := 0
 	javaBytes := 0
@@ -1084,6 +1144,32 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			pipVendorBytes += len(data)
 			if len(change.pipVendor) > maxPipVendorFiles || pipVendorBytes > maxPipVendorFiles*maxPipVendorBytes {
 				return layerChange{}, "", errors.New("OCI layer has too much pip vendor metadata")
+			}
+			continue
+		}
+		if composer.IsInstalledManifestPath(name) {
+			if _, duplicate := change.composerInstalled[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI Composer installed manifest entry: %s", name)
+			}
+			state := composerInstalledState{}
+			switch {
+			case header.Typeflag == tar.TypeSymlink || header.Typeflag == tar.TypeLink:
+				state.status = "link_unresolved"
+			case header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA:
+				state.status = "unsupported"
+			case header.Size > composer.MaxInstalledJSONBytes:
+				state.status = "oversized"
+			default:
+				data, err := io.ReadAll(io.LimitReader(reader, composer.MaxInstalledJSONBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI Composer installed manifest entry")
+				}
+				state.data = data
+				composerInstalledBytes += len(data)
+			}
+			change.composerInstalled[name] = state
+			if len(change.composerInstalled) > maxComposerInstalledFiles || composerInstalledBytes > maxComposerInstalledTotal {
+				return layerChange{}, "", errors.New("OCI layer has too much Composer installed metadata")
 			}
 			continue
 		}
@@ -1333,6 +1419,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 				if nonDirectoryPaths[ancestor] {
 					return layerChange{}, "", fmt.Errorf("OCI layer contains installed metadata beneath a non-directory entry: %s", ancestor)
 				}
+			}
+		}
+	}
+	for name := range change.composerInstalled {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Composer metadata beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}

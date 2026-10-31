@@ -170,5 +170,8 @@ func Collect(file, project string) (model.Document, error) {
 }
 
 func isPlatform(name string) bool {
-	return name == "php" || strings.HasPrefix(name, "php-") || strings.HasPrefix(name, "ext-") || strings.HasPrefix(name, "lib-") || name == "composer-plugin-api" || name == "composer-runtime-api"
+	if strings.Contains(name, "/") {
+		return false
+	}
+	return name == "php" || strings.HasPrefix(name, "php-") || strings.HasPrefix(name, "ext-") || strings.HasPrefix(name, "lib-") || name == "composer" || name == "composer-plugin-api" || name == "composer-runtime-api"
 }
