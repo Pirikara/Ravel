@@ -820,10 +820,10 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			identity := strings.ToLower(component.Name + "/" + component.Version)
 			candidates := candidatesByIdentity[identity]
 			for _, candidate := range candidates {
-				if assemblyUsers[candidate] == nil {
-					assemblyUsers[candidate] = map[string]bool{}
+				if assemblyUsers[candidate.Path] == nil {
+					assemblyUsers[candidate.Path] = map[string]bool{}
 				}
-				assemblyUsers[candidate][manifestPath+"\x00"+identity] = true
+				assemblyUsers[candidate.Path][manifestPath+"\x00"+identity] = true
 			}
 		}
 	}

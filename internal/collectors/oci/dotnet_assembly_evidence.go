@@ -13,29 +13,41 @@ func verifyDotnetRuntimeAssemblies(doc *model.Document, depsData []byte, manifes
 		component := &doc.Components[i]
 		identity := strings.ToLower(component.Name + "/" + component.Version)
 		matched := false
+		issues := map[string]bool{}
+		addIssue := func(code string) {
+			if !issues[code] {
+				issues[code] = true
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: code, Name: component.Name})
+			}
+		}
 		for _, candidate := range candidates[identity] {
-			state, found := assemblies[candidate]
+			state, found := assemblies[candidate.Path]
 			if !found {
 				continue
 			}
-			if len(users[candidate]) > 1 {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dotnet_runtime_assembly_ambiguous", Name: component.Name})
+			if len(users[candidate.Path]) > 1 {
+				addIssue("dotnet_runtime_assembly_ambiguous")
 				continue
 			}
 			if state.status != "" {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dotnet_runtime_assembly_" + state.status, Name: component.Name})
+				addIssue("dotnet_runtime_assembly_" + state.status)
 				continue
+			}
+			method := "managed-pe-runtime-asset-candidate"
+			if candidate.RID != "" {
+				method = "managed-pe-rid-asset-candidate"
+				addIssue("dotnet_runtime_assembly_rid_unselected")
 			}
 			component.Evidence = append(component.Evidence, model.Evidence{
 				Collector:   "dotnet-managed-assembly",
-				InputPath:   "oci:" + state.layer + "!/" + candidate,
+				InputPath:   "oci:" + state.layer + "!/" + candidate.Path,
 				InputDigest: state.digest,
-				Method:      "managed-pe-runtime-asset-candidate",
+				Method:      method,
 			})
 			matched = true
 		}
 		if matched {
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dotnet_runtime_assembly_identity_unverified", Name: component.Name})
+			addIssue("dotnet_runtime_assembly_identity_unverified")
 		}
 	}
 }

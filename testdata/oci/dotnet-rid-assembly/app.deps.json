@@ -1,0 +1,49 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "app/1.0.0": {
+        "dependencies": {
+          "Acme.RidRuntime": "2.3.4"
+        },
+        "runtime": {
+          "app.dll": {}
+        }
+      },
+      "Acme.RidRuntime/2.3.4": {
+        "runtimeTargets": {
+          "runtimes/linux-x64/lib/net10.0/Acme.Runtime.dll": {
+            "rid": "linux-x64",
+            "assetType": "runtime",
+            "assemblyVersion": "1.2.3.0",
+            "fileVersion": "1.2.3.0"
+          },
+          "runtimes/osx-arm64/lib/net10.0/Acme.Runtime.dll": {
+            "rid": "osx-arm64",
+            "assetType": "runtime",
+            "assemblyVersion": "1.2.3.0",
+            "fileVersion": "1.2.3.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "app/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Acme.RidRuntime/2.3.4": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ssEnmTKX3+dsQE/cA7lfBrBS4TPc+1mFvErFuZ8OPfpNxFR8iu2EJ7ina+RhkdivbIQLdJDxqFpEW6kOb+m16w==",
+      "path": "acme.ridruntime/2.3.4",
+      "hashPath": "acme.ridruntime.2.3.4.nupkg.sha512"
+    }
+  }
+}
