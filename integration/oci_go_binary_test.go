@@ -6,6 +6,8 @@ import (
 	"debug/buildinfo"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -85,6 +87,90 @@ func TestOCIGoBinaryEmbeddedModulesAndEvidence(t *testing.T) {
 	}
 	if !issues["go_binary_graph_unavailable"] || !issues["go_binary_origin_unavailable"] {
 		t.Fatalf("Go build info limits not reported: %#v", doc.Coverage.Issues)
+	}
+}
+
+func TestOCIGoBinaryLargerThanMemoryLimit(t *testing.T) {
+	binary, goVersion := ociGoBinaryFixture(t)
+	const paddedSize = int64(64<<20) + 1
+	layout := ociTestLayout(t)
+	layerPath := filepath.Join(layout, "large-layer.tar")
+	file, err := os.Create(layerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layerHash := sha256.New()
+	writer := tar.NewWriter(io.MultiWriter(file, layerHash))
+	if err := writer.WriteHeader(&tar.Header{Name: "usr/bin/large-go", Typeflag: tar.TypeReg, Mode: 0o755, Size: paddedSize}); err != nil {
+		t.Fatal(err)
+	}
+	binaryHash := sha256.New()
+	payload := io.MultiWriter(writer, binaryHash)
+	if _, err := payload.Write(binary); err != nil {
+		t.Fatal(err)
+	}
+	zeros := make([]byte, 32<<10)
+	for remaining := paddedSize - int64(len(binary)); remaining > 0; {
+		chunk := int64(len(zeros))
+		if remaining < chunk {
+			chunk = remaining
+		}
+		if _, err := payload.Write(zeros[:int(chunk)]); err != nil {
+			t.Fatal(err)
+		}
+		remaining -= chunk
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	layerDigest := hex.EncodeToString(layerHash.Sum(nil))
+	blobDir := filepath.Join(layout, "blobs", "sha256")
+	if err := os.MkdirAll(blobDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blobPath := filepath.Join(blobDir, layerDigest)
+	if err := os.Rename(layerPath, blobPath); err != nil {
+		t.Fatal(err)
+	}
+	stat, err := os.Stat(blobPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configData, err := json.Marshal(map[string]any{"os": "linux", "architecture": "amd64", "rootfs": map[string]any{"type": "layers", "diff_ids": []string{"sha256:" + layerDigest}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := ociTestBlob(t, layout, "application/vnd.oci.image.config.v1+json", configData)
+	manifestData, err := json.Marshal(map[string]any{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json", "config": config, "layers": []ociTestDescriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar", Digest: "sha256:" + layerDigest, Size: stat.Size()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	image := ociTestBlob(t, layout, "application/vnd.oci.image.manifest.v1+json", manifestData)
+	ociTestIndex(t, layout, image)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || len(doc.Components) != 3 || doc.Coverage.Packages != 3 {
+		t.Fatalf("large Go binary was not inventoried: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	wantDigest := "sha256:" + hex.EncodeToString(binaryHash.Sum(nil))
+	found := map[string]bool{}
+	for _, component := range doc.Components {
+		found[component.Name+"@"+component.Version] = true
+		if len(component.Evidence) != 1 || component.Evidence[0].InputDigest != wantDigest || !strings.HasSuffix(component.Evidence[0].InputPath, "!/usr/bin/large-go") {
+			t.Fatalf("large Go binary evidence incorrect: %#v", component)
+		}
+	}
+	for _, key := range []string{"large-go@", "stdlib@" + goVersion, "golang.org/x/mod@v0.42.0"} {
+		if !found[key] {
+			t.Fatalf("missing large Go component %s", key)
+		}
+	}
+	for _, issue := range doc.Coverage.Issues {
+		if issue.Code == "go_binary_oversized" || issue.Code == "go_binary_invalid" {
+			t.Fatalf("large Go binary was rejected: %#v", issue)
+		}
 	}
 }
 

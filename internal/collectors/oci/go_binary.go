@@ -7,8 +7,10 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	goversion "go/version"
 	"io"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -21,6 +23,7 @@ import (
 
 const (
 	maxGoBinaryBytes      = 64 << 20
+	maxGoBinaryDiskBytes  = 256 << 20
 	maxGoBinaryLayerBytes = 512 << 20
 	maxGoBinaryFiles      = 1000
 	maxGoBinaryImageFiles = 10000
@@ -35,6 +38,7 @@ type goBinaryState struct {
 }
 
 var errGoBinaryModuleLimit = errors.New("Go binary contains too many module records")
+var errGoBinaryIO = errors.New("could not spool Go binary")
 
 // inspectGoBinary reads module identities embedded by the Go linker. It is
 // deliberately restricted to ELF: the OCI scanner currently targets Linux
@@ -49,6 +53,43 @@ func inspectGoBinary(data []byte, source, project, binaryPath string) (document 
 	if err := guardELFMetadata(data); err != nil {
 		return model.Document{}, false, err
 	}
+	hash := sha256.Sum256(data)
+	return readGoBuildInfo(bytes.NewReader(data), hex.EncodeToString(hash[:]), source, project, binaryPath)
+}
+
+// inspectLargeGoBinary keeps a bounded ELF on disk while reading its build
+// information. Only the build information and ELF metadata are read into RAM.
+func inspectLargeGoBinary(prefix []byte, reader io.Reader, size int64, source, project, binaryPath string) (model.Document, bool, error) {
+	if !isELFMagic(prefix) || size <= maxGoBinaryBytes || size > maxGoBinaryDiskBytes {
+		return model.Document{}, false, errors.New("invalid large Go binary input")
+	}
+	file, err := os.CreateTemp("", "ravel-go-binary-")
+	if err != nil {
+		return model.Document{}, false, fmt.Errorf("%w: %v", errGoBinaryIO, err)
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	hasher := sha256.New()
+	if _, err := io.CopyN(io.MultiWriter(file, hasher), io.MultiReader(bytes.NewReader(prefix), reader), size); err != nil {
+		return model.Document{}, false, fmt.Errorf("%w: %v", errGoBinaryIO, err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return model.Document{}, false, fmt.Errorf("%w: %v", errGoBinaryIO, err)
+	}
+	found, err := hasGoBuildInfoMagic(file, size)
+	if err != nil {
+		return model.Document{}, false, fmt.Errorf("%w: %v", errGoBinaryIO, err)
+	}
+	if !found {
+		return model.Document{}, false, nil
+	}
+	if err := guardELFMetadataReader(file, size); err != nil {
+		return model.Document{}, false, err
+	}
+	return readGoBuildInfo(file, hex.EncodeToString(hasher.Sum(nil)), source, project, binaryPath)
+}
+
+func readGoBuildInfo(reader io.ReaderAt, digest, source, project, binaryPath string) (document model.Document, recognized bool, err error) {
 	defer func() {
 		if recover() != nil {
 			document = model.Document{}
@@ -56,15 +97,13 @@ func inspectGoBinary(data []byte, source, project, binaryPath string) (document 
 			err = errors.New("malformed Go binary")
 		}
 	}()
-	info, err := buildinfo.Read(bytes.NewReader(data))
+	info, err := buildinfo.Read(reader)
 	if err != nil {
 		return model.Document{}, false, errors.New("unreadable Go build information")
 	}
 	if len(info.Deps) > maxGoBinaryModules {
 		return model.Document{}, false, errGoBinaryModuleLimit
 	}
-	hash := sha256.Sum256(data)
-	digest := hex.EncodeToString(hash[:])
 	evidence := model.Evidence{Collector: "go-buildinfo", InputPath: source, InputDigest: "sha256:" + digest, Method: "embedded-build-info"}
 	doc := common.NewDocument(source, project, "go-binary", nil)
 	outerID := "go-binary:" + common.ID(source+"\x00"+digest)
@@ -139,7 +178,19 @@ func inspectGoBinary(data []byte, source, project, binaryPath string) (document 
 // debug/elf reads eagerly. Compressed section-name tables are rejected before
 // debug/buildinfo can inflate attacker-controlled declared sizes.
 func guardELFMetadata(data []byte) error {
-	if len(data) < 52 || !bytes.HasPrefix(data, []byte("\x7fELF")) {
+	return guardELFMetadataReader(bytes.NewReader(data), int64(len(data)))
+}
+
+func guardELFMetadataReader(reader io.ReaderAt, fileSize int64) error {
+	if fileSize < 52 {
+		return errors.New("invalid ELF header")
+	}
+	headerSize := 64
+	if fileSize < int64(headerSize) {
+		headerSize = int(fileSize)
+	}
+	data := make([]byte, headerSize)
+	if n, err := reader.ReadAt(data, 0); err != nil || n != len(data) || !bytes.HasPrefix(data, []byte("\x7fELF")) {
 		return errors.New("invalid ELF header")
 	}
 	var order binary.ByteOrder
@@ -176,13 +227,13 @@ func guardELFMetadata(data []byte) error {
 	if phnum == 0xffff || shstrndx == 0xffff || phnum > 4096 || shnum > 8192 {
 		return errors.New("ELF header count exceeds supported limit")
 	}
-	if phnum > 0 && (phentsize < minProgramHeader || !tableWithinFile(phoff, uint64(phentsize), uint64(phnum), len(data))) {
+	if phnum > 0 && (phentsize < minProgramHeader || !tableWithinFile(phoff, uint64(phentsize), uint64(phnum), int(fileSize))) {
 		return errors.New("invalid ELF program headers")
 	}
 	if shnum == 0 && shoff == 0 {
 		return nil // Sectionless ELF can still carry Go build info in a segment.
 	}
-	if shnum == 0 || shentsize < minSectionHeader || !tableWithinFile(shoff, uint64(shentsize), uint64(shnum), len(data)) {
+	if shnum == 0 || shentsize < minSectionHeader || !tableWithinFile(shoff, uint64(shentsize), uint64(shnum), int(fileSize)) {
 		return errors.New("invalid ELF section headers")
 	}
 	if shstrndx == 0 {
@@ -191,7 +242,10 @@ func guardELFMetadata(data []byte) error {
 	if shstrndx >= shnum {
 		return errors.New("invalid ELF section-name index")
 	}
-	section := data[shoff+uint64(shstrndx)*uint64(shentsize):]
+	section := make([]byte, minSectionHeader)
+	if n, err := reader.ReadAt(section, int64(shoff+uint64(shstrndx)*uint64(shentsize))); err != nil || n != len(section) {
+		return errors.New("invalid ELF section-name header")
+	}
 	var flags, offset, size uint64
 	if data[4] == 1 {
 		flags = uint64(order.Uint32(section[8:12]))
@@ -202,7 +256,7 @@ func guardELFMetadata(data []byte) error {
 		offset = order.Uint64(section[24:32])
 		size = order.Uint64(section[32:40])
 	}
-	if flags&0x800 != 0 || size > maxELFSectionNames || !tableWithinFile(offset, 1, size, len(data)) {
+	if flags&0x800 != 0 || size > maxELFSectionNames || !tableWithinFile(offset, 1, size, int(fileSize)) {
 		return errors.New("ELF section-name table is compressed, oversized, or invalid")
 	}
 	return nil

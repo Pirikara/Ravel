@@ -1616,7 +1616,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			if isELFMagic(magic[:]) {
 				goFiles++
 				switch {
-				case header.Size > maxGoBinaryBytes:
+				case header.Size > maxGoBinaryDiskBytes:
 					hasMagic, err := hasGoBuildInfoMagic(reader, header.Size-4)
 					if err != nil {
 						return layerChange{}, "", err
@@ -1626,6 +1626,22 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 					}
 				case goFiles > maxGoBinaryFiles || int64(goBytes)+header.Size > maxGoBinaryLayerBytes:
 					change.goLimited = true
+				case header.Size > maxGoBinaryBytes:
+					input := "oci:" + item.Digest + "!/" + name
+					binaryDoc, recognized, err := inspectLargeGoBinary(magic[:], reader, header.Size, input, project, name)
+					if errors.Is(err, errGoBinaryIO) {
+						return layerChange{}, "", err
+					}
+					goBytes += int(header.Size)
+					if err != nil {
+						status := "invalid"
+						if errors.Is(err, errGoBinaryModuleLimit) {
+							status = "scan_limited"
+						}
+						change.goBinaries[name] = goBinaryState{status: status}
+					} else if recognized {
+						change.goBinaries[name] = goBinaryState{document: binaryDoc}
+					}
 				default:
 					remaining, err := io.ReadAll(io.LimitReader(reader, maxGoBinaryBytes+1))
 					if err != nil || len(remaining)+4 != int(header.Size) {
