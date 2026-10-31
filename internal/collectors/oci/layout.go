@@ -243,6 +243,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var bunBinary *bunBinaryState
 	var denoBinary *denoBinaryState
 	var httpdBinary *httpdBinaryState
+	var memcachedBinary *memcachedBinaryState
 	var postgresBinary *postgresBinaryState
 	var redisBinary *redisBinaryState
 	pythonRuntimes := map[string]pythonRuntimeState{}
@@ -253,7 +254,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, httpdBinaryPath, postgresBinaryPath, redisBinaryPath} {
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, httpdBinaryPath, memcachedBinaryPath, postgresBinaryPath, redisBinaryPath} {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -384,6 +385,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			if removed == "." || removed == httpdBinaryPath || strings.HasPrefix(httpdBinaryPath, removed+"/") {
 				httpdBinary = nil
+			}
+			if removed == "." || removed == memcachedBinaryPath || strings.HasPrefix(memcachedBinaryPath, removed+"/") {
+				memcachedBinary = nil
 			}
 			if removed == "." || removed == postgresBinaryPath || strings.HasPrefix(postgresBinaryPath, removed+"/") {
 				postgresBinary = nil
@@ -554,6 +558,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if change.httpdBinary != nil {
 			httpdBinary = change.httpdBinary
 		}
+		if change.memcachedBinary != nil {
+			memcachedBinary = change.memcachedBinary
+		}
 		if change.postgresBinary != nil {
 			postgresBinary = change.postgresBinary
 		}
@@ -666,7 +673,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && memcachedBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -1065,6 +1072,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 		}
 	}
+	if memcachedBinary != nil {
+		if memcachedBinary.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "memcached_server_" + memcachedBinary.status, Name: memcachedBinaryPath})
+		} else {
+			installed := memcachedBinary.document
+			doc.Components = append(doc.Components, installed.Components...)
+			doc.Edges = append(doc.Edges, installed.Edges...)
+			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+		}
+	}
 	if nodeRuntimeBinary != nil {
 		if nodeRuntimeBinary.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_" + nodeRuntimeBinary.status, Name: nodeRuntimeBinaryPath})
@@ -1220,6 +1237,7 @@ type layerChange struct {
 	bunBinary                *bunBinaryState
 	denoBinary               *denoBinaryState
 	httpdBinary              *httpdBinaryState
+	memcachedBinary          *memcachedBinaryState
 	postgresBinary           *postgresBinaryState
 	redisBinary              *redisBinaryState
 	pythonRuntimes           map[string]pythonRuntimeState
@@ -1771,6 +1789,28 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			change.whiteouts = append(change.whiteouts, name)
 			continue
 		}
+		if name == memcachedBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.memcachedBinary != nil {
+				return layerChange{}, "", errors.New("duplicate OCI Memcached executable entry")
+			}
+			if header.Size > maxMemcachedBinaryBytes {
+				change.memcachedBinary = &memcachedBinaryState{status: "oversized"}
+			} else {
+				data, err := io.ReadAll(io.LimitReader(reader, maxMemcachedBinaryBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI Memcached executable entry")
+				}
+				input := "oci:" + item.Digest + "!/" + name
+				binaryDoc, err := inspectMemcachedBinary(data, input, project, architecture)
+				if err != nil {
+					change.memcachedBinary = &memcachedBinaryState{status: "invalid"}
+				} else {
+					change.memcachedBinary = &memcachedBinaryState{document: binaryDoc}
+				}
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
 		if name == nodeRuntimeBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
 			if change.nodeRuntimeBinary != nil {
 				return layerChange{}, "", errors.New("duplicate OCI Node runtime executable entry")
@@ -1960,6 +2000,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(httpdBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains httpd executable beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	if change.memcachedBinary != nil {
+		for ancestor := path.Dir(memcachedBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Memcached executable beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}
