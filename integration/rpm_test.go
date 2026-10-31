@@ -30,7 +30,13 @@ func rpmFixtureDatabase(t *testing.T, name string) []byte {
 }
 
 func TestRPMConstraintCases(t *testing.T) {
-	root := filepath.Join("..", "testdata", "fixtures", "rpm-sqlite-constraints")
+	for _, fixture := range []string{"rpm-sqlite-constraints", "rpm-ndb-constraints"} {
+		t.Run(fixture, func(t *testing.T) { testRPMConstraintCases(t, fixture) })
+	}
+}
+
+func testRPMConstraintCases(t *testing.T, fixture string) {
+	root := filepath.Join("..", "testdata", "fixtures", fixture)
 	result := filepath.Join(t.TempDir(), "rpm.json")
 	output, err := exec.Command(executable, "scan", root, "--manager", "rpm", "--format", "ravel-json", "--output", result).CombinedOutput()
 	if err != nil {
@@ -109,9 +115,13 @@ func TestRPMConstraintCases(t *testing.T) {
 		t.Fatalf("RPM constraint export included unverified edge: %v, relationships=%d", err, len(exported.Relationships))
 	}
 
+	ociDatabasePath := "usr/lib/sysimage/rpm/rpmdb.sqlite"
+	if fixture == "rpm-ndb-constraints" {
+		ociDatabasePath = "var/lib/rpm/Packages.db"
+	}
 	layout := ociTestLayout(t)
 	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
-		{name: "usr/lib/sysimage/rpm/rpmdb.sqlite", data: rpmFixtureDatabase(t, "rpm-sqlite-constraints")},
+		{name: ociDatabasePath, data: rpmFixtureDatabase(t, fixture)},
 	}}})
 	ociTestIndex(t, layout, image)
 	ociDoc, ociOutput, code := ociTestScan(t, layout)
