@@ -167,6 +167,8 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.GraphState = "partial"
 		case "rust_auditable_origin_unverified":
 			doc.Coverage.OriginState = "partial"
+		case "node_system_owner_unresolved", "node_system_owner_ambiguous", "node_system_ownership_scan_limited":
+			doc.Coverage.GraphState = "partial"
 		}
 	}
 	doc.Coverage.Packages = len(doc.Components)

@@ -223,6 +223,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		layer string
 	}
 	databases := map[string]databaseState{}
+	dpkgNodeLists := map[string]dpkgNodeFileListState{}
+	dpkgNodeListLimited := false
 	pythonMetadata := map[string]databaseState{}
 	setuptoolsVendor := map[string]databaseState{}
 	pythonEggRequirements := map[string]pythonEggRequirementsState{}
@@ -275,6 +277,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					if current == "." {
 						break
 					}
+				}
+			}
+		}
+		for name := range dpkgNodeLists {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
 				}
 			}
 		}
@@ -385,6 +395,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(nodePackageLinks, name)
 				}
 			}
+			for name := range dpkgNodeLists {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(dpkgNodeLists, name)
+				}
+			}
 			if removed == "." || removed == nodeRuntimeBinaryPath || strings.HasPrefix(nodeRuntimeBinaryPath, removed+"/") {
 				nodeRuntimeBinary = nil
 			}
@@ -488,6 +503,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		for name, data := range change.python {
 			pythonMetadata[name] = databaseState{data: data, layer: layer.Digest}
 		}
+		for name, state := range change.dpkgNodeLists {
+			state.layer = layer.Digest
+			dpkgNodeLists[name] = state
+		}
+		dpkgNodeListLimited = dpkgNodeListLimited || change.dpkgNodeListLimited
 		for name, data := range change.setuptoolsVendor {
 			setuptoolsVendor[name] = databaseState{data: data, layer: layer.Digest}
 		}
@@ -652,6 +672,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if len(nodeMetadata) > maxNodeMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Node package manifests")
+		}
+		if len(dpkgNodeLists) > maxDPKGInfoListFiles {
+			return model.Document{}, errors.New("OCI image has too many dpkg Node ownership lists")
+		}
+		dpkgNodePaths := 0
+		for _, state := range dpkgNodeLists {
+			dpkgNodePaths += len(state.paths)
+		}
+		if dpkgNodePaths > maxDPKGNodeOwnedPaths {
+			return model.Document{}, errors.New("OCI image has too many dpkg-owned Node manifests")
 		}
 		if len(nodePackageLinks) > maxNodePackageLinks {
 			return model.Document{}, errors.New("OCI image has too many Node package links")
@@ -1014,6 +1044,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 	}
 	npm.LinkInstalledDependencies(&doc, installedNodeRecords, nodeAliases)
+	linkSystemNodeOwners(&doc, installedNodeRecords, dpkgNodeLists, dpkgNodeListLimited)
 	rubyNames := make([]string, 0, len(rubySpecs))
 	for name := range rubySpecs {
 		rubyNames = append(rubyNames, name)
@@ -1357,6 +1388,8 @@ type databaseChange struct {
 
 type layerChange struct {
 	files                    map[string]databaseChange
+	dpkgNodeLists            map[string]dpkgNodeFileListState
+	dpkgNodeListLimited      bool
 	python                   map[string][]byte
 	setuptoolsVendor         map[string][]byte
 	pythonEggRequirements    map[string]pythonEggRequirementsState
@@ -1424,12 +1457,15 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
 	seenDatabase := map[string]bool{}
+	seenDPKGLists := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
 	entries := 0
 	pythonBytes := 0
+	dpkgListFiles := 0
+	dpkgListBytes := 0
 	pythonEggBytes := 0
 	pythonEggLines := 0
 	pipVendorBytes := 0
@@ -1502,6 +1538,29 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 					update.deleted = true
 					change.files[target] = update
 				}
+			}
+			continue
+		}
+		if header.Typeflag != tar.TypeDir && isDPKGInfoListPath(name) {
+			if seenDPKGLists[name] {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI dpkg file list entry: %s", name)
+			}
+			seenDPKGLists[name] = true
+			if relevantLanguagePaths[name] {
+				change.whiteouts = append(change.whiteouts, name)
+			}
+			dpkgListFiles++
+			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size < 0 || header.Size > maxDPKGInfoListBytes || dpkgListFiles > maxDPKGInfoListFiles || int64(dpkgListBytes)+header.Size > maxDPKGInfoListLayerBytes {
+				change.dpkgNodeListLimited = true
+				continue
+			}
+			state, err := inspectDPKGNodeFileList(reader, header.Size)
+			if err != nil {
+				return layerChange{}, "", fmt.Errorf("invalid OCI dpkg file list entry: %w", err)
+			}
+			dpkgListBytes += int(header.Size)
+			if len(state.paths) > 0 {
+				change.dpkgNodeLists[name] = state
 			}
 			continue
 		}

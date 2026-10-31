@@ -144,6 +144,13 @@ func systemNodePackageName(name string) (string, bool) {
 	return "", false
 }
 
+// IsSystemNodePackagePath distinguishes Debian's global module manifests
+// from package roots in an application-local node_modules tree.
+func IsSystemNodePackagePath(name string) bool {
+	_, ok := systemNodePackageName(name)
+	return ok
+}
+
 func decodeUniqueObject(data []byte) (map[string]json.RawMessage, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	opening, err := decoder.Token()
