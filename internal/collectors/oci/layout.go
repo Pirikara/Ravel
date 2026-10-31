@@ -241,6 +241,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	goBinaries := map[string]goBinaryState{}
 	goScanLimited := false
 	var postgresBinary *postgresBinaryState
+	var redisBinary *redisBinaryState
 	pythonRuntimes := map[string]pythonRuntimeState{}
 	pythonRuntimeLimited := false
 	rubyRuntimes := map[string]rubyRuntimeState{}
@@ -249,7 +250,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, postgresBinaryPath} {
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, postgresBinaryPath, redisBinaryPath} {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -374,6 +375,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			if removed == "." || removed == postgresBinaryPath || strings.HasPrefix(postgresBinaryPath, removed+"/") {
 				postgresBinary = nil
+			}
+			if removed == "." || removed == redisBinaryPath || strings.HasPrefix(redisBinaryPath, removed+"/") {
+				redisBinary = nil
 			}
 			for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata, rubySpecs} {
 				for name := range metadata {
@@ -532,6 +536,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if change.postgresBinary != nil {
 			postgresBinary = change.postgresBinary
 		}
+		if change.redisBinary != nil {
+			redisBinary = change.redisBinary
+		}
 		if len(pythonMetadata) > maxPythonMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Python metadata files")
 		}
@@ -638,7 +645,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && postgresBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -997,6 +1004,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 		}
 	}
+	if redisBinary != nil {
+		if redisBinary.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "redis_runtime_" + redisBinary.status, Name: redisBinaryPath})
+		} else {
+			installed := redisBinary.document
+			doc.Components = append(doc.Components, installed.Components...)
+			doc.Edges = append(doc.Edges, installed.Edges...)
+			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+		}
+	}
 	if nodeRuntimeBinary != nil {
 		if nodeRuntimeBinary.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_" + nodeRuntimeBinary.status, Name: nodeRuntimeBinaryPath})
@@ -1150,6 +1167,7 @@ type layerChange struct {
 	goBinaries               map[string]goBinaryState
 	goLimited                bool
 	postgresBinary           *postgresBinaryState
+	redisBinary              *redisBinaryState
 	pythonRuntimes           map[string]pythonRuntimeState
 	pythonRuntimeLimited     bool
 	rubyRuntimes             map[string]rubyRuntimeState
@@ -1613,6 +1631,28 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			change.whiteouts = append(change.whiteouts, name)
 			continue
 		}
+		if name == redisBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.redisBinary != nil {
+				return layerChange{}, "", errors.New("duplicate OCI Redis executable entry")
+			}
+			if header.Size > maxRedisBinaryBytes {
+				change.redisBinary = &redisBinaryState{status: "oversized"}
+			} else {
+				data, err := io.ReadAll(io.LimitReader(reader, maxRedisBinaryBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI Redis executable entry")
+				}
+				input := "oci:" + item.Digest + "!/" + name
+				binaryDoc, err := inspectRedisBinary(data, input, project, name)
+				if err != nil {
+					change.redisBinary = &redisBinaryState{status: "invalid"}
+				} else {
+					change.redisBinary = &redisBinaryState{document: binaryDoc}
+				}
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
 		if name == nodeRuntimeBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
 			if change.nodeRuntimeBinary != nil {
 				return layerChange{}, "", errors.New("duplicate OCI Node runtime executable entry")
@@ -1774,6 +1814,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(postgresBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains PostgreSQL executable beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	if change.redisBinary != nil {
+		for ancestor := path.Dir(redisBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Redis executable beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}

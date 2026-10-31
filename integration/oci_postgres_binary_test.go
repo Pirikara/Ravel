@@ -11,7 +11,7 @@ import (
 	"ravel/internal/model"
 )
 
-func hasPostgresCoverageIssue(doc model.Document, code string) bool {
+func hasOCICoverageIssue(doc model.Document, code string) bool {
 	for _, issue := range doc.Coverage.Issues {
 		if issue.Code == code {
 			return true
@@ -24,6 +24,11 @@ func hasPostgresCoverageIssue(doc model.Document, code string) bool {
 // allocated read-only ELF section. It is generated so no upstream executable
 // needs to be checked into the repository.
 func postgresELFFixture(versionLine, buildLine string) []byte {
+	rodata := []byte("\x00postgres (PostgreSQL) " + versionLine + "\n\x00\x00PostgreSQL " + buildLine + " on aarch64-linux, 64-bit\x00")
+	return runtimeELFFixture(rodata)
+}
+
+func runtimeELFFixture(rodata []byte) []byte {
 	data := make([]byte, 0x500)
 	copy(data[:4], "\x7fELF")
 	data[4], data[5], data[6] = 2, 1, 1
@@ -38,7 +43,6 @@ func postgresELFFixture(versionLine, buildLine string) []byte {
 	binary.LittleEndian.PutUint16(data[58:60], 64)
 	binary.LittleEndian.PutUint16(data[60:62], 3)
 	binary.LittleEndian.PutUint16(data[62:64], 1)
-	rodata := []byte("\x00postgres (PostgreSQL) " + versionLine + "\n\x00\x00PostgreSQL " + buildLine + " on aarch64-linux, 64-bit\x00")
 	copy(data[0x100:], rodata)
 	shstr := []byte("\x00.shstrtab\x00.rodata\x00")
 	copy(data[0x300:], shstr)
@@ -79,7 +83,7 @@ func TestOCIPostgresBinaryVerifiedVersion(t *testing.T) {
 				t.Fatalf("OCI scan failed: %s", output)
 			}
 			if test.want == "" {
-				if len(doc.Components) != 0 || !hasPostgresCoverageIssue(doc, "postgres_runtime_invalid") {
+				if len(doc.Components) != 0 || !hasOCICoverageIssue(doc, "postgres_runtime_invalid") {
 					t.Fatalf("unsupported PostgreSQL identity was reported: %#v", doc)
 				}
 				return
@@ -90,7 +94,7 @@ func TestOCIPostgresBinaryVerifiedVersion(t *testing.T) {
 			component := doc.Components[0]
 			digest := sha256.Sum256(binaryBytes)
 			wantDigest := hex.EncodeToString(digest[:])
-			if component.Kind != "application" || component.Name != "postgresql" || component.Version != test.want || component.PURL != "" || len(component.Hashes) != 1 || component.Hashes[0].Content != wantDigest || len(component.Evidence) != 1 || component.Evidence[0].InputDigest != "sha256:"+wantDigest || !strings.HasSuffix(component.Evidence[0].InputPath, "!/usr/local/bin/postgres") || !strings.HasPrefix(component.Evidence[0].Pointer, "elf/offset/") || !hasPostgresCoverageIssue(doc, "postgres_runtime_origin_unavailable") {
+			if component.Kind != "application" || component.Name != "postgresql" || component.Version != test.want || component.PURL != "" || len(component.Hashes) != 1 || component.Hashes[0].Content != wantDigest || len(component.Evidence) != 1 || component.Evidence[0].InputDigest != "sha256:"+wantDigest || !strings.HasSuffix(component.Evidence[0].InputPath, "!/usr/local/bin/postgres") || !strings.HasPrefix(component.Evidence[0].Pointer, "elf/offset/") || !hasOCICoverageIssue(doc, "postgres_runtime_origin_unavailable") {
 				t.Fatalf("PostgreSQL executable evidence incorrect: %#v", doc)
 			}
 		})
