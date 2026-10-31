@@ -174,29 +174,46 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 			if strings.HasPrefix(requirement.name, "rpmlib(") {
 				continue // Internal RPM feature supplied by the package manager.
 			}
+			if strings.HasPrefix(requirement.name, "(") {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_requirement_unparsed", Name: requirement.name, Scope: pkg.name})
+				continue // RPM Boolean dependencies need expression evaluation.
+			}
 			externalRequirement = true
 			if strings.HasPrefix(requirement.name, "/") {
 				fileRequirement = true
 				continue // File ownership is not available from this package view.
 			}
 			matches := map[string]string{}
+			selfSatisfied := false
+			selfPossible := false
 			for _, candidate := range providers[requirement.name] {
-				if candidate.ref != pkg.ref {
-					condition, possible := rpmConstraint(requirement, pkg.metadataKnown, candidate)
-					if possible {
-						previous, exists := matches[candidate.ref]
-						if !exists || previous != "" && condition == "" {
-							matches[candidate.ref] = condition
-						}
-					}
+				condition, possible := rpmConstraint(requirement, pkg.metadataKnown, candidate)
+				if !possible {
+					continue
+				}
+				if candidate.ref == pkg.ref {
+					selfSatisfied = selfSatisfied || condition == ""
+					selfPossible = selfPossible || condition != ""
+					continue
+				}
+				previous, exists := matches[candidate.ref]
+				if !exists || previous != "" && condition == "" {
+					matches[candidate.ref] = condition
 				}
 			}
+			if selfSatisfied {
+				continue // A package's own capability needs no dependency edge.
+			}
 			if len(matches) == 0 {
+				if selfPossible {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dependency_constraint_unverified", Name: requirement.name, Scope: pkg.name})
+					continue
+				}
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: requirement.name, Scope: pkg.name})
 				continue
 			}
-			ambiguous := len(matches) > 1
-			if len(matches) > 1 {
+			ambiguous := len(matches) > 1 || selfPossible
+			if ambiguous {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ambiguous_dependency", Name: requirement.name, Scope: pkg.name})
 			}
 			for target, condition := range matches {

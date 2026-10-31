@@ -44,7 +44,7 @@ func TestRPMConstraintCases(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Coverage.Packages != 3 || doc.Coverage.Edges != 4 || doc.Coverage.GraphState != "partial" {
+	if doc.Coverage.Packages != 4 || doc.Coverage.Edges != 5 || doc.Coverage.GraphState != "partial" {
 		t.Fatalf("RPM constraint coverage incorrect: %#v", doc.Coverage)
 	}
 	names := map[string]string{}
@@ -66,15 +66,23 @@ func TestRPMConstraintCases(t *testing.T) {
 	if _, linked := conditions["ravel-fixture-consumer-mismatch"]; linked {
 		t.Fatalf("mismatched RPM version was linked to an unsatisfying provider: %#v", conditions)
 	}
+	if _, linked := conditions["ravel-fixture-self"]; linked {
+		t.Fatalf("self-provided RPM requirement produced an inter-package edge: %#v", conditions)
+	}
 	unresolved := false
+	richUnparsed := false
 	for _, issue := range doc.Coverage.Issues {
 		unresolved = unresolved || issue.Code == "unresolved_dependency" && issue.Scope == "ravel-fixture-consumer-mismatch"
+		richUnparsed = richUnparsed || issue.Code == "rpm_requirement_unparsed" && issue.Scope == "ravel-fixture-self" && strings.HasPrefix(issue.Name, "(")
+		if issue.Code == "unresolved_dependency" && issue.Scope == "ravel-fixture-self" {
+			t.Fatalf("self-provided or Boolean RPM requirement reported missing: %#v", issue)
+		}
 		if issue.Code == "rpm_dependency_flags_unavailable" {
 			t.Fatalf("available RPM flags reported missing: %#v", doc.Coverage.Issues)
 		}
 	}
-	if !unresolved {
-		t.Fatalf("unsatisfied RPM requirement was not reported: %#v", doc.Coverage.Issues)
+	if !unresolved || !richUnparsed {
+		t.Fatalf("RPM mismatch or Boolean requirement was not reported: %#v", doc.Coverage.Issues)
 	}
 	spdx, err := exec.Command(executable, "scan", root, "--manager", "rpm", "--format", "spdx-json").Output()
 	if err != nil {
@@ -83,7 +91,7 @@ func TestRPMConstraintCases(t *testing.T) {
 	var exported struct {
 		Relationships []json.RawMessage `json:"relationships"`
 	}
-	if err := json.Unmarshal(spdx, &exported); err != nil || len(exported.Relationships) != 4 {
+	if err := json.Unmarshal(spdx, &exported); err != nil || len(exported.Relationships) != 5 {
 		t.Fatalf("RPM constraint export included unverified edge: %v, relationships=%d", err, len(exported.Relationships))
 	}
 
@@ -93,7 +101,7 @@ func TestRPMConstraintCases(t *testing.T) {
 	}}})
 	ociTestIndex(t, layout, image)
 	ociDoc, ociOutput, code := ociTestScan(t, layout)
-	if code != 0 || ociDoc.Coverage.Packages != 3 || ociDoc.Coverage.Edges != 4 {
+	if code != 0 || ociDoc.Coverage.Packages != 4 || ociDoc.Coverage.Edges != 5 {
 		t.Fatalf("OCI RPM constraint scan failed: code=%d output=%s coverage=%#v", code, ociOutput, ociDoc.Coverage)
 	}
 }
