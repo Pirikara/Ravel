@@ -243,6 +243,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var bunBinary *bunBinaryState
 	var denoBinary *denoBinaryState
 	var httpdBinary *httpdBinaryState
+	var haproxyBinary *haproxyBinaryState
 	var memcachedBinary *memcachedBinaryState
 	var postgresBinary *postgresBinaryState
 	var redisBinary *redisBinaryState
@@ -254,7 +255,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, httpdBinaryPath, memcachedBinaryPath, postgresBinaryPath, redisBinaryPath} {
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, httpdBinaryPath, haproxyBinaryPath, memcachedBinaryPath, postgresBinaryPath, redisBinaryPath} {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -385,6 +386,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			if removed == "." || removed == httpdBinaryPath || strings.HasPrefix(httpdBinaryPath, removed+"/") {
 				httpdBinary = nil
+			}
+			if removed == "." || removed == haproxyBinaryPath || strings.HasPrefix(haproxyBinaryPath, removed+"/") {
+				haproxyBinary = nil
 			}
 			if removed == "." || removed == memcachedBinaryPath || strings.HasPrefix(memcachedBinaryPath, removed+"/") {
 				memcachedBinary = nil
@@ -558,6 +562,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if change.httpdBinary != nil {
 			httpdBinary = change.httpdBinary
 		}
+		if change.haproxyBinary != nil {
+			haproxyBinary = change.haproxyBinary
+		}
 		if change.memcachedBinary != nil {
 			memcachedBinary = change.memcachedBinary
 		}
@@ -673,7 +680,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && memcachedBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -1072,6 +1079,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 		}
 	}
+	if haproxyBinary != nil {
+		if haproxyBinary.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "haproxy_server_" + haproxyBinary.status, Name: haproxyBinaryPath})
+		} else {
+			installed := haproxyBinary.document
+			doc.Components = append(doc.Components, installed.Components...)
+			doc.Edges = append(doc.Edges, installed.Edges...)
+			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+		}
+	}
 	if memcachedBinary != nil {
 		if memcachedBinary.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "memcached_server_" + memcachedBinary.status, Name: memcachedBinaryPath})
@@ -1237,6 +1254,7 @@ type layerChange struct {
 	bunBinary                *bunBinaryState
 	denoBinary               *denoBinaryState
 	httpdBinary              *httpdBinaryState
+	haproxyBinary            *haproxyBinaryState
 	memcachedBinary          *memcachedBinaryState
 	postgresBinary           *postgresBinaryState
 	redisBinary              *redisBinaryState
@@ -1789,6 +1807,31 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			change.whiteouts = append(change.whiteouts, name)
 			continue
 		}
+		if name == haproxyBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.haproxyBinary != nil {
+				return layerChange{}, "", errors.New("duplicate OCI HAProxy executable entry")
+			}
+			if header.Size < 0 {
+				return layerChange{}, "", errors.New("invalid OCI HAProxy executable size")
+			}
+			if header.Size > maxHAProxyBinaryBytes {
+				change.haproxyBinary = &haproxyBinaryState{status: "oversized"}
+			} else {
+				data := make([]byte, int(header.Size))
+				if _, err := io.ReadFull(reader, data); err != nil {
+					return layerChange{}, "", errors.New("invalid OCI HAProxy executable entry")
+				}
+				input := "oci:" + item.Digest + "!/" + name
+				binaryDoc, err := inspectHAProxyBinary(data, input, project, architecture)
+				if err != nil {
+					change.haproxyBinary = &haproxyBinaryState{status: "invalid"}
+				} else {
+					change.haproxyBinary = &haproxyBinaryState{document: binaryDoc}
+				}
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
 		if name == memcachedBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
 			if change.memcachedBinary != nil {
 				return layerChange{}, "", errors.New("duplicate OCI Memcached executable entry")
@@ -2000,6 +2043,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(httpdBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains httpd executable beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	if change.haproxyBinary != nil {
+		for ancestor := path.Dir(haproxyBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains HAProxy executable beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}
