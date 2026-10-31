@@ -61,6 +61,41 @@ func TestOCIDotnetDepsGeneratedRuntimeGraph(t *testing.T) {
 	}
 }
 
+func TestOCIDotnetDepsOmitsNonRuntimeLibraries(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "testdata", "oci", "dotnet-deps-v8", "legacy.deps.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout := ociTestLayout(t)
+	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{{name: "app/legacy.deps.json", data: data}}}})
+	ociTestIndex(t, layout, image)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 4 || doc.Coverage.Edges != 4 {
+		t.Fatalf("non-runtime libraries were counted: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	byID := map[string]string{}
+	for _, component := range doc.Components {
+		byID[component.ID] = component.Name
+		if component.Name == "Build.Analyzer" || component.Name == "Unused.Meta" {
+			t.Fatalf("library without a path to runtime assets was counted: %#v", component)
+		}
+	}
+	bridge := false
+	for _, edge := range doc.Edges {
+		bridge = bridge || byID[edge.From] == "Bridge.Meta" && byID[edge.To] == "Runtime.Leaf" && edge.Kind == "depends_on"
+	}
+	if !bridge {
+		t.Fatalf("runtime dependency bridge was dropped: %#v", doc.Edges)
+	}
+	issues := map[string]bool{}
+	for _, issue := range doc.Coverage.Issues {
+		issues[issue.Code+":"+issue.Name] = true
+	}
+	if !issues["dotnet_non_runtime_library_omitted:Build.Analyzer"] || !issues["dotnet_non_runtime_library_omitted:Unused.Meta"] || !issues["dotnet_manifest_only_library:Bridge.Meta"] || issues["unresolved_dependency:Build.Analyzer"] {
+		t.Fatalf(".NET runtime selection was not explained: %#v", doc.Coverage.Issues)
+	}
+}
+
 func TestOCIDotnetDepsWhiteoutAndManifestScopes(t *testing.T) {
 	const template = `{"runtimeTarget":{"name":"net10.0"},"targets":{"net10.0":{"app/1.0.0":{"dependencies":{"Acme.Core":"2.0.0"},"runtime":{"app.dll":{}}},"Acme.Core/2.0.0":{"runtime":{"core.dll":{}}}}},"libraries":{"app/1.0.0":{"type":"project"},"Acme.Core/2.0.0":{"type":"package"}}}`
 	layout := ociTestLayout(t)

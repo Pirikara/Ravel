@@ -1,6 +1,7 @@
 package nuget
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -85,22 +86,67 @@ func CollectInstalledDeps(data []byte, source, project, manifestPath string) (mo
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	entries := map[string]depsEntry{}
-	byIdentity := map[string]string{}
-	projects := []depsEntry{}
+	keyByIdentity := map[string]string{}
+	hasRuntimeAssets := map[string]bool{}
 	for _, key := range keys {
 		name, version, ok := strings.Cut(key, "/")
 		if !ok || len(name) > 256 || len(version) > 128 || !depsLibraryName.MatchString(name) || !depsVersion.MatchString(version) {
 			return model.Document{}, fmt.Errorf("invalid .NET deps library identity %q", key)
 		}
 		identity := strings.ToLower(name) + "/" + strings.ToLower(version)
-		if _, duplicate := byIdentity[identity]; duplicate {
+		if _, duplicate := keyByIdentity[identity]; duplicate {
 			return model.Document{}, fmt.Errorf("duplicate .NET deps library identity %q", key)
 		}
-		library, found := manifest.Libraries[key]
-		if !found {
+		if _, found := manifest.Libraries[key]; !found {
 			return model.Document{}, fmt.Errorf(".NET deps library metadata missing for %q", key)
 		}
+		keyByIdentity[identity] = key
+		assets, err := hasDepsRuntimeAssets(selected[key])
+		if err != nil {
+			return model.Document{}, fmt.Errorf("invalid .NET deps runtime assets for %q: %w", key, err)
+		}
+		hasRuntimeAssets[key] = assets
+	}
+	parents := map[string][]string{}
+	for _, key := range keys {
+		for depName, depVersion := range selected[key].Dependencies {
+			child := keyByIdentity[strings.ToLower(depName)+"/"+strings.ToLower(depVersion)]
+			if child != "" {
+				parents[child] = append(parents[child], key)
+			}
+		}
+	}
+	active := map[string]bool{}
+	queue := []string{}
+	rootName := strings.TrimSuffix(path.Base(manifestPath), ".deps.json")
+	for _, key := range keys {
+		name, _, _ := strings.Cut(key, "/")
+		if hasRuntimeAssets[key] || manifest.Libraries[key].Type == "project" && strings.EqualFold(name, rootName) {
+			active[key] = true
+			queue = append(queue, key)
+		}
+	}
+	for len(queue) > 0 {
+		child := queue[0]
+		queue = queue[1:]
+		for _, parent := range parents[child] {
+			if !active[parent] {
+				active[parent] = true
+				queue = append(queue, parent)
+			}
+		}
+	}
+	entries := map[string]depsEntry{}
+	byIdentity := map[string]string{}
+	projects := []depsEntry{}
+	for _, key := range keys {
+		name, version, _ := strings.Cut(key, "/")
+		identity := strings.ToLower(name) + "/" + strings.ToLower(version)
+		if !active[key] {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dotnet_non_runtime_library_omitted", Name: name})
+			continue
+		}
+		library := manifest.Libraries[key]
 		kind := "package"
 		switch library.Type {
 		case "package", "runtimepack":
@@ -125,7 +171,7 @@ func CollectInstalledDeps(data []byte, source, project, manifestPath string) (mo
 				}
 			}
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: name})
-			if !hasDepsRuntimeAssets(selected[key]) {
+			if !hasRuntimeAssets[key] {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dotnet_manifest_only_library", Name: name})
 			}
 			if library.Type == "runtimepack" {
@@ -154,6 +200,9 @@ func CollectInstalledDeps(data []byte, source, project, manifestPath string) (mo
 			}
 			to := byIdentity[strings.ToLower(depName)+"/"+strings.ToLower(depVersion)]
 			if to == "" {
+				if child := keyByIdentity[strings.ToLower(depName)+"/"+strings.ToLower(depVersion)]; child != "" && !active[child] {
+					continue // This dependency has no path to a runtime asset.
+				}
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: depName, Scope: entry.name})
 				continue
 			}
@@ -192,11 +241,21 @@ func CollectInstalledDeps(data []byte, source, project, manifestPath string) (mo
 	return doc, nil
 }
 
-func hasDepsRuntimeAssets(entry depsTargetLibrary) bool {
+func hasDepsRuntimeAssets(entry depsTargetLibrary) (bool, error) {
+	hasAsset := false
 	for _, raw := range []json.RawMessage{entry.Runtime, entry.Resources, entry.Native, entry.RuntimeTargets} {
-		if len(raw) > 0 && string(raw) != "null" && string(raw) != "{}" {
-			return true
+		if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			continue
+		}
+		var assets map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &assets); err != nil || assets == nil {
+			return false, errors.New("runtime assets must be a JSON object")
+		}
+		for name := range assets {
+			if path.Base(name) != "_._" {
+				hasAsset = true
+			}
 		}
 	}
-	return false
+	return hasAsset, nil
 }

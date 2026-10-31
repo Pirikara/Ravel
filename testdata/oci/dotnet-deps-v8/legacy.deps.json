@@ -1,0 +1,31 @@
+{
+  "runtimeTarget": {"name": ".NETCoreApp,Version=v8.0", "signature": ""},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "legacy/1.0.0": {
+        "dependencies": {
+          "Runtime.Core": "2.0.0",
+          "Build.Analyzer": "1.0.0",
+          "Bridge.Meta": "1.0.0"
+        },
+        "runtime": {"legacy.dll": {}}
+      },
+      "Runtime.Core/2.0.0": {"runtime": {"lib/net8.0/Runtime.Core.dll": {}}},
+      "Build.Analyzer/1.0.0": {
+        "runtime": {"_._": {}},
+        "compile": {"analyzers/dotnet/cs/Build.Analyzer.dll": {}}
+      },
+      "Bridge.Meta/1.0.0": {"dependencies": {"Runtime.Leaf": "3.0.0"}},
+      "Runtime.Leaf/3.0.0": {"runtime": {"lib/net8.0/Runtime.Leaf.dll": {}}},
+      "Unused.Meta/1.0.0": {"dependencies": {"Build.Analyzer": "1.0.0"}}
+    }
+  },
+  "libraries": {
+    "legacy/1.0.0": {"type": "project"},
+    "Runtime.Core/2.0.0": {"type": "package"},
+    "Build.Analyzer/1.0.0": {"type": "package"},
+    "Bridge.Meta/1.0.0": {"type": "package"},
+    "Runtime.Leaf/3.0.0": {"type": "package"},
+    "Unused.Meta/1.0.0": {"type": "package"}
+  }
+}

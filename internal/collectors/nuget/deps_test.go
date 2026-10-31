@@ -61,6 +61,7 @@ func TestDepsMalformedAndAmbiguous(t *testing.T) {
 		{"missing-library", `{"runtimeTarget":{"name":"net10.0"},"targets":{"net10.0":{"Acme.Core/1.0.0":{}}},"libraries":{}}`},
 		{"duplicate-case", `{"runtimeTarget":{"name":"net10.0"},"targets":{"net10.0":{"Acme.Core/1.0.0":{},"acme.core/1.0.0":{}}},"libraries":{"Acme.Core/1.0.0":{"type":"package"},"acme.core/1.0.0":{"type":"package"}}}`},
 		{"unsafe-name", `{"runtimeTarget":{"name":"net10.0"},"targets":{"net10.0":{"https://secret@example.invalid/1.0.0":{}}},"libraries":{"https://secret@example.invalid/1.0.0":{"type":"package"}}}`},
+		{"invalid-runtime-assets", `{"runtimeTarget":{"name":"net10.0"},"targets":{"net10.0":{"App/1.0.0":{"runtime":42}}},"libraries":{"App/1.0.0":{"type":"project"}}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := CollectInstalledDeps([]byte(tc.data), "source", "test", "app.deps.json"); err == nil {
