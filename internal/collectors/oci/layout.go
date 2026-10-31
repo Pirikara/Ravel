@@ -1066,7 +1066,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Edges = append(doc.Edges, installed.Edges...)
 	}
 	if rubyInstalled {
-		linkInstalledRubyDependencies(&doc, rubyRecords)
+		linkInstalledRubyDependencies(&doc, rubyRecords, rubyRuntimes)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_installed_activation_unresolved"}, model.Issue{Code: "ruby_installed_origin_unavailable"})
 	}
 	javaNames := make([]string, 0, len(javaArchives))

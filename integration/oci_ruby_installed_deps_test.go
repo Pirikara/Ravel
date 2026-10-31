@@ -100,6 +100,43 @@ func TestOCIInstalledRubyGraphDoesNotGuessRemovedAmbiguousOrCrossHomePackages(t 
 	}
 }
 
+func TestOCIInstalledRubyDefaultGemDependency(t *testing.T) {
+	const bundle = "usr/local/bundle/specifications/"
+	const defaultSpec = "usr/local/lib/ruby/gems/3.3.0/specifications/default/base64-0.2.0.gemspec"
+	app := ociTestEntry{name: bundle + "app-1.0.0.gemspec", data: ociTestRubySpecWithDependencies("app", "1.0.0", `  s.add_runtime_dependency(%q<base64>.freeze, [">= 0.2".freeze])`)}
+	defaultGem := ociTestEntry{name: defaultSpec, data: ociTestInstalledRubySpec("base64", "0.2.0", "ruby")}
+	runtime := ociTestEntry{name: ociRubyRuntimePath, data: ociTestRubyRuntimeELF("3.3.12")}
+	for _, test := range []struct {
+		name       string
+		entries    []ociTestEntry
+		upper      []ociTestEntry
+		wantTarget string
+		wantIssue  string
+	}{
+		{name: "verified_runtime", entries: []ociTestEntry{app, defaultGem, runtime}, wantTarget: "base64@0.2.0"},
+		{name: "missing_runtime", entries: []ociTestEntry{app, defaultGem}, wantIssue: "ruby_installed_dependency_unresolved"},
+		{name: "invalid_runtime", entries: []ociTestEntry{app, defaultGem, {name: ociRubyRuntimePath, data: []byte("not ELF")}}, wantIssue: "ruby_installed_dependency_unresolved"},
+		{name: "different_abi", entries: []ociTestEntry{app, runtime, {name: "usr/local/lib/ruby/gems/3.2.0/specifications/default/base64-0.2.0.gemspec", data: defaultGem.data}}, wantIssue: "ruby_installed_dependency_unresolved"},
+		{name: "whiteouted_default", entries: []ociTestEntry{app, defaultGem, runtime}, upper: []ociTestEntry{{name: "usr/local/lib/ruby/gems/3.3.0/specifications/default/.wh.base64-0.2.0.gemspec"}}, wantIssue: "ruby_installed_dependency_unresolved"},
+		{name: "bundle_candidate_preferred", entries: []ociTestEntry{app, defaultGem, runtime, {name: bundle + "base64-0.3.0.gemspec", data: ociTestInstalledRubySpec("base64", "0.3.0", "ruby")}}, wantTarget: "base64@0.3.0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			doc := ociTestRubyDependencyScan(t, test.entries, test.upper)
+			edges := ociTestRubyDependencyEdges(doc)
+			wantCount := 0
+			if test.wantTarget != "" {
+				wantCount = 1
+			}
+			if len(edges) != wantCount || test.wantTarget != "" && !edges["app@1.0.0 -> "+test.wantTarget] {
+				t.Fatalf("default Ruby gem relation incorrect: edges=%#v issues=%#v", edges, doc.Coverage.Issues)
+			}
+			if test.wantIssue != "" && !ociTestRubyHasIssue(doc, test.wantIssue) {
+				t.Fatalf("missing default Ruby gem coverage issue: %#v", doc.Coverage.Issues)
+			}
+		})
+	}
+}
+
 func TestOCIInstalledRubyUnsupportedDependencySyntaxReported(t *testing.T) {
 	const home = "usr/local/bundle/specifications/"
 	doc := ociTestRubyDependencyScan(t, []ociTestEntry{

@@ -31,12 +31,20 @@ type rubyInstalledDependency struct {
 
 // linkInstalledRubyDependencies observes declarative runtime dependency calls
 // in generated gemspecs. It does not evaluate Ruby or assume a GEM_PATH across
-// different gem homes. Installed versions may differ from activated versions.
-func linkInstalledRubyDependencies(doc *model.Document, records []rubyInstalledRecord) {
+// ordinary gem homes. A verified CRuby runtime exposes its matching default
+// gems when the source gem home has no installed candidate. Installed versions
+// may differ from activated versions.
+func linkInstalledRubyDependencies(doc *model.Document, records []rubyInstalledRecord, runtimes map[string]rubyRuntimeState) {
 	byHomeName := map[string][]model.Component{}
+	byDefaultName := map[string][]model.Component{}
+	defaultHome := rubyDefaultGemHome(runtimes)
 	for _, record := range records {
-		key := rubyGemHome(record.metadataPath) + "\x00" + record.component.Name
+		home := rubyGemHome(record.metadataPath)
+		key := home + "\x00" + record.component.Name
 		byHomeName[key] = append(byHomeName[key], record.component)
+		if defaultHome != "" && home == defaultHome && strings.HasPrefix(record.metadataPath, defaultHome+"/specifications/default/") {
+			byDefaultName[record.component.Name] = append(byDefaultName[record.component.Name], record.component)
+		}
 	}
 	dependenciesSeen := 0
 	for _, record := range records {
@@ -56,8 +64,12 @@ func linkInstalledRubyDependencies(doc *model.Document, records []rubyInstalledR
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_installed_dependency_ambiguous", Name: dependency.name, Scope: record.component.Name, Line: dependency.line})
 				continue
 			}
-			key := rubyGemHome(record.metadataPath) + "\x00" + dependency.name
+			home := rubyGemHome(record.metadataPath)
+			key := home + "\x00" + dependency.name
 			candidates := byHomeName[key]
+			if len(candidates) == 0 && defaultHome != "" && home != defaultHome {
+				candidates = byDefaultName[dependency.name]
+			}
 			if len(candidates) == 0 {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_installed_dependency_unresolved", Name: dependency.name, Scope: record.component.Name, Line: dependency.line})
 				continue
@@ -94,6 +106,26 @@ func linkInstalledRubyDependencies(doc *model.Document, records []rubyInstalledR
 			doc.Edges = append(doc.Edges, model.Edge{From: record.component.ID, To: matches[0].ID, Kind: "depends_on", Evidence: evidence})
 		}
 	}
+}
+
+// Default gem specifications are visible to the matching CRuby installation
+// even when GEM_HOME names another directory. Require one verified runtime to
+// avoid joining gem homes from unrelated Ruby installations.
+func rubyDefaultGemHome(runtimes map[string]rubyRuntimeState) string {
+	if len(runtimes) != 1 {
+		return ""
+	}
+	for _, state := range runtimes {
+		if state.status != "" || len(state.document.Components) != 1 || state.document.Components[0].Name != "ruby" {
+			return ""
+		}
+		parts := strings.Split(state.document.Components[0].Version, ".")
+		if len(parts) != 3 {
+			return ""
+		}
+		return "usr/local/lib/ruby/gems/" + parts[0] + "." + parts[1] + ".0"
+	}
+	return ""
 }
 
 func rubyGemHome(filename string) string {
