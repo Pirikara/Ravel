@@ -153,6 +153,20 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.OriginState = "partial"
 		case "bun_runtime_origin_unavailable":
 			doc.Coverage.OriginState = "partial"
+		case "setuptools_vendor_metadata_invalid", "setuptools_vendor_parent_unresolved":
+			doc.Coverage.GraphState = "partial"
+			doc.Coverage.OriginState = "partial"
+		case "setuptools_vendor_graph_unavailable":
+			doc.Coverage.GraphState = "partial"
+		case "setuptools_vendor_origin_unavailable":
+			doc.Coverage.OriginState = "partial"
+		case "rust_auditable_invalid", "rust_auditable_legacy_ambiguous", "rust_auditable_scan_limited":
+			doc.Coverage.GraphState = "partial"
+			doc.Coverage.OriginState = "partial"
+		case "rust_auditable_graph_declared":
+			doc.Coverage.GraphState = "partial"
+		case "rust_auditable_origin_unverified":
+			doc.Coverage.OriginState = "partial"
 		}
 	}
 	doc.Coverage.Packages = len(doc.Components)

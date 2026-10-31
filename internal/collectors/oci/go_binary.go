@@ -57,36 +57,58 @@ func inspectGoBinary(data []byte, source, project, binaryPath string) (document 
 	return readGoBuildInfo(bytes.NewReader(data), hex.EncodeToString(hash[:]), source, project, binaryPath)
 }
 
-// inspectLargeGoBinary keeps a bounded ELF on disk while reading its build
-// information. Only the build information and ELF metadata are read into RAM.
-func inspectLargeGoBinary(prefix []byte, reader io.Reader, size int64, source, project, binaryPath string) (model.Document, bool, error) {
+type largeELFInspection struct {
+	goDocument     model.Document
+	goRecognized   bool
+	goError        error
+	rustDocument   model.Document
+	rustRecognized bool
+	rustError      error
+}
+
+// inspectLargeELFBinaries spools one bounded ELF and reads both supported
+// build-information formats without retaining the executable in memory.
+func inspectLargeELFBinaries(prefix []byte, reader io.Reader, size int64, source, project, binaryPath string) (largeELFInspection, error) {
 	if !isELFMagic(prefix) || size <= maxGoBinaryBytes || size > maxGoBinaryDiskBytes {
-		return model.Document{}, false, errors.New("invalid large Go binary input")
+		return largeELFInspection{}, errors.New("invalid large ELF input")
 	}
-	file, err := os.CreateTemp("", "ravel-go-binary-")
+	file, err := os.CreateTemp("", "ravel-elf-")
 	if err != nil {
-		return model.Document{}, false, fmt.Errorf("%w: %v", errGoBinaryIO, err)
+		return largeELFInspection{}, fmt.Errorf("%w: %v", errGoBinaryIO, err)
 	}
 	defer os.Remove(file.Name())
 	defer file.Close()
 	hasher := sha256.New()
 	if _, err := io.CopyN(io.MultiWriter(file, hasher), io.MultiReader(bytes.NewReader(prefix), reader), size); err != nil {
-		return model.Document{}, false, fmt.Errorf("%w: %v", errGoBinaryIO, err)
+		return largeELFInspection{}, fmt.Errorf("%w: %v", errGoBinaryIO, err)
 	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return model.Document{}, false, fmt.Errorf("%w: %v", errGoBinaryIO, err)
+		return largeELFInspection{}, fmt.Errorf("%w: %v", errGoBinaryIO, err)
 	}
 	found, err := hasGoBuildInfoMagic(file, size)
 	if err != nil {
-		return model.Document{}, false, fmt.Errorf("%w: %v", errGoBinaryIO, err)
+		return largeELFInspection{}, fmt.Errorf("%w: %v", errGoBinaryIO, err)
 	}
-	if !found {
-		return model.Document{}, false, nil
+	digest := hex.EncodeToString(hasher.Sum(nil))
+	result := largeELFInspection{}
+	if found {
+		if err := guardELFMetadataReader(file, size); err != nil {
+			result.goError = err
+		} else {
+			result.goDocument, result.goRecognized, result.goError = readGoBuildInfo(file, digest, source, project, binaryPath)
+		}
 	}
-	if err := guardELFMetadataReader(file, size); err != nil {
-		return model.Document{}, false, err
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return largeELFInspection{}, fmt.Errorf("%w: %v", errGoBinaryIO, err)
 	}
-	return readGoBuildInfo(file, hex.EncodeToString(hasher.Sum(nil)), source, project, binaryPath)
+	hasRustMarker, err := hasBinaryMarker(file, size, []byte(".dep-v0"))
+	if err != nil {
+		return largeELFInspection{}, fmt.Errorf("%w: %v", errGoBinaryIO, err)
+	}
+	if hasRustMarker {
+		result.rustDocument, result.rustRecognized, result.rustError = inspectRustAuditableReader(file, size, digest, source, project, binaryPath)
+	}
+	return result, nil
 }
 
 func readGoBuildInfo(reader io.ReaderAt, digest, source, project, binaryPath string) (document model.Document, recognized bool, err error) {
@@ -273,8 +295,15 @@ func isELFMagic(data []byte) bool {
 // hasGoBuildInfoMagic checks an oversized ELF stream without retaining its
 // contents. A native binary should not be reported as an oversized Go binary.
 func hasGoBuildInfoMagic(reader io.Reader, remaining int64) (bool, error) {
+	return hasBinaryMarker(reader, remaining, []byte(goBuildInfoMagic))
+}
+
+func hasBinaryMarker(reader io.Reader, remaining int64, marker []byte) (bool, error) {
+	if len(marker) == 0 {
+		return false, errors.New("empty binary marker")
+	}
 	const chunkSize = 32 << 10
-	var buffer [chunkSize + len(goBuildInfoMagic) - 1]byte
+	buffer := make([]byte, chunkSize+len(marker)-1)
 	tail := 0
 	for remaining > 0 {
 		chunk := int64(chunkSize)
@@ -285,10 +314,10 @@ func hasGoBuildInfoMagic(reader io.Reader, remaining int64) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if bytes.Contains(buffer[:tail+n], []byte(goBuildInfoMagic)) {
+		if bytes.Contains(buffer[:tail+n], marker) {
 			return true, nil
 		}
-		keep := len(goBuildInfoMagic) - 1
+		keep := len(marker) - 1
 		if tail+n < keep {
 			keep = tail + n
 		}

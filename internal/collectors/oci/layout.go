@@ -241,6 +241,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
 	goScanLimited := false
+	rustBinaries := map[string]rustAuditableState{}
+	rustScanLimited := false
 	var bunBinary *bunBinaryState
 	var denoBinary *denoBinaryState
 	var httpdBinary *httpdBinaryState
@@ -333,6 +335,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for name := range goBinaries {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		for name := range rustBinaries {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -452,6 +462,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(goBinaries, name)
 				}
 			}
+			for name := range rustBinaries {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(rustBinaries, name)
+				}
+			}
 			for name := range pythonRuntimes {
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 					delete(pythonRuntimes, name)
@@ -551,6 +566,10 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			goBinaries[name] = state
 		}
 		goScanLimited = goScanLimited || change.goLimited
+		for name, state := range change.rustBinaries {
+			rustBinaries[name] = state
+		}
+		rustScanLimited = rustScanLimited || change.rustLimited
 		for name, state := range change.pythonRuntimes {
 			pythonRuntimes[name] = state
 		}
@@ -667,6 +686,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if len(goBinaries) > maxGoBinaryImageFiles {
 			return model.Document{}, errors.New("OCI image has too many Go binary records")
 		}
+		if len(rustBinaries) > maxGoBinaryImageFiles {
+			return model.Document{}, errors.New("OCI image has too many Rust audit binary records")
+		}
 		if len(pythonRuntimes) > maxPythonRuntimeFiles {
 			return model.Document{}, errors.New("OCI image has too many Python runtime library records")
 		}
@@ -679,6 +701,13 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if goModules > 50000 {
 			return model.Document{}, errors.New("OCI image has too many Go module records")
+		}
+		rustPackages := 0
+		for _, state := range rustBinaries {
+			rustPackages += len(state.document.Components)
+		}
+		if rustPackages > 50000 {
+			return model.Document{}, errors.New("OCI image has too many Rust audit package records")
 		}
 	}
 	platform := choice.config.OS + "/" + choice.config.Architecture
@@ -701,7 +730,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -711,6 +740,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Coverage.Issues = append(doc.Coverage.Issues, nodeLinkIssues...)
 		if goScanLimited {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
+		}
+		if rustScanLimited {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rust_auditable_scan_limited"})
 		}
 		if pythonRuntimeLimited {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_runtime_scan_limited"})
@@ -728,6 +760,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	doc.Coverage.Issues = append(doc.Coverage.Issues, nodeLinkIssues...)
 	if goScanLimited {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
+	}
+	if rustScanLimited {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rust_auditable_scan_limited"})
 	}
 	if pythonRuntimeLimited {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "python_runtime_scan_limited"})
@@ -1047,6 +1082,22 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Development = append(doc.Development, installed.Development...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
+	rustNames := make([]string, 0, len(rustBinaries))
+	for name := range rustBinaries {
+		rustNames = append(rustNames, name)
+	}
+	sort.Strings(rustNames)
+	for _, name := range rustNames {
+		state := rustBinaries[name]
+		if state.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rust_auditable_" + state.status, Name: name})
+			continue
+		}
+		installed := state.document
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+	}
 	pythonRuntimeNames := make([]string, 0, len(pythonRuntimes))
 	for name := range pythonRuntimes {
 		pythonRuntimeNames = append(pythonRuntimeNames, name)
@@ -1322,6 +1373,8 @@ type layerChange struct {
 	java                     map[string]javaArchiveState
 	goBinaries               map[string]goBinaryState
 	goLimited                bool
+	rustBinaries             map[string]rustAuditableState
+	rustLimited              bool
 	bunBinary                *bunBinaryState
 	denoBinary               *denoBinaryState
 	httpdBinary              *httpdBinaryState
@@ -1371,7 +1424,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -2039,6 +2092,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 				goFiles++
 				switch {
 				case header.Size > maxGoBinaryDiskBytes:
+					change.rustLimited = true
 					hasMagic, err := hasGoBuildInfoMagic(reader, header.Size-4)
 					if err != nil {
 						return layerChange{}, "", err
@@ -2048,21 +2102,31 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 					}
 				case goFiles > maxGoBinaryFiles || int64(goBytes)+header.Size > maxGoBinaryLayerBytes:
 					change.goLimited = true
+					change.rustLimited = true
 				case header.Size > maxGoBinaryBytes:
 					input := "oci:" + item.Digest + "!/" + name
-					binaryDoc, recognized, err := inspectLargeGoBinary(magic[:], reader, header.Size, input, project, name)
-					if errors.Is(err, errGoBinaryIO) {
+					inspected, err := inspectLargeELFBinaries(magic[:], reader, header.Size, input, project, name)
+					if err != nil {
 						return layerChange{}, "", err
 					}
 					goBytes += int(header.Size)
-					if err != nil {
+					if inspected.goError != nil {
 						status := "invalid"
-						if errors.Is(err, errGoBinaryModuleLimit) {
+						if errors.Is(inspected.goError, errGoBinaryModuleLimit) {
 							status = "scan_limited"
 						}
 						change.goBinaries[name] = goBinaryState{status: status}
-					} else if recognized {
-						change.goBinaries[name] = goBinaryState{document: binaryDoc}
+					} else if inspected.goRecognized {
+						change.goBinaries[name] = goBinaryState{document: inspected.goDocument}
+					}
+					if inspected.rustError != nil && inspected.rustRecognized {
+						status := "invalid"
+						if errors.Is(inspected.rustError, errRustAuditLegacy) {
+							status = "legacy_ambiguous"
+						}
+						change.rustBinaries[name] = rustAuditableState{status: status}
+					} else if inspected.rustRecognized {
+						change.rustBinaries[name] = rustAuditableState{document: inspected.rustDocument}
 					}
 				default:
 					remaining, err := io.ReadAll(io.LimitReader(reader, maxGoBinaryBytes+1))
@@ -2081,6 +2145,16 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 						change.goBinaries[name] = goBinaryState{status: status}
 					} else if recognized {
 						change.goBinaries[name] = goBinaryState{document: binaryDoc}
+					}
+					rustDoc, rustRecognized, rustErr := inspectRustAuditableBinary(data, input, project, name)
+					if rustErr != nil && rustRecognized {
+						status := "invalid"
+						if errors.Is(rustErr, errRustAuditLegacy) {
+							status = "legacy_ambiguous"
+						}
+						change.rustBinaries[name] = rustAuditableState{status: status}
+					} else if rustRecognized {
+						change.rustBinaries[name] = rustAuditableState{document: rustDoc}
 					}
 				}
 			}

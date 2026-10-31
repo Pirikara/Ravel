@@ -22,7 +22,7 @@ func TestOCISetuptoolsVendoredMetadata(t *testing.T) {
 	}}})
 	ociTestIndex(t, layout, image)
 	doc, output, code := ociTestScan(t, layout)
-	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 2 {
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 2 || doc.Coverage.GraphState != "partial" || doc.Coverage.OriginState != "partial" {
 		t.Fatalf("setuptools vendor inventory incorrect: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
 	}
 	setuptoolsID := ""
