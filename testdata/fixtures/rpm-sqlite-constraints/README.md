@@ -6,9 +6,10 @@ requirement that is satisfied. The base spec is in
 `../rpm-sqlite-basic/specs/ravel-base.spec`.
 
 The third spec requires a capability it provides itself and includes three RPM
-Boolean dependencies. Its active `if` condition links to the EVR provider;
-the inactive `if` condition adds no edge; and the `or` expression remains
-explicitly unparsed. The self-provided requirement needs no inter-package edge.
+Boolean dependencies. Its active `if` and both `if else` branches link to the
+EVR provider; the inactive `if` condition adds no edge; and the `or` expression
+remains explicitly unparsed. The self-provided requirement needs no
+inter-package edge.
 
 The file provider owns a regular file and a `%ghost` record. The file consumer
 requires both paths and a nonexistent path. Ravel links only the regular file

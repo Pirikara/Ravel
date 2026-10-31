@@ -4,27 +4,46 @@ import "strings"
 
 type rpmGuardState uint8
 
+type rpmSimpleIf struct {
+	consequence headerDependency
+	guard       headerDependency
+	fallback    headerDependency
+	hasElse     bool
+}
+
 const (
 	rpmGuardAbsent rpmGuardState = iota
 	rpmGuardPresent
 	rpmGuardUnknown
 )
 
-// parseSimpleRPMIf accepts only one unnested implication. Rich dependencies
-// with other operators or nested expressions need their own graph treatment.
+// parseSimpleRPMIf accepts one unnested implication with an optional else.
+// Other operators and nested expressions need their own graph treatment.
 // https://rpm.org/docs/latest/manual/boolean_dependencies
-func parseSimpleRPMIf(expression string) (headerDependency, headerDependency, bool) {
+func parseSimpleRPMIf(expression string) (rpmSimpleIf, bool) {
 	if len(expression) < 5 || expression[0] != '(' || expression[len(expression)-1] != ')' {
-		return headerDependency{}, headerDependency{}, false
+		return rpmSimpleIf{}, false
 	}
 	inner := strings.TrimSpace(expression[1 : len(expression)-1])
 	left, right, found := strings.Cut(inner, " if ")
 	if !found || strings.Contains(right, " if ") {
-		return headerDependency{}, headerDependency{}, false
+		return rpmSimpleIf{}, false
+	}
+	guardText, fallbackText, hasElse := strings.Cut(right, " else ")
+	if hasElse && strings.Contains(fallbackText, " else ") {
+		return rpmSimpleIf{}, false
 	}
 	consequence, validLeft := parseRPMRichAtom(left)
-	guard, validRight := parseRPMRichAtom(right)
-	return consequence, guard, validLeft && validRight && packageName.MatchString(guard.name) && guard.name != "gpg-pubkey"
+	guard, validRight := parseRPMRichAtom(guardText)
+	result := rpmSimpleIf{consequence: consequence, guard: guard, hasElse: hasElse}
+	if hasElse {
+		fallback, validFallback := parseRPMRichAtom(fallbackText)
+		if !validFallback {
+			return rpmSimpleIf{}, false
+		}
+		result.fallback = fallback
+	}
+	return result, validLeft && validRight && packageName.MatchString(guard.name) && guard.name != "gpg-pubkey"
 }
 
 func parseRPMRichAtom(raw string) (headerDependency, bool) {

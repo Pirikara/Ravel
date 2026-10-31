@@ -50,7 +50,7 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Coverage.Packages != 8 || doc.Coverage.Edges != 17 || doc.Coverage.GraphState != "partial" {
+	if doc.Coverage.Packages != 8 || doc.Coverage.Edges != 19 || doc.Coverage.GraphState != "partial" {
 		t.Fatalf("RPM constraint coverage incorrect: %#v", doc.Coverage)
 	}
 	names := map[string]string{}
@@ -59,6 +59,7 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 	}
 	conditions := map[string]string{}
 	evrEdges := map[string]bool{}
+	selfEdges := map[string]bool{}
 	for _, edge := range doc.Edges {
 		if edge.Kind == "depends_on" {
 			conditions[names[edge.From]] = edge.Condition
@@ -76,7 +77,8 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 				}
 			} else if names[edge.From] == "ravel-fixture-self" {
 				wantTarget = "ravel-fixture-evr-provider"
-				if edge.Evidence.Pointer != "requires/(ravel-fixture-extra if ravel-fixture-trigger)" || edge.Condition != "" {
+				selfEdges[strings.TrimPrefix(edge.Evidence.Pointer, "requires/")] = true
+				if edge.Condition != "" {
 					t.Fatalf("RPM implication or self-provider was linked incorrectly: %#v", edge)
 				}
 			}
@@ -93,6 +95,18 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 	}
 	if condition, linked := conditions["ravel-fixture-self"]; !linked || condition != "" {
 		t.Fatalf("active RPM implication did not produce an edge: %#v", conditions)
+	}
+	for _, expression := range []string{
+		"(ravel-fixture-extra if ravel-fixture-trigger)",
+		"(ravel-fixture-extra if ravel-fixture-trigger else ravel-fixture-absent)",
+		"(ravel-fixture-absent if ravel-fixture-absent-trigger else ravel-fixture-extra)",
+	} {
+		if !selfEdges[expression] {
+			t.Fatalf("RPM if or if-else branch was not linked: %s; edges=%#v", expression, selfEdges)
+		}
+	}
+	if len(selfEdges) != 3 {
+		t.Fatalf("inactive RPM if branch produced an edge: %#v", selfEdges)
 	}
 	if condition, linked := conditions["ravel-fixture-file-consumer"]; !linked || condition != "" {
 		t.Fatalf("RPM owned-file requirement was not verified: %#v", conditions)
@@ -152,7 +166,7 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 	}}})
 	ociTestIndex(t, layout, image)
 	ociDoc, ociOutput, code := ociTestScan(t, layout)
-	if code != 0 || ociDoc.Coverage.Packages != 8 || ociDoc.Coverage.Edges != 17 {
+	if code != 0 || ociDoc.Coverage.Packages != 8 || ociDoc.Coverage.Edges != 19 {
 		t.Fatalf("OCI RPM constraint scan failed: code=%d output=%s coverage=%#v", code, ociOutput, ociDoc.Coverage)
 	}
 }

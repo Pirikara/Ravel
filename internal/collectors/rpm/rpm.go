@@ -191,19 +191,23 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 				continue // Internal RPM feature supplied by the package manager.
 			}
 			if strings.HasPrefix(requirement.name, "(") {
-				consequence, guard, valid := parseSimpleRPMIf(requirement.name)
+				conditional, valid := parseSimpleRPMIf(requirement.name)
 				if !valid {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_requirement_unparsed", Name: requirement.name, Scope: pkg.name})
 					continue
 				}
-				switch evaluateRPMGuard(guard, pkg.metadataKnown, providerCatalogComplete, providers) {
+				switch evaluateRPMGuard(conditional.guard, pkg.metadataKnown, providerCatalogComplete, providers) {
 				case rpmGuardAbsent:
-					continue // An implication with a false guard is satisfied.
+					if !conditional.hasElse {
+						continue // An implication with a false guard is satisfied.
+					}
+					requirement = conditional.fallback
 				case rpmGuardUnknown:
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_boolean_guard_unverified", Name: requirement.name, Scope: pkg.name})
 					continue
+				default:
+					requirement = conditional.consequence
 				}
-				requirement = consequence
 			}
 			externalRequirement = true
 			fileRequirement := strings.HasPrefix(requirement.name, "/")
