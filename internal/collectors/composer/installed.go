@@ -74,6 +74,7 @@ func CollectInstalled(data []byte, source, project, metadataPath string) (model.
 	hash := sha256.Sum256(data)
 	evidence := model.Evidence{Collector: "composer-installed", InputPath: source, InputDigest: "sha256:" + hex.EncodeToString(hash[:]), Method: "installed-metadata"}
 	doc := common.NewDocument(source, project, "composer-installed", nil)
+	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "composer_installed_files_unverified", Name: metadataPath})
 	byName := map[string][]string{}
 	byCapability := map[string][]string{}
 	refs := make([]string, len(packages))

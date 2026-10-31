@@ -47,7 +47,7 @@ func TestOCIComposerInstalledV2Overlay(t *testing.T) {
 	for _, issue := range doc.Coverage.Issues {
 		issues[issue.Code] = true
 	}
-	if !issues["dependency_constraint_unverified"] || !issues["distribution_source_unavailable"] || issues["composer_installed_metadata_invalid"] {
+	if !issues["dependency_constraint_unverified"] || !issues["distribution_source_unavailable"] || !issues["composer_installed_files_unverified"] || issues["composer_installed_metadata_invalid"] {
 		t.Fatalf("Composer coverage did not represent its limits: %#v", doc.Coverage.Issues)
 	}
 	archive := ociTestArchive(t, layout, "composer.oci.tar")
