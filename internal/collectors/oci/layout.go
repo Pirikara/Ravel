@@ -240,6 +240,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
 	goScanLimited := false
+	var bunBinary *bunBinaryState
 	var postgresBinary *postgresBinaryState
 	var redisBinary *redisBinaryState
 	pythonRuntimes := map[string]pythonRuntimeState{}
@@ -250,7 +251,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, postgresBinaryPath, redisBinaryPath} {
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, postgresBinaryPath, redisBinaryPath} {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -372,6 +373,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			if removed == "." || removed == nodeRuntimeHeaderPath || strings.HasPrefix(nodeRuntimeHeaderPath, removed+"/") {
 				nodeRuntimeHeader = nil
+			}
+			if removed == "." || removed == bunBinaryPath || strings.HasPrefix(bunBinaryPath, removed+"/") {
+				bunBinary = nil
 			}
 			if removed == "." || removed == postgresBinaryPath || strings.HasPrefix(postgresBinaryPath, removed+"/") {
 				postgresBinary = nil
@@ -533,6 +537,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if change.nodeRuntimeHeader != nil {
 			nodeRuntimeHeader = change.nodeRuntimeHeader
 		}
+		if change.bunBinary != nil {
+			bunBinary = change.bunBinary
+		}
 		if change.postgresBinary != nil {
 			postgresBinary = change.postgresBinary
 		}
@@ -645,7 +652,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -1014,6 +1021,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 		}
 	}
+	if bunBinary != nil {
+		if bunBinary.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "bun_runtime_" + bunBinary.status, Name: bunBinaryPath})
+		} else {
+			installed := bunBinary.document
+			doc.Components = append(doc.Components, installed.Components...)
+			doc.Edges = append(doc.Edges, installed.Edges...)
+			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+		}
+	}
 	if nodeRuntimeBinary != nil {
 		if nodeRuntimeBinary.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_" + nodeRuntimeBinary.status, Name: nodeRuntimeBinaryPath})
@@ -1166,6 +1183,7 @@ type layerChange struct {
 	java                     map[string]javaArchiveState
 	goBinaries               map[string]goBinaryState
 	goLimited                bool
+	bunBinary                *bunBinaryState
 	postgresBinary           *postgresBinaryState
 	redisBinary              *redisBinaryState
 	pythonRuntimes           map[string]pythonRuntimeState
@@ -1653,6 +1671,27 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			change.whiteouts = append(change.whiteouts, name)
 			continue
 		}
+		if name == bunBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.bunBinary != nil {
+				return layerChange{}, "", errors.New("duplicate OCI Bun executable entry")
+			}
+			if header.Size > maxBunBinaryBytes {
+				change.bunBinary = &bunBinaryState{status: "oversized"}
+			} else {
+				input := "oci:" + item.Digest + "!/" + name
+				binaryDoc, err := inspectBunBinary(reader, header.Size, input, project)
+				if errors.Is(err, errBunBinaryIO) {
+					return layerChange{}, "", err
+				}
+				if err != nil {
+					change.bunBinary = &bunBinaryState{status: "invalid"}
+				} else {
+					change.bunBinary = &bunBinaryState{document: binaryDoc}
+				}
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
 		if name == nodeRuntimeBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
 			if change.nodeRuntimeBinary != nil {
 				return layerChange{}, "", errors.New("duplicate OCI Node runtime executable entry")
@@ -1821,6 +1860,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(redisBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Redis executable beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	if change.bunBinary != nil {
+		for ancestor := path.Dir(bunBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Bun executable beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}

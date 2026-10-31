@@ -146,6 +146,13 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.OriginState = "partial"
 		case "missing_source", "ambiguous_source", "unsafe_or_invalid_source", "source_unresolved", "distribution_source_unavailable", "dotnet_package_hash_invalid", "patch_metadata_invalid", "patch_unavailable", "patch_integrity_mismatch", "go_binary_origin_unavailable", "pip_vendor_origin_unavailable", "python_runtime_origin_unavailable", "node_runtime_origin_unavailable", "postgres_runtime_origin_unavailable", "redis_runtime_origin_unavailable", "ruby_installed_origin_unavailable", "ruby_runtime_origin_unavailable":
 			doc.Coverage.OriginState = "partial"
+		case "bun_runtime_graph_unavailable":
+			doc.Coverage.GraphState = "partial"
+		case "bun_runtime_invalid", "bun_runtime_oversized":
+			doc.Coverage.GraphState = "partial"
+			doc.Coverage.OriginState = "partial"
+		case "bun_runtime_origin_unavailable":
+			doc.Coverage.OriginState = "partial"
 		}
 	}
 	doc.Coverage.Packages = len(doc.Components)
