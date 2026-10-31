@@ -29,10 +29,10 @@ type installedPackage struct {
 	Replace map[string]string `json:"replace"`
 }
 
-// IsInstalledManifestPath recognizes Composer's conventional installed-package
-// database inside an application vendor directory.
+// IsInstalledManifestPath recognizes Composer's installed-package database
+// below its vendor directory, including a configured vendor-dir.
 func IsInstalledManifestPath(name string) bool {
-	return name != "" && !strings.HasPrefix(name, "/") && !strings.HasPrefix(name, "../") && path.Clean(name) == name && (name == "vendor/composer/installed.json" || strings.HasSuffix(name, "/vendor/composer/installed.json"))
+	return name != "" && !strings.HasPrefix(name, "/") && !strings.HasPrefix(name, "../") && path.Clean(name) == name && (name == "composer/installed.json" || strings.HasSuffix(name, "/composer/installed.json"))
 }
 
 // CollectInstalled inventories packages recorded in Composer 1 or 2

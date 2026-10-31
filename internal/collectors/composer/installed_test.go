@@ -3,12 +3,12 @@ package composer
 import "testing"
 
 func TestInstalledManifestPath(t *testing.T) {
-	for _, name := range []string{"vendor/composer/installed.json", "srv/app/vendor/composer/installed.json"} {
+	for _, name := range []string{"vendor/composer/installed.json", "srv/app/vendor/composer/installed.json", "srv/app/dependencies/composer/installed.json", "composer/installed.json"} {
 		if !IsInstalledManifestPath(name) {
 			t.Errorf("Composer installed manifest rejected: %s", name)
 		}
 	}
-	for _, name := range []string{"/srv/app/vendor/composer/installed.json", "../vendor/composer/installed.json", "srv/app/../vendor/composer/installed.json", "src/composer/installed.json", "vendor/composer/installed.php"} {
+	for _, name := range []string{"/srv/app/vendor/composer/installed.json", "../vendor/composer/installed.json", "srv/app/../vendor/composer/installed.json", "src/composer/installed.php", "other/installed.json"} {
 		if IsInstalledManifestPath(name) {
 			t.Errorf("non-installed Composer path accepted: %s", name)
 		}

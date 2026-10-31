@@ -57,6 +57,52 @@ func TestOCIComposerInstalledV2Overlay(t *testing.T) {
 	}
 }
 
+func TestOCIComposerCustomVendorDirectory(t *testing.T) {
+	const manifestPath = "app/dependencies/composer/installed.json"
+	const configPath = "app/composer.json"
+	fixture := filepath.Join("..", "testdata", "oci", "composer-custom-vendor")
+	installedData, err := os.ReadFile(filepath.Join(fixture, "dependencies", "composer", "installed.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configData, err := os.ReadFile(filepath.Join(fixture, "composer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout := ociTestLayout(t)
+	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{{name: configPath, data: configData}, {name: manifestPath, data: installedData}}}})
+	ociTestIndex(t, layout, image)
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 3 {
+		t.Fatalf("Composer custom vendor directory was missed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+	}
+	byID := map[string]string{}
+	for _, component := range doc.Components {
+		byID[component.ID] = component.Name
+		if component.Context != "registry="+manifestPath+";image=linux/amd64" || !strings.Contains(component.Evidence[0].InputPath, "!/"+manifestPath) {
+			t.Fatalf("custom vendor metadata lost its scope: %#v", component)
+		}
+	}
+	linked := false
+	for _, edge := range doc.Edges {
+		linked = linked || byID[edge.From] == "acme/alpha" && byID[edge.To] == "acme/beta" && edge.Kind == "depends_on" && edge.Condition == "composer_constraint=unverified"
+	}
+	if !linked {
+		t.Fatalf("custom vendor package graph missing: %#v", doc.Edges)
+	}
+
+	removed := ociTestLayout(t)
+	removedImage := ociTestImage(t, removed, "linux", "amd64", []ociTestLayer{
+		{entries: []ociTestEntry{{name: manifestPath, data: installedData}}},
+		{entries: []ociTestEntry{{name: "app/.wh.dependencies"}}},
+	})
+	ociTestIndex(t, removed, removedImage)
+	removedDoc, removedOutput, removedCode := ociTestScan(t, removed)
+	if removedCode != 0 || removedDoc.Coverage.Packages != 0 {
+		t.Fatalf("whiteouted custom vendor directory survived: code=%d output=%s coverage=%#v", removedCode, removedOutput, removedDoc.Coverage)
+	}
+}
+
 func TestOCIComposerInstalledV1AndVirtualProvider(t *testing.T) {
 	const manifestPath = "srv/project/vendor/composer/installed.json"
 	metadata := []byte(`[
