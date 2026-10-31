@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -36,7 +37,15 @@ var (
 
 type installedPackage struct {
 	name, version, arch, ref string
-	provides, requires       []string
+	provides, requires       []headerDependency
+	metadataKnown            bool
+}
+
+type rpmProvider struct {
+	ref     string
+	version string
+	flags   uint32
+	known   bool
 }
 
 // Collect reads an RPM installed-package database from a filesystem tree.
@@ -90,6 +99,7 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 	if len(entries) > maxPackages {
 		return model.Document{}, errors.New("RPM database has too many packages")
 	}
+	dependencyHeaders := readDependencyHeaders(temp.Name(), data)
 	hash := sha256.Sum256(data)
 	digest := "sha256:" + hex.EncodeToString(hash[:])
 	evidence := model.Evidence{Collector: "rpmdb", InputPath: source, InputDigest: digest, Method: "installed-database"}
@@ -119,7 +129,20 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 		}
 		seenPackages[key] = true
 		ref := "rpm:" + common.ID(key)
-		packages = append(packages, installedPackage{name: entry.Name, version: version, arch: entry.Arch, ref: ref, provides: entry.Provides, requires: entry.Requires})
+		epoch := 0
+		if entry.Epoch != nil {
+			epoch = *entry.Epoch
+		}
+		headerKey := entry.Name + "\x00" + strconv.Itoa(epoch) + ":" + entry.Version + "-" + entry.Release + "\x00" + entry.Arch
+		header, known := dependencyHeaders[headerKey]
+		if known && (!sameDependencyNames(header.provides, entry.Provides) || !sameDependencyNames(header.requires, entry.Requires)) {
+			known = false
+		}
+		if !known {
+			header.provides = namesWithoutMetadata(entry.Provides)
+			header.requires = namesWithoutMetadata(entry.Requires)
+		}
+		packages = append(packages, installedPackage{name: entry.Name, version: version, arch: entry.Arch, ref: ref, provides: header.provides, requires: header.requires, metadataKnown: known})
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: entry.Name, Version: version, Platform: entry.Arch, Context: "status=installed", Evidence: []model.Evidence{evidence}})
 		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "installed", Evidence: evidence})
 		requirementCount += len(entry.Requires)
@@ -127,12 +150,14 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 			return model.Document{}, errors.New("RPM database has too many requirements")
 		}
 	}
-	providers := map[string][]string{}
+	providers := map[string][]rpmProvider{}
 	for _, pkg := range packages {
-		providers[pkg.name] = append(providers[pkg.name], pkg.ref)
+		if !slices.ContainsFunc(pkg.provides, func(capability headerDependency) bool { return capability.name == pkg.name }) {
+			providers[pkg.name] = append(providers[pkg.name], rpmProvider{ref: pkg.ref})
+		}
 		for _, capability := range pkg.provides {
-			if capability != "" && len(capability) <= 512 {
-				providers[capability] = append(providers[capability], pkg.ref)
+			if capability.name != "" && len(capability.name) <= 512 {
+				providers[capability.name] = append(providers[capability.name], rpmProvider{ref: pkg.ref, version: capability.version, flags: capability.flags, known: pkg.metadataKnown})
 			}
 		}
 	}
@@ -140,52 +165,116 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 	for _, pkg := range packages {
 		fileRequirement := false
 		externalRequirement := false
+		constraintUnverified := false
 		for _, requirement := range pkg.requires {
-			if requirement == "" || len(requirement) > 512 || strings.ContainsAny(requirement, "\x00\r\n@#?") || strings.Contains(requirement, "://") {
+			if requirement.name == "" || len(requirement.name) > 512 || strings.ContainsAny(requirement.name, "\x00\r\n@#?") || strings.Contains(requirement.name, "://") {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_requirement_unparsed", Name: pkg.name})
 				continue
 			}
-			if strings.HasPrefix(requirement, "rpmlib(") {
+			if strings.HasPrefix(requirement.name, "rpmlib(") {
 				continue // Internal RPM feature supplied by the package manager.
 			}
 			externalRequirement = true
-			if strings.HasPrefix(requirement, "/") {
+			if strings.HasPrefix(requirement.name, "/") {
 				fileRequirement = true
 				continue // File ownership is not available from this package view.
 			}
-			matches := map[string]bool{}
-			for _, candidate := range providers[requirement] {
-				if candidate != pkg.ref {
-					matches[candidate] = true
+			matches := map[string]string{}
+			for _, candidate := range providers[requirement.name] {
+				if candidate.ref != pkg.ref {
+					condition, possible := rpmConstraint(requirement, pkg.metadataKnown, candidate)
+					if possible {
+						previous, exists := matches[candidate.ref]
+						if !exists || previous != "" && condition == "" {
+							matches[candidate.ref] = condition
+						}
+					}
 				}
 			}
 			if len(matches) == 0 {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: requirement, Scope: pkg.name})
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: requirement.name, Scope: pkg.name})
 				continue
 			}
-			condition := "rpm_constraint=unverified"
+			ambiguous := len(matches) > 1
 			if len(matches) > 1 {
-				condition += " && provider=ambiguous"
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ambiguous_dependency", Name: requirement, Scope: pkg.name})
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ambiguous_dependency", Name: requirement.name, Scope: pkg.name})
 			}
-			for target := range matches {
-				key := pkg.ref + "\x00" + target + "\x00" + requirement
+			for target, condition := range matches {
+				if condition == "rpm_constraint=unverified" {
+					constraintUnverified = true
+				}
+				if ambiguous {
+					if condition != "" {
+						condition += " && "
+					}
+					condition += "provider=ambiguous"
+				}
+				key := pkg.ref + "\x00" + target + "\x00" + requirement.name
 				if seenEdges[key] {
 					continue
 				}
 				seenEdges[key] = true
 				linked := evidence
-				linked.Pointer = "requires/" + requirement
+				linked.Pointer = "requires/" + requirement.name
 				doc.Edges = append(doc.Edges, model.Edge{From: pkg.ref, To: target, Kind: "depends_on", Condition: condition, Evidence: linked})
 			}
 		}
 		if fileRequirement {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_file_requirement_unresolved", Name: pkg.name})
 		}
-		if externalRequirement {
+		if constraintUnverified {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dependency_constraint_unverified", Name: pkg.name})
+		}
+		if externalRequirement && !pkg.metadataKnown {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_dependency_flags_unavailable", Name: pkg.name})
 		}
 	}
 	common.Finalize(&doc)
 	return doc, nil
+}
+
+func sameDependencyNames(dependencies []headerDependency, names []string) bool {
+	return slices.EqualFunc(dependencies, names, func(dependency headerDependency, name string) bool {
+		return dependency.name == name
+	})
+}
+
+func namesWithoutMetadata(names []string) []headerDependency {
+	result := make([]headerDependency, len(names))
+	for i, name := range names {
+		result[i].name = name
+	}
+	return result
+}
+
+// rpmConstraint only claims a versioned match when the provider is an exact
+// EVR and equality or a numeric version difference settles the requirement.
+// Other RPM ranges and version forms stay conditional.
+func rpmConstraint(requirement headerDependency, known bool, provider rpmProvider) (string, bool) {
+	if !known {
+		return "rpm_constraint=unverified", true
+	}
+	if requirement.version == "" && requirement.flags&rpmSenseMask == 0 {
+		return "", true
+	}
+	if !provider.known || requirement.version == "" || provider.version == "" {
+		return "rpm_constraint=unverified", true
+	}
+	if requirement.flags&rpmSenseMask == 0 {
+		return "rpm_constraint=unverified", true
+	}
+	if provider.flags&rpmSenseMask == rpmSenseEqual {
+		if requirement.version == provider.version {
+			return "", requirement.flags&rpmSenseEqual != 0
+		}
+		if comparison, comparable := compareNumericRPMEVR(provider.version, requirement.version); comparable {
+			switch {
+			case comparison < 0:
+				return "", requirement.flags&rpmSenseLess != 0
+			case comparison > 0:
+				return "", requirement.flags&rpmSenseGreater != 0
+			}
+		}
+	}
+	return "rpm_constraint=unverified", true
 }

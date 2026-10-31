@@ -55,31 +55,29 @@ The repository includes an RPM database with two test packages. Scan it and insp
   --report rpm.coverage.json
 ```
 
-The report records two packages and explains why the graph and origin are partial:
+The report records two packages, their verified dependency, and the remaining origin limit:
 
 ```json
 {
   "manager": "rpm",
-  "graphState": "partial",
+  "graphState": "complete_for_scope",
   "originState": "partial",
   "packages": 2,
   "edges": 3,
   "issues": [
-    {"code": "missing_source", "name": "RPM database"},
-    {"code": "rpm_dependency_flags_unavailable", "name": "ravel-fixture-consumer"}
+    {"code": "missing_source", "name": "RPM database"}
   ],
   "outputFormat": "cyclonedx-json",
   "outputLosses": [
-    {"code": "conditional_edges_omitted", "count": 1},
-    {"code": "edge_kinds_omitted", "count": 2},
+    {"code": "edge_kinds_omitted", "count": 3},
     {"code": "evidence_records_omitted", "count": 5},
     {"code": "source_paths_omitted", "count": 1},
-    {"code": "coverage_issues_omitted", "count": 2}
+    {"code": "coverage_issues_omitted", "count": 1}
   ]
 }
 ```
 
-The three Ravel edges include two installed-package edges and one conditional dependency. CycloneDX omits that dependency because its RPM version constraint cannot be verified from the current parser output.
+The three Ravel edges include two installed-package edges and one dependency whose RPM version constraint is verified from the installed database's flags and version tags. The dependency is included in CycloneDX.
 
 ## How Ravel represents evidence
 
@@ -132,8 +130,8 @@ The table describes inputs Ravel reads today. A listed format does not imply com
 | Input | Current scope |
 | --- | --- |
 | Debian rootfs | Installed packages from `var/lib/dpkg/status`; declared `Depends` and `Pre-Depends`. |
-| Alpine rootfs | APK text v2 `lib/apk/db/installed` and binary v3 `lib/apk/db/installed.adb` (plain or deflate); installed names and supported virtual providers. |
-| RPM rootfs | SQLite `rpmdb.sqlite`, NDB `Packages.db`, and Berkeley DB `Packages`; name, epoch, version, release, architecture, and conditional capability links. |
+| Alpine rootfs | APK text v2 `lib/apk/db/installed` and binary v3 `lib/apk/db/installed.adb` (plain, deflate, or zstd); installed names and supported virtual providers. |
+| RPM rootfs | SQLite `rpmdb.sqlite`, NDB `Packages.db`, and Berkeley DB `Packages`; name, epoch, version, release, architecture, and capability links verified where the dependency tags settle the constraint. |
 | OCI image | Local OCI layout or OCI/Docker save tar archive, including gzip-compressed tar; final Debian, APK, or RPM database, JAR/WAR files, and Go ELF build information after layer whiteouts. |
 | Installed Python in OCI | `.dist-info/METADATA` records and `Requires-Dist` links when identifiable; packages explicitly listed in pip's installed `_vendor/vendor.txt`; CPython versions embedded in `/usr/local/lib/libpython*.so*` ELF files. |
 | Installed Node in OCI | Conventional `node_modules/*/package.json` records and dependency links when identifiable; pnpm virtual-store packages reached by package symlinks in the final image; versioned Yarn installations under `/opt/yarn-v*/package.json`; Node.js runtime versions embedded in `/usr/local/bin/node` ELF executables, checked against `node_version.h` when installed. |
@@ -232,7 +230,7 @@ The supported ecosystems are `rubygems`, `npm`, and `pypi`. Ravel checks the pac
 
 - **Static data has boundaries.** SwiftPM pins and Gradle lockfiles do not contain complete dependency graphs. Go vendor data and Pub lockfiles do not establish every transitive edge. Maven POMs are not effective POMs, and Poetry/Composer manifest freshness is not verified.
 - **Some choices remain conditional.** Python markers and extras, npm peers, NuGet target frameworks, Cargo features and targets, and CocoaPods targets can require an environment or target selection. These edges remain in Ravel JSON and are omitted from unconditional standard-format dependency lists.
-- **Installed OS databases do not prove repository origin.** Debian, APK, and RPM scans leave PURL and origin unset when the database cannot establish them. RPM dependency version flags are not exposed by the current parser, so its dependency edges stay conditional. APK v3 installed databases support plain ADB, legacy deflate, and custom deflate or zstd compression within a bounded input size.
+- **Installed OS databases do not prove repository origin.** Debian, APK, and RPM scans leave PURL and origin unset when the database cannot establish them. RPM installed headers provide dependency flags and versions; Ravel verifies unversioned requirements, exact version equality, and comparisons decided by decimal dotted versions. Other RPM version forms and range providers remain conditional. File requirements remain unresolved. APK v3 installed databases support plain ADB, legacy deflate, and custom deflate or zstd compression within a bounded input size.
 - **OCI language coverage is still partial.** Installed Python dist-info, pip vendor manifests, CPython shared libraries under `/usr/local/lib`, conventional Node package manifests, pnpm virtual-store manifests reached by package symlinks, the Node.js `/usr/local/bin/node` ELF executable, installed Ruby gemspecs and CRuby shared libraries, JAR/WAR files, and Go ELF build information are read. Other language packages and pnpm's global content-addressable store are not yet inventoried from image files. Unlinked pnpm virtual-store entries are reported instead of counted as installed packages. Pip's vendor manifest identifies bundled versions but does not establish the module-to-module graph or distribution origin. Node package directory symlinks are followed only when they reach a recognized manifest within the final image; symlinked runtime executables, Java archives, and Ruby gemspecs are not followed. Java archive inspection is capped at 128 MiB per file, 256 MiB per image, and 1,000 files. CPython and CRuby library inspection is capped at 32 MiB per file and 128 MiB per layer. Node.js executable inspection streams at most 256 MiB per file; installed version headers are capped at 64 KiB. Ruby gemspec inspection is capped at 1 MiB per file, 64 MiB and 5,000 files per image. Go ELF inspection is capped at 64 MiB per file, 512 MiB and 1,000 files per layer, and 10,000 tracked files per image; skipped or malformed candidates appear in coverage.
 - **Some input versions are unsupported.** Binary `bun.lockb` is rejected; create a text `bun.lock` with Bun before scanning. Unknown lockfile versions and unparsed features are reported or rejected rather than silently guessed.
 
@@ -243,7 +241,7 @@ go test ./... -count=1
 go vet ./...
 ```
 
-The integration suite scans 184 supported fixture directories and 25 unsupported format cases. It validates CycloneDX 1.7 and SPDX 2.3 against their JSON Schemas and checks package counts, dependency edges, provenance, URL redaction, conditional relationships, and coverage. Fixtures include generated npm, pnpm, Yarn, Bundler, Composer, Bun, Deno, uv, and dotnet lockfiles; Debian, APK (including a converted v3 database from an Alpine image), and RPM installed databases; package archives; and OCI images with a Linux Go executable built for the test.
+The integration suite scans 185 supported fixture directories and 25 unsupported format cases. It validates CycloneDX 1.7 and SPDX 2.3 against their JSON Schemas and checks package counts, dependency edges, provenance, URL redaction, conditional relationships, and coverage. Fixtures include generated npm, pnpm, Yarn, Bundler, Composer, Bun, Deno, uv, and dotnet lockfiles; Debian, APK (including a converted v3 database from an Alpine image), and RPM installed databases; package archives; and OCI images with a Linux Go executable built for the test.
 
 The [source-reviewed comparison corpus](comparison/README.md) adds package, graph, and unknown-origin assertions over eleven representative fixtures. It can triage CycloneDX differences with other scanners, while source evidence determines the expected result.
 
@@ -256,4 +254,4 @@ RAVEL_TEST_REAL_MAVEN=1 go test ./integration \
 
 Registry enrichment tests use local TLS servers and saved version responses. New collectors should include representative real-format fixtures and assertions about identity, graph, origin, and output loss.
 
-See [third-party notices](THIRD_PARTY_NOTICES.md) for licenses of the RPM database reader's Go dependencies.
+See [third-party notices](THIRD_PARTY_NOTICES.md) for licenses of the bundled RPM database reader and zstd decoder.

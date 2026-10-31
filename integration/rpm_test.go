@@ -15,7 +15,7 @@ import (
 func rpmFixtureDatabase(t *testing.T, name string) []byte {
 	t.Helper()
 	path := filepath.Join("..", "testdata", "fixtures", name)
-	if name == "rpm-sqlite-basic" {
+	if strings.HasPrefix(name, "rpm-sqlite-") {
 		path = filepath.Join(path, "usr", "lib", "sysimage", "rpm", "rpmdb.sqlite")
 	} else if name == "rpm-bdb-basic" {
 		path = filepath.Join(path, "var", "lib", "rpm", "Packages")
@@ -27,6 +27,75 @@ func rpmFixtureDatabase(t *testing.T, name string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestRPMConstraintCases(t *testing.T) {
+	root := filepath.Join("..", "testdata", "fixtures", "rpm-sqlite-constraints")
+	result := filepath.Join(t.TempDir(), "rpm.json")
+	output, err := exec.Command(executable, "scan", root, "--manager", "rpm", "--format", "ravel-json", "--output", result).CombinedOutput()
+	if err != nil {
+		t.Fatalf("RPM constraint fixture scan failed: %v: %s", err, output)
+	}
+	data, err := os.ReadFile(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc model.Document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Coverage.Packages != 3 || doc.Coverage.Edges != 4 || doc.Coverage.GraphState != "partial" {
+		t.Fatalf("RPM constraint coverage incorrect: %#v", doc.Coverage)
+	}
+	names := map[string]string{}
+	for _, component := range doc.Components {
+		names[component.ID] = component.Name
+	}
+	conditions := map[string]string{}
+	for _, edge := range doc.Edges {
+		if edge.Kind == "depends_on" {
+			conditions[names[edge.From]] = edge.Condition
+			if names[edge.To] != "ravel-fixture-base" {
+				t.Fatalf("RPM dependency linked to unexpected provider: %#v", edge)
+			}
+		}
+	}
+	if condition, ok := conditions["ravel-fixture-consumer-unversioned"]; !ok || condition != "" {
+		t.Fatalf("unversioned RPM dependency not verified: %#v", conditions)
+	}
+	if _, linked := conditions["ravel-fixture-consumer-mismatch"]; linked {
+		t.Fatalf("mismatched RPM version was linked to an unsatisfying provider: %#v", conditions)
+	}
+	unresolved := false
+	for _, issue := range doc.Coverage.Issues {
+		unresolved = unresolved || issue.Code == "unresolved_dependency" && issue.Scope == "ravel-fixture-consumer-mismatch"
+		if issue.Code == "rpm_dependency_flags_unavailable" {
+			t.Fatalf("available RPM flags reported missing: %#v", doc.Coverage.Issues)
+		}
+	}
+	if !unresolved {
+		t.Fatalf("unsatisfied RPM requirement was not reported: %#v", doc.Coverage.Issues)
+	}
+	spdx, err := exec.Command(executable, "scan", root, "--manager", "rpm", "--format", "spdx-json").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exported struct {
+		Relationships []json.RawMessage `json:"relationships"`
+	}
+	if err := json.Unmarshal(spdx, &exported); err != nil || len(exported.Relationships) != 4 {
+		t.Fatalf("RPM constraint export included unverified edge: %v, relationships=%d", err, len(exported.Relationships))
+	}
+
+	layout := ociTestLayout(t)
+	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+		{name: "usr/lib/sysimage/rpm/rpmdb.sqlite", data: rpmFixtureDatabase(t, "rpm-sqlite-constraints")},
+	}}})
+	ociTestIndex(t, layout, image)
+	ociDoc, ociOutput, code := ociTestScan(t, layout)
+	if code != 0 || ociDoc.Coverage.Packages != 3 || ociDoc.Coverage.Edges != 4 {
+		t.Fatalf("OCI RPM constraint scan failed: code=%d output=%s coverage=%#v", code, ociOutput, ociDoc.Coverage)
+	}
 }
 
 func TestRPMInstalledDatabaseFixtures(t *testing.T) {
@@ -52,7 +121,7 @@ func TestRPMInstalledDatabaseFixtures(t *testing.T) {
 			if err := json.Unmarshal(data, &doc); err != nil {
 				t.Fatal(err)
 			}
-			if doc.Coverage.Manager != "rpm" || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 3 || doc.Coverage.GraphState != "partial" || doc.Coverage.OriginState != "partial" {
+			if doc.Coverage.Manager != "rpm" || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 3 || doc.Coverage.GraphState != "complete_for_scope" || doc.Coverage.OriginState != "partial" {
 				t.Fatalf("RPM inventory or coverage incorrect: %#v", doc.Coverage)
 			}
 			names := map[string]bool{}
@@ -69,8 +138,8 @@ func TestRPMInstalledDatabaseFixtures(t *testing.T) {
 			for _, edge := range doc.Edges {
 				if edge.Kind == "depends_on" {
 					linked++
-					if edge.Condition != "rpm_constraint=unverified" || edge.Evidence.Pointer != "requires/ravel-fixture-virtual" {
-						t.Fatalf("RPM capability edge was asserted as definite: %#v", edge)
+					if edge.Condition != "" || edge.Evidence.Pointer != "requires/ravel-fixture-virtual" {
+						t.Fatalf("RPM exact capability match was not verified: %#v", edge)
 					}
 				}
 			}
@@ -89,8 +158,8 @@ func TestRPMInstalledDatabaseFixtures(t *testing.T) {
 					var document struct {
 						Relationships []json.RawMessage `json:"relationships"`
 					}
-					if err := json.Unmarshal(data, &document); err != nil || len(document.Relationships) != 2 {
-						t.Fatalf("conditional RPM edge entered SPDX: %v, relationships=%d", err, len(document.Relationships))
+					if err := json.Unmarshal(data, &document); err != nil || len(document.Relationships) != 3 {
+						t.Fatalf("verified RPM edge missing from SPDX: %v, relationships=%d", err, len(document.Relationships))
 					}
 				}
 			}
@@ -133,6 +202,11 @@ func TestOCIRPMDatabaseFormats(t *testing.T) {
 			doc, output, code := ociTestScan(t, layout)
 			if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.Edges != 3 || doc.Coverage.GraphState != "partial" {
 				t.Fatalf("OCI RPM format scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
+			}
+			for _, edge := range doc.Edges {
+				if edge.Kind == "depends_on" && edge.Condition != "" {
+					t.Fatalf("OCI RPM exact capability edge stayed conditional: %#v", edge)
+				}
 			}
 		})
 	}
