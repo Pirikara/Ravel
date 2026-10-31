@@ -242,6 +242,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	goScanLimited := false
 	var bunBinary *bunBinaryState
 	var denoBinary *denoBinaryState
+	var httpdBinary *httpdBinaryState
 	var postgresBinary *postgresBinaryState
 	var redisBinary *redisBinaryState
 	pythonRuntimes := map[string]pythonRuntimeState{}
@@ -252,7 +253,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, postgresBinaryPath, redisBinaryPath} {
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, httpdBinaryPath, postgresBinaryPath, redisBinaryPath} {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -380,6 +381,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			if removed == "." || removed == denoBinaryPath || strings.HasPrefix(denoBinaryPath, removed+"/") {
 				denoBinary = nil
+			}
+			if removed == "." || removed == httpdBinaryPath || strings.HasPrefix(httpdBinaryPath, removed+"/") {
+				httpdBinary = nil
 			}
 			if removed == "." || removed == postgresBinaryPath || strings.HasPrefix(postgresBinaryPath, removed+"/") {
 				postgresBinary = nil
@@ -547,6 +551,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if change.denoBinary != nil {
 			denoBinary = change.denoBinary
 		}
+		if change.httpdBinary != nil {
+			httpdBinary = change.httpdBinary
+		}
 		if change.postgresBinary != nil {
 			postgresBinary = change.postgresBinary
 		}
@@ -659,7 +666,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -1048,6 +1055,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 		}
 	}
+	if httpdBinary != nil {
+		if httpdBinary.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "httpd_server_" + httpdBinary.status, Name: httpdBinaryPath})
+		} else {
+			installed := httpdBinary.document
+			doc.Components = append(doc.Components, installed.Components...)
+			doc.Edges = append(doc.Edges, installed.Edges...)
+			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+		}
+	}
 	if nodeRuntimeBinary != nil {
 		if nodeRuntimeBinary.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_" + nodeRuntimeBinary.status, Name: nodeRuntimeBinaryPath})
@@ -1202,6 +1219,7 @@ type layerChange struct {
 	goLimited                bool
 	bunBinary                *bunBinaryState
 	denoBinary               *denoBinaryState
+	httpdBinary              *httpdBinaryState
 	postgresBinary           *postgresBinaryState
 	redisBinary              *redisBinaryState
 	pythonRuntimes           map[string]pythonRuntimeState
@@ -1731,6 +1749,28 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			change.whiteouts = append(change.whiteouts, name)
 			continue
 		}
+		if name == httpdBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.httpdBinary != nil {
+				return layerChange{}, "", errors.New("duplicate OCI httpd executable entry")
+			}
+			if header.Size > maxHTTPDBinaryBytes {
+				change.httpdBinary = &httpdBinaryState{status: "oversized"}
+			} else {
+				data, err := io.ReadAll(io.LimitReader(reader, maxHTTPDBinaryBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI httpd executable entry")
+				}
+				input := "oci:" + item.Digest + "!/" + name
+				binaryDoc, err := inspectHTTPDBinary(data, input, project, architecture)
+				if err != nil {
+					change.httpdBinary = &httpdBinaryState{status: "invalid"}
+				} else {
+					change.httpdBinary = &httpdBinaryState{document: binaryDoc}
+				}
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
 		if name == nodeRuntimeBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
 			if change.nodeRuntimeBinary != nil {
 				return layerChange{}, "", errors.New("duplicate OCI Node runtime executable entry")
@@ -1913,6 +1953,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(denoBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Deno executable beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	if change.httpdBinary != nil {
+		for ancestor := path.Dir(httpdBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains httpd executable beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}
