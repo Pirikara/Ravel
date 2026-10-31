@@ -34,7 +34,7 @@ func isRubyRuntimeLibraryPath(name string) bool {
 
 // inspectRubyRuntimeLibrary reads the exported ruby_version object from an
 // installed ELF shared library. It does not execute code from the image.
-func inspectRubyRuntimeLibrary(data []byte, source, project, filename string) (document model.Document, err error) {
+func inspectRubyRuntimeLibrary(data []byte, source, project, filename, architecture string) (document model.Document, err error) {
 	if len(data) == 0 || len(data) > maxRubyRuntimeBytes || !isRubyRuntimeLibraryPath(filename) {
 		return model.Document{}, errors.New("invalid Ruby runtime library path or size")
 	}
@@ -48,7 +48,7 @@ func inspectRubyRuntimeLibrary(data []byte, source, project, filename string) (d
 		}
 	}()
 	file, err := elf.NewFile(bytes.NewReader(data))
-	if err != nil || file.Type != elf.ET_DYN {
+	if err != nil || file.Type != elf.ET_DYN || architecture == "amd64" && file.Machine != elf.EM_X86_64 || architecture == "arm64" && file.Machine != elf.EM_AARCH64 || architecture != "amd64" && architecture != "arm64" {
 		return model.Document{}, errors.New("invalid Ruby runtime ELF")
 	}
 	for _, section := range file.Sections {

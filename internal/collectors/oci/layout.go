@@ -258,6 +258,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	pythonRuntimeLimited := false
 	rubyRuntimes := map[string]rubyRuntimeState{}
 	rubyRuntimeLimited := false
+	rubyPlatformConfigs := map[string]rubyPlatformConfigState{}
 	var nodeRuntimeBinary *nodeRuntimeBinaryState
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
@@ -369,6 +370,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for name := range rubyRuntimes {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		for name := range rubyPlatformConfigs {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -492,6 +501,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(rubyRuntimes, name)
 				}
 			}
+			for name := range rubyPlatformConfigs {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(rubyPlatformConfigs, name)
+				}
+			}
 		}
 		for name, target := range change.nodeLinks {
 			if target == "" {
@@ -598,6 +612,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			rubyRuntimes[name] = state
 		}
 		rubyRuntimeLimited = rubyRuntimeLimited || change.rubyRuntimeLimited
+		for name, state := range change.rubyPlatformConfigs {
+			rubyPlatformConfigs[name] = state
+		}
 		if change.nodeRuntimeBinary != nil {
 			nodeRuntimeBinary = change.nodeRuntimeBinary
 		}
@@ -724,6 +741,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if len(rubyRuntimes) > maxRubyRuntimeFiles {
 			return model.Document{}, errors.New("OCI image has too many Ruby runtime library records")
+		}
+		if len(rubyPlatformConfigs) > maxRubyPlatformConfigs {
+			return model.Document{}, errors.New("OCI image has too many Ruby platform config records")
 		}
 		goModules := 0
 		for _, state := range goBinaries {
@@ -1066,7 +1086,17 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Edges = append(doc.Edges, installed.Edges...)
 	}
 	if rubyInstalled {
-		linkInstalledRubyDependencies(&doc, rubyRecords, rubyRuntimes)
+		configNames := make([]string, 0, len(rubyPlatformConfigs))
+		for name := range rubyPlatformConfigs {
+			configNames = append(configNames, name)
+		}
+		sort.Strings(configNames)
+		for _, name := range configNames {
+			if status := rubyPlatformConfigs[name].status; status != "" {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_platform_config_" + status, Name: name})
+			}
+		}
+		linkInstalledRubyDependencies(&doc, rubyRecords, rubyRuntimes, rubyLocalPlatform(rubyRuntimes, rubyPlatformConfigs))
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_installed_activation_unresolved"}, model.Issue{Code: "ruby_installed_origin_unavailable"})
 	}
 	javaNames := make([]string, 0, len(javaArchives))
@@ -1421,6 +1451,7 @@ type layerChange struct {
 	pythonRuntimeLimited     bool
 	rubyRuntimes             map[string]rubyRuntimeState
 	rubyRuntimeLimited       bool
+	rubyPlatformConfigs      map[string]rubyPlatformConfigState
 	nodeRuntimeBinary        *nodeRuntimeBinaryState
 	nodeRuntimeHeader        *nodeRuntimeHeaderState
 	whiteouts                []string
@@ -1457,7 +1488,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
 	seenDatabase := map[string]bool{}
 	seenDPKGLists := map[string]bool{}
 	parentReplaced := map[string]bool{}
@@ -1890,13 +1921,43 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 				}
 				rubyRuntimeBytes += len(data)
 				input := "oci:" + item.Digest + "!/" + name
-				runtimeDoc, err := inspectRubyRuntimeLibrary(data, input, project, name)
+				runtimeDoc, err := inspectRubyRuntimeLibrary(data, input, project, name, architecture)
 				if err != nil {
 					change.rubyRuntimes[name] = rubyRuntimeState{status: "invalid"}
 				} else {
 					change.rubyRuntimes[name] = rubyRuntimeState{document: runtimeDoc}
 				}
 			}
+			if relevantLanguagePaths[name] {
+				change.whiteouts = append(change.whiteouts, name)
+			}
+			continue
+		}
+		if isRubyPlatformConfigPath(name) && header.Typeflag != tar.TypeDir {
+			if _, duplicate := change.rubyPlatformConfigs[name]; duplicate || len(change.rubyPlatformConfigs) >= maxRubyPlatformConfigs {
+				return layerChange{}, "", fmt.Errorf("duplicate or excessive OCI Ruby platform config entry: %s", name)
+			}
+			state := rubyPlatformConfigState{}
+			switch {
+			case header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA:
+				state.status = "invalid"
+			case header.Size < 0 || header.Size > maxRubyPlatformConfigBytes:
+				state.status = "oversized"
+			default:
+				data, err := io.ReadAll(io.LimitReader(reader, maxRubyPlatformConfigBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI Ruby platform config entry")
+				}
+				var line int
+				state.platform, line, err = inspectRubyPlatformConfig(data, name, architecture)
+				if err != nil {
+					state.status = "invalid"
+				} else {
+					hash := sha256.Sum256(data)
+					state.evidence = model.Evidence{Collector: "ruby-rbconfig", InputPath: "oci:" + item.Digest + "!/" + name, InputDigest: "sha256:" + hex.EncodeToString(hash[:]), Line: line, Pointer: "RbConfig::CONFIG/arch", Method: "runtime-platform-configuration"}
+				}
+			}
+			change.rubyPlatformConfigs[name] = state
 			if relevantLanguagePaths[name] {
 				change.whiteouts = append(change.whiteouts, name)
 			}
@@ -2282,6 +2343,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Ruby runtime library beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	for name := range change.rubyPlatformConfigs {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Ruby platform config beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}

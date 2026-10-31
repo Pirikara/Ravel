@@ -34,7 +34,7 @@ type rubyInstalledDependency struct {
 // ordinary gem homes. A verified CRuby runtime exposes its matching default
 // gems when the source gem home has no installed candidate. Installed versions
 // may differ from activated versions.
-func linkInstalledRubyDependencies(doc *model.Document, records []rubyInstalledRecord, runtimes map[string]rubyRuntimeState) {
+func linkInstalledRubyDependencies(doc *model.Document, records []rubyInstalledRecord, runtimes map[string]rubyRuntimeState, config rubyPlatformConfigState) {
 	byHomeName := map[string][]model.Component{}
 	byDefaultName := map[string][]model.Component{}
 	defaultHome := rubyDefaultGemHome(runtimes)
@@ -47,6 +47,7 @@ func linkInstalledRubyDependencies(doc *model.Document, records []rubyInstalledR
 		}
 	}
 	dependenciesSeen := 0
+	platformEvidenceLinked := map[string]bool{}
 	for _, record := range records {
 		dependencies, issues, calls := parseRubyRuntimeDependencies(record)
 		dependenciesSeen += calls
@@ -77,9 +78,16 @@ func linkInstalledRubyDependencies(doc *model.Document, records []rubyInstalledR
 			var matches []model.Component
 			uncertain := false
 			for _, candidate := range candidates {
-				if strings.Contains(candidate.Context, ";gem_platform=") {
-					uncertain = true
-					continue
+				if _, platformContext, found := strings.Cut(candidate.Context, ";gem_platform="); found {
+					gemPlatform, _, _ := strings.Cut(platformContext, ";")
+					compatible, known := rubyLinuxGemPlatformMatches(gemPlatform, config.platform)
+					if !known {
+						uncertain = true
+						continue
+					}
+					if !compatible {
+						continue
+					}
 				}
 				match, known := rubyRequirementsMatch(candidate.Version, dependency.requirements)
 				if !known {
@@ -104,6 +112,15 @@ func linkInstalledRubyDependencies(doc *model.Document, records []rubyInstalledR
 			evidence.Line = dependency.line
 			evidence.Pointer = "Gem::Specification/runtime-dependency/" + dependency.name
 			doc.Edges = append(doc.Edges, model.Edge{From: record.component.ID, To: matches[0].ID, Kind: "depends_on", Evidence: evidence})
+			if strings.Contains(matches[0].Context, ";gem_platform=") && config.evidence.Collector != "" && !platformEvidenceLinked[matches[0].ID] {
+				for i := range doc.Components {
+					if doc.Components[i].ID == matches[0].ID {
+						doc.Components[i].Evidence = append(doc.Components[i].Evidence, config.evidence)
+						break
+					}
+				}
+				platformEvidenceLinked[matches[0].ID] = true
+			}
 		}
 	}
 }
