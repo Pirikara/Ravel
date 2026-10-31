@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>Acme.Runtime</PackageId>
+    <Version>1.2.3</Version>
+  </PropertyGroup>
+</Project>

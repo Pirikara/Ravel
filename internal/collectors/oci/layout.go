@@ -231,6 +231,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	composerPackageManifests := map[string]composerPackageManifestState{}
 	composerPackageLimited := false
 	dotnetDeps := map[string]dotnetDepsState{}
+	dotnetAssemblies := map[string]dotnetAssemblyState{}
+	dotnetAssemblyLimited := false
 	pipVendor := map[string]databaseState{}
 	nodeMetadata := map[string]databaseState{}
 	nodePackageLinks := map[string]string{}
@@ -289,6 +291,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for name := range dotnetDeps {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		for name := range dotnetAssemblies {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -390,6 +400,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(dotnetDeps, name)
 				}
 			}
+			for name := range dotnetAssemblies {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(dotnetAssemblies, name)
+				}
+			}
 			for name := range javaArchives {
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 					delete(javaArchives, name)
@@ -467,6 +482,21 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			state.layer = layer.Digest
 			dotnetDeps[name] = state
 		}
+		dotnetAssemblyNames := make([]string, 0, len(change.dotnetAssemblies))
+		for name := range change.dotnetAssemblies {
+			dotnetAssemblyNames = append(dotnetAssemblyNames, name)
+		}
+		sort.Strings(dotnetAssemblyNames)
+		for _, name := range dotnetAssemblyNames {
+			if _, found := dotnetAssemblies[name]; !found && len(dotnetAssemblies) >= maxDotnetAssemblyFiles {
+				dotnetAssemblyLimited = true
+				continue
+			}
+			state := change.dotnetAssemblies[name]
+			state.layer = layer.Digest
+			dotnetAssemblies[name] = state
+		}
+		dotnetAssemblyLimited = dotnetAssemblyLimited || change.dotnetAssemblyLimited
 		for name, data := range change.node {
 			nodeMetadata[name] = databaseState{data: data, layer: layer.Digest}
 		}
@@ -773,21 +803,48 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		dotnetNames = append(dotnetNames, name)
 	}
 	sort.Strings(dotnetNames)
+	assemblyUsers := map[string]map[string]bool{}
+	installedDotnet := map[string]model.Document{}
+	for _, manifestPath := range dotnetNames {
+		state := dotnetDeps[manifestPath]
+		if state.status != "" {
+			continue
+		}
+		installed, err := nuget.CollectInstalledDeps(state.data, "oci:"+state.layer+"!/"+manifestPath, project, manifestPath)
+		if err != nil {
+			continue
+		}
+		installedDotnet[manifestPath] = installed
+		candidatesByIdentity := nuget.RuntimeAssemblyCandidates(state.data, manifestPath)
+		for _, component := range installed.Components {
+			identity := strings.ToLower(component.Name + "/" + component.Version)
+			candidates := candidatesByIdentity[identity]
+			for _, candidate := range candidates {
+				if assemblyUsers[candidate] == nil {
+					assemblyUsers[candidate] = map[string]bool{}
+				}
+				assemblyUsers[candidate][manifestPath+"\x00"+identity] = true
+			}
+		}
+	}
 	for _, name := range dotnetNames {
 		state := dotnetDeps[name]
 		if state.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dotnet_deps_metadata_" + state.status, Name: name})
 			continue
 		}
-		evidencePath := "oci:" + state.layer + "!/" + name
-		installed, err := nuget.CollectInstalledDeps(state.data, evidencePath, project, name)
-		if err != nil {
+		installed, found := installedDotnet[name]
+		if !found {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dotnet_deps_metadata_invalid", Name: name})
 			continue
 		}
+		verifyDotnetRuntimeAssemblies(&installed, state.data, name, dotnetAssemblies, assemblyUsers)
 		doc.Components = append(doc.Components, installed.Components...)
 		doc.Edges = append(doc.Edges, installed.Edges...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+	}
+	if dotnetAssemblyLimited && len(dotnetDeps) > 0 {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dotnet_runtime_assembly_scan_limited"})
 	}
 	nodeNames := make([]string, 0, len(nodeMetadata))
 	for name := range nodeMetadata {
@@ -1067,6 +1124,8 @@ type layerChange struct {
 	composerPackageManifests map[string]composerPackageManifestState
 	composerPackageLimited   bool
 	dotnetDeps               map[string]dotnetDepsState
+	dotnetAssemblies         map[string]dotnetAssemblyState
+	dotnetAssemblyLimited    bool
 	node                     map[string][]byte
 	nodeLinks                map[string]string
 	rubySpecs                map[string][]byte
@@ -1113,7 +1172,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
+	change := layerChange{files: map[string]databaseChange{}, python: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}}
 	seenDatabase := map[string]bool{}
 	parentReplaced := map[string]bool{}
 	nonDirectoryPaths := map[string]bool{}
@@ -1125,6 +1184,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	composerInstalledBytes := 0
 	composerPackageBytes := 0
 	dotnetDepsBytes := 0
+	dotnetAssemblyBytes := 0
 	nodeBytes := 0
 	rubyBytes := 0
 	javaBytes := 0
@@ -1323,6 +1383,36 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			change.dotnetDeps[name] = state
 			if len(change.dotnetDeps) > maxDotnetDepsFiles || dotnetDepsBytes > maxDotnetDepsTotal {
 				return layerChange{}, "", errors.New("OCI layer has too much .NET deps metadata")
+			}
+			continue
+		}
+		if strings.HasSuffix(strings.ToLower(path.Base(name)), ".dll") {
+			if _, found := change.dotnetAssemblies[name]; !found && len(change.dotnetAssemblies) >= maxDotnetAssemblyFiles {
+				change.dotnetAssemblyLimited = true
+			} else {
+				state := dotnetAssemblyState{}
+				switch {
+				case header.Typeflag == tar.TypeSymlink || header.Typeflag == tar.TypeLink:
+					state.status = "link_unresolved"
+				case header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA:
+					state.status = "unsupported"
+				case header.Size > maxDotnetAssemblyBytes:
+					state.status = "oversized"
+				case int64(dotnetAssemblyBytes)+header.Size > maxDotnetAssemblyLayerBytes:
+					state.status = "scan_limited"
+					change.dotnetAssemblyLimited = true
+				default:
+					data, err := io.ReadAll(io.LimitReader(reader, maxDotnetAssemblyBytes+1))
+					if err != nil || len(data) != int(header.Size) {
+						return layerChange{}, "", errors.New("invalid OCI .NET assembly entry")
+					}
+					dotnetAssemblyBytes += len(data)
+					state = inspectDotnetAssembly(data)
+				}
+				change.dotnetAssemblies[name] = state
+			}
+			if relevantLanguagePaths[name] && header.Typeflag != tar.TypeDir {
+				change.whiteouts = append(change.whiteouts, name)
 			}
 			continue
 		}
@@ -1586,6 +1676,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Composer package metadata beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	for name := range change.dotnetAssemblies {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains .NET assembly beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}

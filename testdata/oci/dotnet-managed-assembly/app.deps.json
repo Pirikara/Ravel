@@ -1,0 +1,41 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "app/1.0.0": {
+        "dependencies": {
+          "Acme.Runtime": "1.2.3"
+        },
+        "runtime": {
+          "app.dll": {}
+        }
+      },
+      "Acme.Runtime/1.2.3": {
+        "runtime": {
+          "lib/net10.0/Acme.Runtime.dll": {
+            "assemblyVersion": "1.2.3.0",
+            "fileVersion": "1.2.3.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "app/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Acme.Runtime/1.2.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-T8Fm3VWN2bRZYz/ln96JYEs/uyiXVMrl+U6kv5+W1uz8oRORo6kfO/Ai9u0PU5dZNRO0o0clYVty9Sg0R8zh6Q==",
+      "path": "acme.runtime/1.2.3",
+      "hashPath": "acme.runtime.1.2.3.nupkg.sha512"
+    }
+  }
+}
