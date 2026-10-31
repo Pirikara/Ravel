@@ -76,6 +76,44 @@ func TestOCIDotnetManagedAssemblyEvidence(t *testing.T) {
 	}
 }
 
+func TestOCIDotnetManagedAssemblySizeBoundary(t *testing.T) {
+	deps := dotnetAssemblyFixture(t, "app.deps.json")
+	base := dotnetAssemblyFixture(t, "Acme.Runtime.dll")
+	for _, test := range []struct {
+		name         string
+		size         int
+		wantEvidence bool
+	}{
+		{name: "official_runtime_sized", size: 17080104, wantEvidence: true},
+		{name: "above_limit", size: (20 << 20) + 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assembly := make([]byte, test.size)
+			copy(assembly, base)
+			layout := ociTestLayout(t)
+			image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
+				{name: "app/app.deps.json", data: deps},
+				{name: "app/Acme.Runtime.dll", data: assembly},
+			}}})
+			ociTestIndex(t, layout, image)
+			doc, output, code := ociTestScan(t, layout)
+			if code != 0 {
+				t.Fatalf("large .NET assembly scan failed: code=%d output=%s", code, output)
+			}
+			component := dotnetComponent(t, doc, "Acme.Runtime")
+			if (len(component.Evidence) == 2) != test.wantEvidence || dotnetIssue(doc, "dotnet_runtime_assembly_oversized") == test.wantEvidence {
+				t.Fatalf("large .NET assembly limit incorrect: evidence=%#v issues=%#v", component.Evidence, doc.Coverage.Issues)
+			}
+			if test.wantEvidence {
+				hash := sha256.Sum256(assembly)
+				if component.Evidence[1].InputDigest != "sha256:"+hex.EncodeToString(hash[:]) {
+					t.Fatalf("large .NET assembly digest incorrect: %#v", component.Evidence[1])
+				}
+			}
+		})
+	}
+}
+
 func TestOCIDotnetManagedAssemblyOverlay(t *testing.T) {
 	deps := dotnetAssemblyFixture(t, "app.deps.json")
 	packageDLL := dotnetAssemblyFixture(t, "Acme.Runtime.dll")

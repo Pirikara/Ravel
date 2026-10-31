@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	maxDotnetAssemblyBytes      = 16 << 20
+	maxDotnetAssemblyBytes      = 20 << 20
 	maxDotnetAssemblyLayerBytes = 128 << 20
 	maxDotnetAssemblyFiles      = 20000
 )
