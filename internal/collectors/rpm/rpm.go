@@ -39,6 +39,7 @@ type installedPackage struct {
 	name, version, arch, ref string
 	provides, requires       []headerDependency
 	metadataKnown            bool
+	header                   *rpmdb.PackageInfo
 }
 
 type rpmProvider struct {
@@ -107,6 +108,7 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: "RPM database"})
 	packages := make([]installedPackage, 0, len(entries))
 	seenPackages := map[string]bool{}
+	wantedFiles := map[string]bool{}
 	requirementCount := 0
 	for _, entry := range entries {
 		if entry != nil && entry.Name == "gpg-pubkey" && entry.Arch == "" {
@@ -142,7 +144,12 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 			header.provides = namesWithoutMetadata(entry.Provides)
 			header.requires = namesWithoutMetadata(entry.Requires)
 		}
-		packages = append(packages, installedPackage{name: entry.Name, version: version, arch: entry.Arch, ref: ref, provides: header.provides, requires: header.requires, metadataKnown: known})
+		packages = append(packages, installedPackage{name: entry.Name, version: version, arch: entry.Arch, ref: ref, provides: header.provides, requires: header.requires, metadataKnown: known, header: entry})
+		for _, requirement := range header.requires {
+			if validRPMFileRequirement(requirement.name) {
+				wantedFiles[requirement.name] = true
+			}
+		}
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: entry.Name, Version: version, Platform: entry.Arch, Context: "status=installed", Evidence: []model.Evidence{evidence}})
 		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "installed", Evidence: evidence})
 		requirementCount += len(entry.Requires)
@@ -161,9 +168,13 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 			}
 		}
 	}
+	fileOwners, fileIssues := indexFileOwners(packages, wantedFiles)
+	doc.Coverage.Issues = append(doc.Coverage.Issues, fileIssues...)
+	for name, candidates := range fileOwners {
+		providers[name] = append(providers[name], candidates...)
+	}
 	seenEdges := map[string]bool{}
 	for _, pkg := range packages {
-		fileRequirement := false
 		externalRequirement := false
 		constraintUnverified := false
 		for _, requirement := range pkg.requires {
@@ -179,9 +190,10 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 				continue // RPM Boolean dependencies need expression evaluation.
 			}
 			externalRequirement = true
-			if strings.HasPrefix(requirement.name, "/") {
-				fileRequirement = true
-				continue // File ownership is not available from this package view.
+			fileRequirement := strings.HasPrefix(requirement.name, "/")
+			if fileRequirement && !validRPMFileRequirement(requirement.name) {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_file_requirement_unresolved", Name: requirement.name, Scope: pkg.name})
+				continue
 			}
 			matches := map[string]string{}
 			selfSatisfied := false
@@ -209,7 +221,11 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dependency_constraint_unverified", Name: requirement.name, Scope: pkg.name})
 					continue
 				}
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: requirement.name, Scope: pkg.name})
+				code := "unresolved_dependency"
+				if fileRequirement {
+					code = "rpm_file_requirement_unresolved"
+				}
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: code, Name: requirement.name, Scope: pkg.name})
 				continue
 			}
 			ambiguous := len(matches) > 1 || selfPossible
@@ -235,9 +251,6 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 				linked.Pointer = "requires/" + requirement.name
 				doc.Edges = append(doc.Edges, model.Edge{From: pkg.ref, To: target, Kind: "depends_on", Condition: condition, Evidence: linked})
 			}
-		}
-		if fileRequirement {
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "rpm_file_requirement_unresolved", Name: pkg.name})
 		}
 		if constraintUnverified {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dependency_constraint_unverified", Name: pkg.name})

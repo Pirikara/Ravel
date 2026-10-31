@@ -9,6 +9,10 @@ The third spec requires a capability it provides itself and includes an RPM
 Boolean `if` dependency. The self-provided requirement needs no inter-package
 edge; the Boolean expression remains explicitly unparsed by Ravel.
 
+The file provider owns a regular file and a `%ghost` record. The file consumer
+requires both paths and a nonexistent path. Ravel links only the regular file
+by exact database ownership; the ghost and absent paths remain unresolved.
+
 The RPMs were built with `rpmbuild` on Fedora 42, then installed with
 `rpm --justdb --nodeps` into an isolated SQLite RPM database. The `--nodeps`
 flag intentionally preserves the unsatisfied requirement for the test.
