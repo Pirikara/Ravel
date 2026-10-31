@@ -11,7 +11,7 @@ import (
 	"ravel/internal/model"
 )
 
-type comparisonCorpus struct {
+type sourceReviewedCorpus struct {
 	Cases []struct {
 		Fixture          string `json:"fixture"`
 		SourceFile       string `json:"sourceFile"`
@@ -35,22 +35,22 @@ type comparisonCorpus struct {
 
 // The corpus is a small, source-reviewed baseline. A Syft or Trivy result is
 // useful for finding claims to review, but it never supplies the assertion.
-func TestSourceReviewedComparisonCorpus(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "comparison", "corpus.json"))
+func TestSourceReviewedFixtureClaims(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "source_reviewed_cases.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var corpus comparisonCorpus
+	var corpus sourceReviewedCorpus
 	if err := json.Unmarshal(data, &corpus); err != nil {
 		t.Fatal(err)
 	}
 	if len(corpus.Cases) < 11 {
-		t.Fatalf("comparison corpus unexpectedly small: %d cases", len(corpus.Cases))
+		t.Fatalf("source-reviewed fixture set unexpectedly small: %d cases", len(corpus.Cases))
 	}
 	for _, tc := range corpus.Cases {
 		t.Run(tc.Fixture, func(t *testing.T) {
 			if tc.Fixture == "" || tc.SourceFile == "" || filepath.Base(tc.Fixture) != tc.Fixture || filepath.IsAbs(tc.SourceFile) || strings.Contains(tc.SourceFile, "..") {
-				t.Fatal("unsafe or incomplete corpus source path")
+				t.Fatal("unsafe or incomplete fixture source path")
 			}
 			fixture := filepath.Join("..", "testdata", "fixtures", tc.Fixture)
 			source, err := os.ReadFile(filepath.Join(fixture, tc.SourceFile))
@@ -69,7 +69,7 @@ func TestSourceReviewedComparisonCorpus(t *testing.T) {
 			for _, component := range doc.Components {
 				key := component.Name + "@" + component.Version
 				if _, duplicate := components[key]; duplicate {
-					t.Fatalf("ambiguous component identity %q in corpus", key)
+				t.Fatalf("ambiguous component identity %q in fixture claims", key)
 				}
 				components[key] = component
 			}

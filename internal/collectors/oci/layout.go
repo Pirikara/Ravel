@@ -240,6 +240,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
 	goScanLimited := false
+	var postgresBinary *postgresBinaryState
 	pythonRuntimes := map[string]pythonRuntimeState{}
 	pythonRuntimeLimited := false
 	rubyRuntimes := map[string]rubyRuntimeState{}
@@ -248,7 +249,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath} {
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, postgresBinaryPath} {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -370,6 +371,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			if removed == "." || removed == nodeRuntimeHeaderPath || strings.HasPrefix(nodeRuntimeHeaderPath, removed+"/") {
 				nodeRuntimeHeader = nil
+			}
+			if removed == "." || removed == postgresBinaryPath || strings.HasPrefix(postgresBinaryPath, removed+"/") {
+				postgresBinary = nil
 			}
 			for _, metadata := range []map[string]databaseState{pythonMetadata, pipVendor, nodeMetadata, rubySpecs} {
 				for name := range metadata {
@@ -525,6 +529,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if change.nodeRuntimeHeader != nil {
 			nodeRuntimeHeader = change.nodeRuntimeHeader
 		}
+		if change.postgresBinary != nil {
+			postgresBinary = change.postgresBinary
+		}
 		if len(pythonMetadata) > maxPythonMetadataFiles {
 			return model.Document{}, errors.New("OCI image has too many installed Python metadata files")
 		}
@@ -631,7 +638,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && postgresBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -980,6 +987,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Edges = append(doc.Edges, installed.Edges...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
+	if postgresBinary != nil {
+		if postgresBinary.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "postgres_runtime_" + postgresBinary.status, Name: postgresBinaryPath})
+		} else {
+			installed := postgresBinary.document
+			doc.Components = append(doc.Components, installed.Components...)
+			doc.Edges = append(doc.Edges, installed.Edges...)
+			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+		}
+	}
 	if nodeRuntimeBinary != nil {
 		if nodeRuntimeBinary.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "node_runtime_" + nodeRuntimeBinary.status, Name: nodeRuntimeBinaryPath})
@@ -1132,6 +1149,7 @@ type layerChange struct {
 	java                     map[string]javaArchiveState
 	goBinaries               map[string]goBinaryState
 	goLimited                bool
+	postgresBinary           *postgresBinaryState
 	pythonRuntimes           map[string]pythonRuntimeState
 	pythonRuntimeLimited     bool
 	rubyRuntimes             map[string]rubyRuntimeState
@@ -1573,6 +1591,28 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 			continue
 		}
+		if name == postgresBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.postgresBinary != nil {
+				return layerChange{}, "", errors.New("duplicate OCI PostgreSQL executable entry")
+			}
+			if header.Size > maxPostgresBinaryBytes {
+				change.postgresBinary = &postgresBinaryState{status: "oversized"}
+			} else {
+				data, err := io.ReadAll(io.LimitReader(reader, maxPostgresBinaryBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI PostgreSQL executable entry")
+				}
+				input := "oci:" + item.Digest + "!/" + name
+				binaryDoc, err := inspectPostgresBinary(data, input, project, name)
+				if err != nil {
+					change.postgresBinary = &postgresBinaryState{status: "invalid"}
+				} else {
+					change.postgresBinary = &postgresBinaryState{document: binaryDoc}
+				}
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
 		if name == nodeRuntimeBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
 			if change.nodeRuntimeBinary != nil {
 				return layerChange{}, "", errors.New("duplicate OCI Node runtime executable entry")
@@ -1727,6 +1767,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Ruby runtime library beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	if change.postgresBinary != nil {
+		for ancestor := path.Dir(postgresBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains PostgreSQL executable beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}
