@@ -6,5 +6,6 @@ SQLite database, and converted to NDB with Fedora 42 `rpmdb --rebuilddb` and
 `_db_backend ndb`.
 
 It covers exact file ownership, a `%ghost` record, an absent file requirement,
-capability version constraints, a self-provided capability, and an RPM Boolean
-dependency. No operating system package database was copied into this fixture.
+caret and tilde EVR comparisons, release-omitted requirements, a self-provided
+capability, and an RPM Boolean dependency. No operating system package database
+was copied into this fixture.

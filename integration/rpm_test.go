@@ -50,7 +50,7 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Coverage.Packages != 6 || doc.Coverage.Edges != 8 || doc.Coverage.GraphState != "partial" {
+	if doc.Coverage.Packages != 8 || doc.Coverage.Edges != 16 || doc.Coverage.GraphState != "partial" {
 		t.Fatalf("RPM constraint coverage incorrect: %#v", doc.Coverage)
 	}
 	names := map[string]string{}
@@ -58,6 +58,7 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 		names[component.ID] = component.Name
 	}
 	conditions := map[string]string{}
+	evrEdges := map[string]bool{}
 	for _, edge := range doc.Edges {
 		if edge.Kind == "depends_on" {
 			conditions[names[edge.From]] = edge.Condition
@@ -66,6 +67,12 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 				wantTarget = "ravel-fixture-file-provider"
 				if edge.Evidence.Pointer != "requires//usr/share/ravel-fixture/tool" {
 					t.Fatalf("RPM owned-file edge lacks exact path evidence: %#v", edge)
+				}
+			} else if names[edge.From] == "ravel-fixture-evr-consumer" {
+				wantTarget = "ravel-fixture-evr-provider"
+				evrEdges[strings.TrimPrefix(edge.Evidence.Pointer, "requires/")] = true
+				if edge.Condition != "" {
+					t.Fatalf("settled RPM version constraint remained conditional: %#v", edge)
 				}
 			}
 			if names[edge.To] != wantTarget {
@@ -85,23 +92,35 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 	if condition, linked := conditions["ravel-fixture-file-consumer"]; !linked || condition != "" {
 		t.Fatalf("RPM owned-file requirement was not verified: %#v", conditions)
 	}
+	for _, name := range []string{"ravel-fixture-evr-gt", "ravel-fixture-evr-lt", "ravel-fixture-evr-release", "ravel-fixture-evr-no-release", "ravel-fixture-evr-pre", "ravel-fixture-evr-separator"} {
+		if !evrEdges[name] {
+			t.Fatalf("RPM version constraint %s was not linked: %#v", name, evrEdges)
+		}
+	}
+	if len(evrEdges) != 6 {
+		t.Fatalf("RPM version fixture produced extra edges: %#v", evrEdges)
+	}
 	unresolved := false
 	richUnparsed := false
 	missingFiles := map[string]bool{}
+	evrUnresolved := map[string]bool{}
 	for _, issue := range doc.Coverage.Issues {
 		unresolved = unresolved || issue.Code == "unresolved_dependency" && issue.Scope == "ravel-fixture-consumer-mismatch"
 		richUnparsed = richUnparsed || issue.Code == "rpm_requirement_unparsed" && issue.Scope == "ravel-fixture-self" && strings.HasPrefix(issue.Name, "(")
 		if issue.Code == "rpm_file_requirement_unresolved" && issue.Scope == "ravel-fixture-file-consumer" {
 			missingFiles[issue.Name] = true
 		}
+		if issue.Code == "unresolved_dependency" && issue.Scope == "ravel-fixture-evr-consumer" {
+			evrUnresolved[issue.Name] = true
+		}
 		if issue.Code == "unresolved_dependency" && issue.Scope == "ravel-fixture-self" {
 			t.Fatalf("self-provided or Boolean RPM requirement reported missing: %#v", issue)
 		}
-		if issue.Code == "rpm_dependency_flags_unavailable" {
+		if issue.Code == "rpm_dependency_flags_unavailable" || issue.Code == "dependency_constraint_unverified" {
 			t.Fatalf("available RPM flags reported missing: %#v", doc.Coverage.Issues)
 		}
 	}
-	if !unresolved || !richUnparsed || !missingFiles["/usr/share/ravel-fixture/ghost"] || !missingFiles["/usr/share/ravel-fixture/absent"] || len(missingFiles) != 2 {
+	if !unresolved || !richUnparsed || !missingFiles["/usr/share/ravel-fixture/ghost"] || !missingFiles["/usr/share/ravel-fixture/absent"] || len(missingFiles) != 2 || !evrUnresolved["ravel-fixture-evr-bad"] || !evrUnresolved["ravel-fixture-evr-release-bad"] || len(evrUnresolved) != 2 {
 		t.Fatalf("RPM mismatch, Boolean, or unresolved file requirement was not reported: %#v", doc.Coverage.Issues)
 	}
 	spdx, err := exec.Command(executable, "scan", root, "--manager", "rpm", "--format", "spdx-json").Output()
@@ -111,7 +130,7 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 	var exported struct {
 		Relationships []json.RawMessage `json:"relationships"`
 	}
-	if err := json.Unmarshal(spdx, &exported); err != nil || len(exported.Relationships) != 8 {
+	if err := json.Unmarshal(spdx, &exported); err != nil || len(exported.Relationships) != 11 {
 		t.Fatalf("RPM constraint export included unverified edge: %v, relationships=%d", err, len(exported.Relationships))
 	}
 
@@ -125,7 +144,7 @@ func testRPMConstraintCases(t *testing.T, fixture string) {
 	}}})
 	ociTestIndex(t, layout, image)
 	ociDoc, ociOutput, code := ociTestScan(t, layout)
-	if code != 0 || ociDoc.Coverage.Packages != 6 || ociDoc.Coverage.Edges != 8 {
+	if code != 0 || ociDoc.Coverage.Packages != 8 || ociDoc.Coverage.Edges != 16 {
 		t.Fatalf("OCI RPM constraint scan failed: code=%d output=%s coverage=%#v", code, ociOutput, ociDoc.Coverage)
 	}
 }

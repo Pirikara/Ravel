@@ -13,6 +13,10 @@ The file provider owns a regular file and a `%ghost` record. The file consumer
 requires both paths and a nonexistent path. Ravel links only the regular file
 by exact database ownership; the ghost and absent paths remain unresolved.
 
+The EVR provider declares capabilities with caret, tilde, release, and segment
+separator forms. The consumer exercises six satisfied and two unsatisfied RPM
+version constraints, including a requirement that omits the release.
+
 The RPMs were built with `rpmbuild` on Fedora 42, then installed with
 `rpm --justdb --nodeps` into an isolated SQLite RPM database. The `--nodeps`
 flag intentionally preserves the unsatisfied requirement for the test.

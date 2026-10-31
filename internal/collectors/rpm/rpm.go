@@ -277,9 +277,9 @@ func namesWithoutMetadata(names []string) []headerDependency {
 	return result
 }
 
-// rpmConstraint only claims a versioned match when the provider is an exact
-// EVR and equality or a numeric version difference settles the requirement.
-// Other RPM ranges and version forms stay conditional.
+// rpmConstraint only claims a versioned match when the provider offers an
+// exact EVR and the comparison settles the requirement. Range offers and
+// provider-side release omissions that can match multiple EVRs stay conditional.
 func rpmConstraint(requirement headerDependency, known bool, provider rpmProvider) (string, bool) {
 	if !known {
 		return "rpm_constraint=unverified", true
@@ -294,15 +294,14 @@ func rpmConstraint(requirement headerDependency, known bool, provider rpmProvide
 		return "rpm_constraint=unverified", true
 	}
 	if provider.flags&rpmSenseMask == rpmSenseEqual {
-		if requirement.version == provider.version {
-			return "", requirement.flags&rpmSenseEqual != 0
-		}
-		if comparison, comparable := compareNumericRPMEVR(provider.version, requirement.version); comparable {
+		if comparison, comparable := compareRPMProviderToRequirement(provider.version, requirement.version); comparable {
 			switch {
 			case comparison < 0:
 				return "", requirement.flags&rpmSenseLess != 0
 			case comparison > 0:
 				return "", requirement.flags&rpmSenseGreater != 0
+			default:
+				return "", requirement.flags&rpmSenseEqual != 0
 			}
 		}
 	}
