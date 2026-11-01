@@ -33,18 +33,22 @@ type sourceReviewedCorpus struct {
 	} `json:"cases"`
 }
 
-// The corpus is a small, source-reviewed baseline. A Syft or Trivy result is
-// useful for finding claims to review, but it never supplies the assertion.
+// The corpus checks representative managers and format versions against their
+// input files. Other scanners can suggest claims, but never supply assertions.
 func TestSourceReviewedFixtureClaims(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("testdata", "source_reviewed_cases.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	var corpus sourceReviewedCorpus
-	if err := json.Unmarshal(data, &corpus); err != nil {
-		t.Fatal(err)
+	for _, filename := range []string{"source_reviewed_cases.json", "source_reviewed_cases_extended.json"} {
+		data, err := os.ReadFile(filepath.Join("testdata", filename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var additional sourceReviewedCorpus
+		if err := json.Unmarshal(data, &additional); err != nil {
+			t.Fatal(err)
+		}
+		corpus.Cases = append(corpus.Cases, additional.Cases...)
 	}
-	if len(corpus.Cases) < 11 {
+	if len(corpus.Cases) < 50 {
 		t.Fatalf("source-reviewed fixture set unexpectedly small: %d cases", len(corpus.Cases))
 	}
 	for _, tc := range corpus.Cases {

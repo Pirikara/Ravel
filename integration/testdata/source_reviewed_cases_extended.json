@@ -1,0 +1,1000 @@
+{
+  "cases": [
+    {
+      "fixture": "deno-v5",
+      "sourceFile": "deno.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "@std/encoding",
+          "version": "1.0.5",
+          "sourceSnippets": [
+            "\"@std/encoding@1.0.5\""
+          ]
+        },
+        {
+          "name": "@std/bytes",
+          "version": "1.0.2",
+          "sourceSnippets": [
+            "\"@std/bytes@1.0.2\""
+          ]
+        },
+        {
+          "name": "chalk",
+          "version": "5.3.0",
+          "sourceSnippets": [
+            "\"chalk@5.3.0\""
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "@std/encoding@1.0.5",
+          "to": "@std/bytes@1.0.2",
+          "kind": "depends_on",
+          "condition": "",
+          "sourceSnippet": "\"dependencies\": [\"jsr:@std/bytes@^1.0.0\"]"
+        }
+      ]
+    },
+    {
+      "fixture": "pylock-basic",
+      "sourceFile": "pylock.toml",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "click",
+          "version": "8.1.3",
+          "sourceSnippets": [
+            "name = \"click\"",
+            "version = \"8.1.3\""
+          ]
+        },
+        {
+          "name": "colorama",
+          "version": "0.4.6",
+          "sourceSnippets": [
+            "name = \"colorama\"",
+            "version = \"0.4.6\""
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "poetry-basic",
+      "sourceFile": "poetry.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "Requests",
+          "version": "2.32.3",
+          "sourceSnippets": [
+            "name = \"Requests\"",
+            "version = \"2.32.3\""
+          ]
+        },
+        {
+          "name": "idna",
+          "version": "3.10",
+          "sourceSnippets": [
+            "name = \"idna\"",
+            "version = \"3.10\""
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "pdm-basic",
+      "sourceFile": "pdm.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "alpha",
+          "version": "1.0.0",
+          "sourceSnippets": [
+            "name = \"alpha\"",
+            "version = \"1.0.0\""
+          ]
+        },
+        {
+          "name": "beta",
+          "version": "2.0.0",
+          "sourceSnippets": [
+            "name = \"beta\"",
+            "version = \"2.0.0\""
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "pipenv-basic",
+      "sourceFile": "Pipfile.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "Requests",
+          "version": "2.32.3",
+          "sourceSnippets": [
+            "\"Requests\": {\"version\": \"==2.32.3\""
+          ]
+        },
+        {
+          "name": "idna",
+          "version": "3.10",
+          "sourceSnippets": [
+            "\"idna\": {\"version\": \"==3.10\""
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "requirements-basic",
+      "sourceFile": "requirements.txt",
+      "completePackages": false,
+      "packages": [
+        {
+          "name": "requests",
+          "version": "2.32.3",
+          "sourceSnippets": [
+            "requests==2.32.3"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "nuget-assets-v3",
+      "sourceFile": "obj/project.assets.json",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "Example.Core",
+          "version": "2.0.0",
+          "sourceSnippets": [
+            "\"Example.Core/2.0.0\""
+          ]
+        },
+        {
+          "name": "Example.Abstractions",
+          "version": "1.1.0",
+          "sourceSnippets": [
+            "\"Example.Abstractions/1.1.0\""
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "Example.Core@2.0.0",
+          "to": "Example.Abstractions@1.1.0",
+          "kind": "depends_on",
+          "condition": "",
+          "sourceSnippet": "\"dependencies\": {\"Example.Abstractions\": \"1.1.0\"}"
+        }
+      ]
+    },
+    {
+      "fixture": "gradle-basic",
+      "sourceFile": "gradle.lockfile",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "com.google.guava:guava",
+          "version": "33.2.1-jre",
+          "sourceSnippets": [
+            "com.google.guava:guava:33.2.1-jre"
+          ]
+        },
+        {
+          "name": "com.google.guava:failureaccess",
+          "version": "1.0.2",
+          "sourceSnippets": [
+            "com.google.guava:failureaccess:1.0.2"
+          ]
+        },
+        {
+          "name": "org.slf4j:slf4j-api",
+          "version": "2.0.13",
+          "sourceSnippets": [
+            "org.slf4j:slf4j-api:2.0.13"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "sbt-basic",
+      "sourceFile": "build.sbt.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "org.example:core_2.13",
+          "version": "1.2.3",
+          "sourceSnippets": [
+            "\"name\": \"core_2.13\"",
+            "\"version\": \"1.2.3\""
+          ]
+        },
+        {
+          "name": "org.example:testkit_2.13",
+          "version": "4.5.6",
+          "sourceSnippets": [
+            "\"name\": \"testkit_2.13\"",
+            "\"version\": \"4.5.6\""
+          ]
+        },
+        {
+          "name": "org.example:plugin",
+          "version": "0.9.0",
+          "sourceSnippets": [
+            "\"name\": \"plugin\"",
+            "\"version\": \"0.9.0\""
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "maven-pom-basic",
+      "sourceFile": "pom.xml",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "org.slf4j:slf4j-api",
+          "version": "2.0.13",
+          "sourceSnippets": [
+            "<artifactId>slf4j-api</artifactId><version>2.0.13</version>"
+          ]
+        },
+        {
+          "name": "org.junit.jupiter:junit-jupiter",
+          "version": "5.10.2",
+          "sourceSnippets": [
+            "<artifactId>junit-jupiter</artifactId><version>5.10.2</version>"
+          ]
+        },
+        {
+          "name": "org.example:property-resolved",
+          "version": "3.2.1",
+          "sourceSnippets": [
+            "<selected.version>3.2.1</selected.version>",
+            "<artifactId>property-resolved</artifactId>"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "go-vendor-basic",
+      "sourceFile": "vendor/modules.txt",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "github.com/acme/alpha",
+          "version": "v1.2.3",
+          "sourceSnippets": [
+            "# github.com/acme/alpha v1.2.3"
+          ]
+        },
+        {
+          "name": "golang.org/x/text",
+          "version": "v0.14.0",
+          "sourceSnippets": [
+            "# golang.org/x/text v0.14.0"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "conan-v1",
+      "sourceFile": "conan.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "openssl",
+          "version": "3.0.5",
+          "sourceSnippets": [
+            "openssl/3.0.5@acme/stable"
+          ]
+        },
+        {
+          "name": "zlib",
+          "version": "1.2.13",
+          "sourceSnippets": [
+            "zlib/1.2.13#"
+          ]
+        },
+        {
+          "name": "cmake",
+          "version": "3.25.1",
+          "sourceSnippets": [
+            "cmake/3.25.1"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "openssl@3.0.5",
+          "to": "zlib@1.2.13",
+          "kind": "requires",
+          "condition": "",
+          "sourceSnippet": "\"requires\": [\"2\"]"
+        }
+      ]
+    },
+    {
+      "fixture": "mix-basic",
+      "sourceFile": "mix.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "cowboy",
+          "version": "2.9.0",
+          "sourceSnippets": [
+            "\"cowboy\": {:hex, :cowboy, \"2.9.0\""
+          ]
+        },
+        {
+          "name": "cowlib",
+          "version": "2.11.0",
+          "sourceSnippets": [
+            "\"cowlib\": {:hex, :cowlib, \"2.11.0\""
+          ]
+        },
+        {
+          "name": "ranch",
+          "version": "1.8.0",
+          "sourceSnippets": [
+            "\"ranch\": {:hex, :ranch, \"1.8.0\""
+          ]
+        },
+        {
+          "name": "my_git",
+          "version": "abcdef0123456789",
+          "sourceSnippets": [
+            "\"my_git\": {:git",
+            "\"abcdef0123456789\""
+          ]
+        },
+        {
+          "name": "local_dep",
+          "version": "",
+          "sourceSnippets": [
+            "\"local_dep\": {:path"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "rebar-basic",
+      "sourceFile": "rebar.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "certifi",
+          "version": "2.9.0",
+          "sourceSnippets": [
+            "<<\"certifi\">>,{pkg,<<\"certifi\">>,<<\"2.9.0\">>"
+          ]
+        },
+        {
+          "name": "bson",
+          "version": "14308ab927cfa69324742c3de720578094e0bb19",
+          "sourceSnippets": [
+            "<<\"bson\">>,{git,",
+            "14308ab927cfa69324742c3de720578094e0bb19"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "shards-v2",
+      "sourceFile": "shard.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "cli",
+          "version": "1.1.0+git.commit.abcdef1234567890abcdef1234567890abcdef12",
+          "sourceSnippets": [
+            "version: 1.1.0+git.commit.abcdef1234567890abcdef1234567890abcdef12"
+          ]
+        },
+        {
+          "name": "local",
+          "version": "0.1.0",
+          "sourceSnippets": [
+            "version: 0.1.0"
+          ]
+        },
+        {
+          "name": "minitest",
+          "version": "0.3.0",
+          "sourceSnippets": [
+            "version: 0.3.0"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "cabal-freeze-basic",
+      "sourceFile": "cabal.project.freeze",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "HTTP",
+          "version": "4000.3.16",
+          "sourceSnippets": [
+            "any.HTTP ==4000.3.16"
+          ]
+        },
+        {
+          "name": "Cabal",
+          "version": "3.2.1.0",
+          "sourceSnippets": [
+            "any.Cabal ==3.2.1.0"
+          ]
+        },
+        {
+          "name": "HUnit",
+          "version": "1.6.2.0",
+          "sourceSnippets": [
+            "any.HUnit ==1.6.2.0"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "stack-basic",
+      "sourceFile": "stack.yaml.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "acme-missiles",
+          "version": "0.3",
+          "sourceSnippets": [
+            "hackage: acme-missiles-0.3@"
+          ]
+        },
+        {
+          "name": "text",
+          "version": "2.1.1",
+          "sourceSnippets": [
+            "hackage: text-2.1.1@"
+          ]
+        },
+        {
+          "name": "internal-lib",
+          "version": "0.4.0",
+          "sourceSnippets": [
+            "name: internal-lib",
+            "version: 0.4.0"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "julia-v1",
+      "sourceFile": "Manifest.toml",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "Alpha",
+          "version": "1.0.0",
+          "sourceSnippets": [
+            "[[Alpha]]",
+            "version = \"1.0.0\""
+          ]
+        },
+        {
+          "name": "Shared",
+          "version": "2.0.0",
+          "sourceSnippets": [
+            "[[Shared]]",
+            "version = \"2.0.0\""
+          ]
+        },
+        {
+          "name": "Std",
+          "version": "",
+          "sourceSnippets": [
+            "[[Std]]"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "Alpha@1.0.0",
+          "to": "Shared@2.0.0",
+          "kind": "requires",
+          "condition": "",
+          "sourceSnippet": "deps = [\"Shared\", \"Std\"]"
+        }
+      ]
+    },
+    {
+      "fixture": "renv-basic",
+      "sourceFile": "renv.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "markdown",
+          "version": "1.13",
+          "sourceSnippets": [
+            "\"Package\": \"markdown\"",
+            "\"Version\": \"1.13\""
+          ]
+        },
+        {
+          "name": "mime",
+          "version": "0.12",
+          "sourceSnippets": [
+            "\"Package\": \"mime\"",
+            "\"Version\": \"0.12\""
+          ]
+        },
+        {
+          "name": "localpkg",
+          "version": "0.1.0",
+          "sourceSnippets": [
+            "\"Package\": \"localpkg\"",
+            "\"Version\": \"0.1.0\""
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "conda-lock-custom",
+      "sourceFile": "prod.conda-lock.yml",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "zlib",
+          "version": "1.3.1",
+          "sourceSnippets": [
+            "name: zlib",
+            "version: 1.3.1"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "pixi-v6",
+      "sourceFile": "pixi.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "libfoo",
+          "version": "1.2.3",
+          "sourceSnippets": [
+            "name: libfoo",
+            "version: 1.2.3"
+          ]
+        },
+        {
+          "name": "libbar",
+          "version": "2.0",
+          "sourceSnippets": [
+            "name: libbar",
+            "version: \"2.0\""
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "cocoapods-basic",
+      "sourceFile": "Podfile.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "Alpha",
+          "version": "1.2.3",
+          "sourceSnippets": [
+            "Alpha (1.2.3)"
+          ]
+        },
+        {
+          "name": "Beta",
+          "version": "2.0.1",
+          "sourceSnippets": [
+            "Beta (2.0.1)"
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "pub-basic",
+      "sourceFile": "pubspec.lock",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "collection",
+          "version": "1.19.1",
+          "sourceSnippets": [
+            "collection:",
+            "version: \"1.19.1\""
+          ]
+        },
+        {
+          "name": "meta",
+          "version": "1.16.0",
+          "sourceSnippets": [
+            "meta:",
+            "version: \"1.16.0\""
+          ]
+        }
+      ],
+      "edges": []
+    },
+    {
+      "fixture": "dpkg-basic",
+      "sourceFile": "var/lib/dpkg/status",
+      "completePackages": true,
+      "packages": [
+        {
+          "name": "base-files",
+          "version": "12.4+deb12u9",
+          "sourceSnippets": [
+            "Package: base-files",
+            "Version: 12.4+deb12u9"
+          ]
+        },
+        {
+          "name": "libalpha",
+          "version": "1:2.3~rc1-1",
+          "sourceSnippets": [
+            "Package: libalpha",
+            "Version: 1:2.3~rc1-1"
+          ]
+        },
+        {
+          "name": "mailer",
+          "version": "2.0-1",
+          "sourceSnippets": [
+            "Package: mailer",
+            "Version: 2.0-1"
+          ]
+        },
+        {
+          "name": "application",
+          "version": "1.0-1",
+          "sourceSnippets": [
+            "Package: application",
+            "Version: 1.0-1"
+          ]
+        }
+      ],
+      "edges": []
+    },
+  {
+    "fixture": "npm-v1",
+    "sourceFile": "package-lock.json",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "alpha",
+        "version": "1.0.0",
+        "sourceSnippets": [
+          "\"alpha\": {\"version\": \"1.0.0\"}"
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "npm-v4-generated-12",
+    "sourceFile": "package-lock.json",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "is-number",
+        "version": "7.0.0",
+        "sourceSnippets": [
+          "\"node_modules/is-number\": {",
+          "\"version\": \"7.0.0\""
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "pnpm-v6-generated-8",
+    "sourceFile": "pnpm-lock.yaml",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "is-odd",
+        "version": "3.0.1",
+        "sourceSnippets": [
+          "/is-odd@3.0.1:"
+        ]
+      },
+      {
+        "name": "is-number",
+        "version": "6.0.0",
+        "sourceSnippets": [
+          "/is-number@6.0.0:"
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "yarn-classic-basic",
+    "sourceFile": "yarn.lock",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "alpha",
+        "version": "1.1.0",
+        "sourceSnippets": [
+          "alpha@^1.0.0, alpha@~1.0.0:",
+          "version \"1.1.0\""
+        ]
+      },
+      {
+        "name": "beta",
+        "version": "2.0.0",
+        "sourceSnippets": [
+          "beta@^2.0.0:",
+          "version \"2.0.0\""
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "yarn-berry-basic",
+    "sourceFile": "yarn.lock",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "alpha",
+        "version": "1.1.0",
+        "sourceSnippets": [
+          "\"alpha@npm:^1.0.0\":",
+          "version: 1.1.0"
+        ]
+      },
+      {
+        "name": "beta",
+        "version": "2.0.0",
+        "sourceSnippets": [
+          "\"beta@npm:^2.0.0\":",
+          "version: 2.0.0"
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "bun-v0-generated-1_1",
+    "sourceFile": "bun.lock",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "is-odd",
+        "version": "3.0.1",
+        "sourceSnippets": [
+          "\"is-odd\": [\"is-odd@3.0.1\""
+        ]
+      },
+      {
+        "name": "is-number",
+        "version": "7.0.0",
+        "sourceSnippets": [
+          "\"is-number\": [\"is-number@7.0.0\""
+        ]
+      },
+      {
+        "name": "is-number",
+        "version": "6.0.0",
+        "sourceSnippets": [
+          "\"is-odd/is-number\": [\"is-number@6.0.0\""
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "bun-v1-generated-1_2",
+    "sourceFile": "bun.lock",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "is-odd",
+        "version": "3.0.1",
+        "sourceSnippets": [
+          "\"is-odd\": [\"is-odd@3.0.1\""
+        ]
+      },
+      {
+        "name": "is-number",
+        "version": "7.0.0",
+        "sourceSnippets": [
+          "\"is-number\": [\"is-number@7.0.0\""
+        ]
+      },
+      {
+        "name": "is-number",
+        "version": "6.0.0",
+        "sourceSnippets": [
+          "\"is-odd/is-number\": [\"is-number@6.0.0\""
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "bun-v2-alias-generated-1_4",
+    "sourceFile": "bun.lock",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "is-number",
+        "version": "7.0.0",
+        "sourceSnippets": [
+          "\"alias\": [\"is-number@7.0.0\""
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "deno-v4",
+    "sourceFile": "deno.lock",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "@std/path",
+        "version": "1.0.1",
+        "sourceSnippets": [
+          "\"@std/path@1.0.1\""
+        ]
+      },
+      {
+        "name": "https://cdn.example.test/lib/mod.ts",
+        "version": "",
+        "sourceSnippets": [
+          "\"https://cdn.example.test/lib/mod.ts\":"
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "swift-v1",
+    "sourceFile": "Package.resolved",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "swift-collections",
+        "version": "1.0.4",
+        "sourceSnippets": [
+          "\"package\": \"swift-collections\"",
+          "\"version\": \"1.0.4\""
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "swift-v2",
+    "sourceFile": "Package.resolved",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "swift-algorithms",
+        "version": "1.0.0",
+        "sourceSnippets": [
+          "\"identity\": \"swift-algorithms\"",
+          "\"version\": \"1.0.0\""
+        ]
+      },
+      {
+        "name": "swift-atomics",
+        "version": "1.1.0",
+        "sourceSnippets": [
+          "\"identity\": \"swift-atomics\"",
+          "\"version\": \"1.1.0\""
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "cargo-git",
+    "sourceFile": "Cargo.lock",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "git-lib",
+        "version": "1.0.0",
+        "sourceSnippets": [
+          "name = \"git-lib\"",
+          "version = \"1.0.0\""
+        ]
+      }
+    ],
+    "edges": []
+    },
+  {
+    "fixture": "npm-v2",
+    "sourceFile": "package-lock.json",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "one",
+        "version": "1.2.3",
+        "sourceSnippets": [
+          "\"node_modules/one\": {",
+          "\"version\": \"1.2.3\""
+        ]
+      }
+    ],
+    "edges": []
+  },
+  {
+    "fixture": "nuget-packages-config-basic",
+    "sourceFile": "packages.config",
+    "completePackages": true,
+    "packages": [
+      {
+        "name": "Newtonsoft.Json",
+        "version": "13.0.3",
+        "sourceSnippets": [
+          "id=\"Newtonsoft.Json\" version=\"13.0.3\""
+        ]
+      },
+      {
+        "name": "NLog",
+        "version": "5.2.0",
+        "sourceSnippets": [
+          "id=\"NLog\" version=\"5.2.0\""
+        ]
+      },
+      {
+        "name": "Microsoft.Net.Compilers",
+        "version": "4.1.0",
+        "sourceSnippets": [
+          "id=\"Microsoft.Net.Compilers\" version=\"4.1.0\""
+        ]
+      }
+    ],
+    "edges": []
+    },
+{
+  "fixture": "requirements-conditional",
+  "sourceFile": "requirements.txt",
+  "completePackages": true,
+  "packages": [
+    {
+      "name": "widget",
+      "version": "1.2.0",
+      "sourceSnippets": [
+        "widget[fast]==1.2.0 ; python_version >= \"3.11\""
+      ]
+    },
+    {
+      "name": "helper",
+      "version": "",
+      "sourceSnippets": [
+        "helper>=2.0"
+      ]
+    }
+  ],
+  "edges": []
+}
+  ]
+}
