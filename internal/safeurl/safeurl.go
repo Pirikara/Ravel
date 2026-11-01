@@ -26,8 +26,8 @@ func Clean(raw string) string {
 	default:
 		return ""
 	}
-	for _, segment := range strings.Split(strings.ToLower(u.EscapedPath()), "/") {
-		if strings.Contains(segment, "token") || strings.Contains(segment, "apikey") || strings.Contains(segment, "api_key") || strings.Contains(segment, "password") {
+	for _, segment := range strings.Split(strings.ToLower(u.Path), "/") {
+		if sensitivePathSegment(segment) {
 			return ""
 		}
 	}
@@ -37,4 +37,13 @@ func Clean(raw string) string {
 	u.Fragment = ""
 	u.RawFragment = ""
 	return u.String()
+}
+
+func sensitivePathSegment(segment string) bool {
+	for _, term := range []string{"token", "apikey", "api_key", "password"} {
+		if strings.HasPrefix(segment, term) || strings.HasSuffix(segment, term) || strings.Contains(segment, "_"+term) || strings.Contains(segment, "-"+term) || strings.Contains(segment, "."+term) {
+			return true
+		}
+	}
+	return false
 }
