@@ -23,6 +23,8 @@ go build -o ravel ./cmd/ravel
 
 This writes a CycloneDX 1.7 SBOM and a coverage report. Scanning is local and offline by default; Ravel does not run a package manager unless you explicitly opt into resolution.
 
+Run `./ravel version` to identify the build you are using.
+
 To inspect the evidence behind a finding, save Ravel's native format:
 
 ```sh

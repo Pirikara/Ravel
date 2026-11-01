@@ -4,6 +4,11 @@
 stdout unless `--output` is set; progress and errors go to stderr. Run `ravel`
 without arguments for command syntax.
 
+`ravel version` (or `ravel --version`) prints the build version. Local source
+builds report Go's embedded module or commit version when available, falling
+back to `dev`. Release binaries and versioned `go install` builds report their
+tagged prerelease version.
+
 ## Scan workflows
 
 ### One project or a polyglot tree

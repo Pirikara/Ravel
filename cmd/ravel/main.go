@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -28,6 +29,8 @@ import (
 	"github.com/Pirikara/Ravel/internal/report"
 )
 
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -35,6 +38,13 @@ func main() {
 	}
 	code := 2
 	switch os.Args[1] {
+	case "version", "--version":
+		if len(os.Args) != 2 {
+			usage()
+			break
+		}
+		fmt.Println("ravel", buildVersion())
+		code = 0
 	case "scan":
 		code = runScan(os.Args[2:])
 	case "explain":
@@ -51,8 +61,19 @@ func main() {
 	os.Exit(code)
 }
 
+func buildVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return version
+}
+
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: ravel scan PATH [--manager NAME|--all [--recursive]] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
+	fmt.Fprintln(os.Stderr, "usage: ravel version")
+	fmt.Fprintln(os.Stderr, "       ravel scan PATH [--manager NAME|--all [--recursive]] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
 	fmt.Fprintln(os.Stderr, "       ravel explain PACKAGE --input ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel diff BEFORE.ravel.json AFTER.ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel merge [--name PROJECT] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] INPUT.ravel.json...")

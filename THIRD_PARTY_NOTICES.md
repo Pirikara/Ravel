@@ -2,6 +2,8 @@
 
 The RPM database reader and APK zstd decoder use the following Go modules.
 Their license notices are reproduced here for distributions of Ravel binaries.
+Release archives also include `THIRD_PARTY_LICENSES/`, with the license and
+notice files for every Go module compiled into a release binary.
 
 ## github.com/klauspost/compress v1.20.2 (zstd)
 
