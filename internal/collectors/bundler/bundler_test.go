@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"ravel/internal/collectors/bundler"
-	"ravel/internal/export"
+	"github.com/Pirikara/Ravel/internal/collectors/bundler"
+	"github.com/Pirikara/Ravel/internal/export"
 )
 
 func writeLock(t *testing.T, contents string) string {

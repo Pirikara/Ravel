@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func scanMixFixture(t *testing.T, fixture string) model.Document {

@@ -3,7 +3,7 @@ package oci
 import (
 	"bytes"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const phpFPMBinaryPath = "usr/local/sbin/php-fpm"

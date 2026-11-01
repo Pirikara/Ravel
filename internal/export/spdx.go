@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 type spdxExternalRef struct {

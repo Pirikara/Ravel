@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 type property struct {

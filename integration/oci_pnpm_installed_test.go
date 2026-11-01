@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 // The file+ locator and symlink layout come from a pnpm 10 offline install of

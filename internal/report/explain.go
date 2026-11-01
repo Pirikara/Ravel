@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 type Explanation struct {

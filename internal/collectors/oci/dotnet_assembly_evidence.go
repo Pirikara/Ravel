@@ -3,8 +3,8 @@ package oci
 import (
 	"strings"
 
-	"ravel/internal/collectors/nuget"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/nuget"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func verifyDotnetRuntimeAssemblies(doc *model.Document, depsData []byte, manifestPath string, assemblies map[string]dotnetAssemblyState, users map[string]map[string]bool) {

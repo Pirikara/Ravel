@@ -12,8 +12,8 @@ import (
 
 	packageurl "github.com/package-url/packageurl-go"
 
-	"ravel/internal/collectors/common"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const maxLockBytes = 16 << 20

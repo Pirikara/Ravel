@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const (

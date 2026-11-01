@@ -1,4 +1,4 @@
-module ravel
+module github.com/Pirikara/Ravel
 
 go 1.27
 

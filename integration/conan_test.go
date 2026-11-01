@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func scanConanFixture(t *testing.T, fixture string) model.Document {

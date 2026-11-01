@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"ravel/internal/collectors/common"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 // collectStandaloneDotnetAssemblies reports managed files that no valid

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 type nativeDependencies struct {

@@ -6,7 +6,7 @@ import (
 
 	rpmdb "github.com/anchore/go-rpmdb/pkg"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const maxRPMFileEntries = 1_000_000

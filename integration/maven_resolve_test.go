@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const mavenTree = `{"groupId":"example","artifactId":"app","version":"1","type":"jar","children":[{"groupId":"resolved","artifactId":"dep","version":"2","type":"jar","scope":"compile","children":[]}]}`

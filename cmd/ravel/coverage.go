@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 
-	"ravel/internal/export"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/export"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func coverageReport(doc model.Document, format string) ([]byte, error) {

@@ -3,7 +3,7 @@ package safeurl_test
 import (
 	"testing"
 
-	"ravel/internal/safeurl"
+	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
 func TestClean(t *testing.T) {

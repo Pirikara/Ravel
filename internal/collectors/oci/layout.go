@@ -16,17 +16,17 @@ import (
 	"sort"
 	"strings"
 
-	"ravel/internal/collectors/apk"
-	"ravel/internal/collectors/common"
-	"ravel/internal/collectors/composer"
-	"ravel/internal/collectors/conda"
-	"ravel/internal/collectors/dpkg"
-	"ravel/internal/collectors/javaarchive"
-	"ravel/internal/collectors/npm"
-	"ravel/internal/collectors/nuget"
-	"ravel/internal/collectors/python"
-	"ravel/internal/collectors/rpm"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/apk"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/collectors/composer"
+	"github.com/Pirikara/Ravel/internal/collectors/conda"
+	"github.com/Pirikara/Ravel/internal/collectors/dpkg"
+	"github.com/Pirikara/Ravel/internal/collectors/javaarchive"
+	"github.com/Pirikara/Ravel/internal/collectors/npm"
+	"github.com/Pirikara/Ravel/internal/collectors/nuget"
+	"github.com/Pirikara/Ravel/internal/collectors/python"
+	"github.com/Pirikara/Ravel/internal/collectors/rpm"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const (

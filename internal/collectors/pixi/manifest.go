@@ -11,8 +11,8 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"ravel/internal/collectors/common"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const maxManifestBytes = 4 << 20

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 // InstalledRecord supplies the verified metadata bytes and component from

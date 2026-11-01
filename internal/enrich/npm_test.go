@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"ravel/internal/collectors/common"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const npmTestTarball = "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz"

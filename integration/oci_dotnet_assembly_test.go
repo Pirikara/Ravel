@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func dotnetAssemblyFixture(t *testing.T, name string) []byte {

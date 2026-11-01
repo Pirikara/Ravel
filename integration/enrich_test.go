@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func TestRubyGemsEnrichCLI(t *testing.T) {

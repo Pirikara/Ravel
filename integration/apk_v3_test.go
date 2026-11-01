@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func TestAPKConvertedV3DatabaseAndEvidence(t *testing.T) {

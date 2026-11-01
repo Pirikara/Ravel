@@ -3,7 +3,7 @@ package export
 import (
 	"strings"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 // Loss describes information retained in Ravel JSON but not represented in

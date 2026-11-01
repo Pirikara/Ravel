@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const (

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"ravel/internal/collectors/python"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/python"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 type ociTestDescriptor struct {

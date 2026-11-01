@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func TestMavenModuleTraversalStaysInProject(t *testing.T) {

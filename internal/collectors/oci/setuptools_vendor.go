@@ -5,9 +5,9 @@ import (
 	"path"
 	"strings"
 
-	"ravel/internal/collectors/common"
-	"ravel/internal/collectors/python"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/collectors/python"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 // setuptools keeps some distribution metadata inside its private _vendor

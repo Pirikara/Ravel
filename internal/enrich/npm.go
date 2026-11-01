@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"ravel/internal/collectors/common"
-	"ravel/internal/model"
-	"ravel/internal/safeurl"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
 const maxNPMResponse = 2 << 20

@@ -15,8 +15,8 @@ import (
 	rpmdb "github.com/anchore/go-rpmdb/pkg"
 	_ "modernc.org/sqlite" // Register the SQLite driver used by go-rpmdb.
 
-	"ravel/internal/collectors/common"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const MaxDatabaseBytes = 128 << 20

@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"ravel/internal/collectors/npm"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/npm"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const (

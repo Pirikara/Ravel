@@ -13,8 +13,8 @@ import (
 	packageurl "github.com/package-url/packageurl-go"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
-	"ravel/internal/model"
-	"ravel/internal/report"
+	"github.com/Pirikara/Ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/report"
 )
 
 var executable string

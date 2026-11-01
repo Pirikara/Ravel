@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 // Diff compares two Ravel documents by occurrence ID. Evidence file paths and

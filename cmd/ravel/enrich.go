@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"ravel/internal/enrich"
-	"ravel/internal/export"
+	"github.com/Pirikara/Ravel/internal/enrich"
+	"github.com/Pirikara/Ravel/internal/export"
 )
 
 func runEnrich(args []string) int {

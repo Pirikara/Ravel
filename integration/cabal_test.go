@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func scanCabalFixture(t *testing.T, name string) model.Document {

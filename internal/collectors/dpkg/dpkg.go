@@ -12,8 +12,8 @@ import (
 	"regexp"
 	"strings"
 
-	"ravel/internal/collectors/common"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const maxStatusFile = 128 << 20

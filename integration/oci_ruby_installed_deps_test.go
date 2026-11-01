@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func ociTestRubySpecWithDependencies(name, version string, declarations ...string) []byte {

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 // InstalledRecord provides a verified package.json and its component for

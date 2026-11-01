@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func TestVCSOriginsBecomeDevelopmentCandidates(t *testing.T) {

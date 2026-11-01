@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"ravel/internal/collectors/composer"
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/collectors/composer"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 const (

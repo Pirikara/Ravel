@@ -10,7 +10,7 @@ import (
 
 	packageurl "github.com/package-url/packageurl-go"
 
-	"ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/model"
 )
 
 func NewDocument(path, project, manager string, data []byte) model.Document {
