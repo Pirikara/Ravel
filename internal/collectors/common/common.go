@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "mix_direct_dependencies_unavailable", "mix_dependency_constraints_unverified", "mix_dependency_unresolved", "mix_dependency_invalid", "mix_lock_entry_invalid", "mix_source_unhandled":
+			doc.Coverage.GraphState = "partial"
+		case "mix_distribution_origin_unverified", "mix_registry_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "conan_lock_selection_unverified", "conan_dependency_graph_unavailable", "conan_invalid_reference", "conan_unresolved_node":
 			doc.Coverage.GraphState = "partial"
 		case "conan_distribution_origin_unverified":

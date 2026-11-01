@@ -1,0 +1,6 @@
+%{
+  "parent": {:hex, :parent, "1.0.0", "checksum", [:mix], [
+    {:missing_required, ">= 1.0", [optional: false]},
+    {:missing_optional, ">= 1.0", [optional: true]}
+  ], "hexpm", "outer-checksum"}
+}

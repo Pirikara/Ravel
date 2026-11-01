@@ -1,0 +1,10 @@
+%{
+  "cowboy": {:hex, :cowboy, "2.9.0", "checksum", [:make], [
+    {:cowlib, "~> 2.11", [hex: :cowlib, repo: "hexpm", optional: false]},
+    {:ranch, "~> 1.8", [hex: :ranch, repo: "hexpm", optional: true]}
+  ], "hexpm", "outer-checksum"},
+  "cowlib": {:hex, :cowlib, "2.11.0", "checksum", [:rebar3], [], "hexpm", "outer-checksum"},
+  "ranch": {:hex, :ranch, "1.8.0", "checksum", [:rebar3], [], "hexpm", "outer-checksum"},
+  "my_git": {:git, "https://user:secret@example.invalid/group/repo.git?token=secret", "abcdef0123456789", [ref: "main"]},
+  "local_dep": {:path, "../local_dep", []}
+}

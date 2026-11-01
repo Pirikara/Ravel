@@ -1,0 +1,5 @@
+%{
+  # The application alias differs from its Hex package name.
+  "web": {:hex, :phoenix, "1.7.0", "checksum", [:mix], [], "hexpm", "outer-checksum"},
+  "private_pkg": {:hex, :private_pkg, "0.2.0", "checksum", [:mix], [], "private", "outer-checksum"}
+}

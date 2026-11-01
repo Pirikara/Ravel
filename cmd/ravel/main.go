@@ -300,8 +300,8 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec; --network must be deny or allow")
 		return 2
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
-		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, conan, cocoapods, pipenv, pdm, go, pub, gradle, maven, dpkg, apk, rpm, oci, java-archive, python-wheel")
+	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "mix" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
+		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, conan, cocoapods, pipenv, pdm, go, pub, gradle, maven, mix, dpkg, apk, rpm, oci, java-archive, python-wheel")
 		return 2
 	}
 	if *all {
@@ -591,6 +591,8 @@ func selectLock(input string, directory bool, requested string) (string, string,
 			return "composer"
 		case "conan.lock":
 			return "conan"
+		case "mix.lock":
+			return "mix"
 		case "Podfile.lock":
 			return "cocoapods"
 		}
@@ -659,6 +661,7 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		"Cargo.lock":           "cargo",
 		"composer.lock":        "composer",
 		"conan.lock":           "conan",
+		"mix.lock":             "mix",
 		"Podfile.lock":         "cocoapods",
 	} {
 		candidate := filepath.Join(input, name)
