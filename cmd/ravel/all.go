@@ -16,6 +16,7 @@ import (
 	"ravel/internal/collectors/cocoapods"
 	"ravel/internal/collectors/composer"
 	"ravel/internal/collectors/conan"
+	"ravel/internal/collectors/condalock"
 	"ravel/internal/collectors/deno"
 	"ravel/internal/collectors/dpkg"
 	"ravel/internal/collectors/gomod"
@@ -44,7 +45,7 @@ import (
 var staticManagers = []string{
 	"bundler", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
 	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "conan", "cocoapods",
-	"pipenv", "pdm", "go", "pub", "gradle", "maven", "sbt", "mix", "rebar", "cabal", "stack", "julia", "renv", "dpkg", "apk", "rpm", "oci",
+	"pipenv", "pdm", "go", "pub", "gradle", "maven", "sbt", "mix", "rebar", "cabal", "stack", "julia", "renv", "conda-lock", "dpkg", "apk", "rpm", "oci",
 }
 
 // runScanAll scans static manager inputs at the directory root, and nested
@@ -98,7 +99,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 			}
 			lock, _, err := selectLock(directory, true, manager)
 			if err != nil {
-				if manager == "pylock" && strings.Contains(err.Error(), "multiple pylock files") || manager == "rpm" && strings.Contains(err.Error(), "multiple RPM databases") || manager == "cabal" && strings.Contains(err.Error(), "multiple Cabal freeze files") || manager == "stack" && strings.Contains(err.Error(), "multiple Stack lockfiles") || manager == "julia" && strings.Contains(err.Error(), "multiple Julia manifests") || manager == "sbt" && strings.Contains(err.Error(), "multiple sbt lockfiles") {
+				if manager == "pylock" && strings.Contains(err.Error(), "multiple pylock files") || manager == "rpm" && strings.Contains(err.Error(), "multiple RPM databases") || manager == "cabal" && strings.Contains(err.Error(), "multiple Cabal freeze files") || manager == "stack" && strings.Contains(err.Error(), "multiple Stack lockfiles") || manager == "julia" && strings.Contains(err.Error(), "multiple Julia manifests") || manager == "sbt" && strings.Contains(err.Error(), "multiple sbt lockfiles") || manager == "conda-lock" && strings.Contains(err.Error(), "multiple conda-lock files") {
 					fmt.Fprintln(os.Stderr, "ravel:", err)
 					return 2
 				}
@@ -326,10 +327,10 @@ func scanDirectories(root string) ([]string, error) {
 
 func recursiveCandidate(name string) bool {
 	switch name {
-	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "packages.config", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "mix.lock", "rebar.lock", "cabal.project.freeze", "Manifest.toml", "JuliaManifest.toml", "renv.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout":
+	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "packages.config", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "mix.lock", "rebar.lock", "cabal.project.freeze", "Manifest.toml", "JuliaManifest.toml", "renv.lock", "conda-lock.yml", "conda-lock.yaml", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout":
 		return true
 	}
-	return isPylockName(name) || isJuliaManifestName(name) || strings.HasSuffix(name, ".sbt.lock") || strings.HasSuffix(name, ".project.freeze") || strings.HasSuffix(name, ".yaml.lock") || name == "requirements.txt"
+	return isPylockName(name) || isJuliaManifestName(name) || isCondaLockName(name) || strings.HasSuffix(name, ".sbt.lock") || strings.HasSuffix(name, ".project.freeze") || strings.HasSuffix(name, ".yaml.lock") || name == "requirements.txt"
 }
 
 func collectStatic(manager, lock, project string) (model.Document, error) {
@@ -403,6 +404,8 @@ func collectStatic(manager, lock, project string) (model.Document, error) {
 		return julia.CollectManifest(lock, project)
 	case "renv":
 		return renv.CollectLock(lock, project)
+	case "conda-lock":
+		return condalock.CollectLock(lock, project)
 	case "dpkg":
 		return dpkg.Collect(lock, project)
 	case "apk":

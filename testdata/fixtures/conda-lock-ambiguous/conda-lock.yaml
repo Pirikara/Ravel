@@ -1,0 +1,23 @@
+version: 1
+metadata:
+  platforms: [linux-64]
+package:
+  - name: shared
+    version: 1.0.0
+    manager: conda
+    platform: linux-64
+    dependencies: {}
+    url: https://conda.anaconda.org/conda-forge/linux-64/shared-1.0.0-0.conda
+  - name: shared
+    version: 2.0.0
+    manager: pip
+    platform: linux-64
+    dependencies: {}
+    url: https://files.pythonhosted.org/packages/shared-2.0.0.whl
+  - name: parent
+    version: 3.0.0
+    manager: conda
+    platform: linux-64
+    dependencies:
+      shared: '>=1'
+    url: https://conda.anaconda.org/conda-forge/linux-64/parent-3.0.0-0.conda

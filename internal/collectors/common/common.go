@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "conda_lock_package_invalid", "conda_lock_dependency_invalid", "conda_lock_platform_unlisted", "conda_virtual_requirement_unresolved", "conda_lock_constraints_unverified", "conda_lock_category_invalid":
+			doc.Coverage.GraphState = "partial"
+		case "conda_lock_hash_invalid", "conda_lock_source_unresolved", "conda_lock_distribution_bytes_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "rebar_lock_entry_invalid", "rebar_lock_source_unhandled", "rebar_dependency_graph_unavailable":
 			doc.Coverage.GraphState = "partial"
 		case "rebar_package_hash_unrepresented", "rebar_distribution_origin_unverified":

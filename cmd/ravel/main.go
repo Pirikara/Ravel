@@ -301,8 +301,8 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec; --network must be deny or allow")
 		return 2
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "rebar" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
-		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, conan, cocoapods, pipenv, pdm, go, pub, gradle, maven, sbt, mix, rebar, cabal, stack, julia, renv, dpkg, apk, rpm, oci, java-archive, python-wheel")
+	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "rebar" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "conda-lock" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
+		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, conan, cocoapods, pipenv, pdm, go, pub, gradle, maven, sbt, mix, rebar, cabal, stack, julia, renv, conda-lock, dpkg, apk, rpm, oci, java-archive, python-wheel")
 		return 2
 	}
 	if *all {
@@ -602,6 +602,8 @@ func selectLock(input string, directory bool, requested string) (string, string,
 			return "julia"
 		case "renv.lock":
 			return "renv"
+		case "conda-lock.yml", "conda-lock.yaml":
+			return "conda-lock"
 		case "Podfile.lock":
 			return "cocoapods"
 		}
@@ -610,6 +612,9 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		}
 		if isJuliaManifestName(name) {
 			return "julia"
+		}
+		if isCondaLockName(name) {
+			return "conda-lock"
 		}
 		if strings.HasSuffix(name, ".project.freeze") {
 			return "cabal"
@@ -884,6 +889,24 @@ func selectLock(input string, directory bool, requested string) (string, string,
 			candidates["julia"] = manifests[0]
 		}
 	}
+	if requested == "auto" || requested == "conda-lock" {
+		entries, err := os.ReadDir(input)
+		if err != nil {
+			return "", "", err
+		}
+		var locks []string
+		for _, entry := range entries {
+			if !entry.IsDir() && isCondaLockName(entry.Name()) {
+				locks = append(locks, entry.Name())
+			}
+		}
+		if len(locks) > 1 {
+			return "", "", errors.New("multiple conda-lock files found; scan a specific file")
+		}
+		if len(locks) == 1 {
+			candidates["conda-lock"] = filepath.Join(input, locks[0])
+		}
+	}
 	if requested != "auto" {
 		if lock := candidates[requested]; lock != "" {
 			return lock, requested, nil
@@ -927,6 +950,10 @@ var juliaManifestPattern = regexp.MustCompile(`^(?:Julia)?Manifest-v[0-9]+\.[0-9
 
 func isJuliaManifestName(name string) bool {
 	return name == "Manifest.toml" || name == "JuliaManifest.toml" || juliaManifestPattern.MatchString(name)
+}
+
+func isCondaLockName(name string) bool {
+	return name == "conda-lock.yml" || name == "conda-lock.yaml" || strings.HasSuffix(name, ".conda-lock.yml") || strings.HasSuffix(name, ".conda-lock.yaml")
 }
 
 func isPylockName(name string) bool {
