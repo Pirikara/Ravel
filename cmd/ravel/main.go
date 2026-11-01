@@ -301,8 +301,8 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec; --network must be deny or allow")
 		return 2
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
-		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, conan, cocoapods, pipenv, pdm, go, pub, gradle, maven, sbt, mix, cabal, stack, julia, renv, dpkg, apk, rpm, oci, java-archive, python-wheel")
+	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "rebar" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
+		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, conan, cocoapods, pipenv, pdm, go, pub, gradle, maven, sbt, mix, rebar, cabal, stack, julia, renv, dpkg, apk, rpm, oci, java-archive, python-wheel")
 		return 2
 	}
 	if *all {
@@ -594,6 +594,8 @@ func selectLock(input string, directory bool, requested string) (string, string,
 			return "conan"
 		case "mix.lock":
 			return "mix"
+		case "rebar.lock":
+			return "rebar"
 		case "cabal.project.freeze":
 			return "cabal"
 		case "Manifest.toml", "JuliaManifest.toml":
@@ -681,6 +683,7 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		"composer.lock":        "composer",
 		"conan.lock":           "conan",
 		"mix.lock":             "mix",
+		"rebar.lock":           "rebar",
 		"cabal.project.freeze": "cabal",
 		"stack.yaml.lock":      "stack",
 		"renv.lock":            "renv",

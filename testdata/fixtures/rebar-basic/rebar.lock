@@ -1,0 +1,5 @@
+{"1.2.0",
+ [{<<"certifi">>,{pkg,<<"certifi">>,<<"2.9.0">>},0},
+  {<<"bson">>,{git,"https://secret@example.com/org/bson-erlang.git?token=hidden",{ref,"14308ab927cfa69324742c3de720578094e0bb19"}},1}]}.
+[{pkg_hash,[{<<"certifi">>,<<"6F2A475689DD47F19FB74334859D460A2DC4E3252A3324BD2111B8F0429E7E21">>}]},
+ {pkg_hash_ext,[{<<"certifi">>,<<"266DA46BDB06D6C6D35FDE799BCB28D36D985D424AD7C08B5BB48F5B5CDD4641">>}]}].

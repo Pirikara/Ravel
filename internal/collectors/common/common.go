@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "rebar_lock_entry_invalid", "rebar_lock_source_unhandled", "rebar_dependency_graph_unavailable":
+			doc.Coverage.GraphState = "partial"
+		case "rebar_package_hash_unrepresented", "rebar_distribution_origin_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "sbt_dependency_graph_unavailable", "sbt_dependency_invalid", "sbt_configuration_invalid", "sbt_configuration_unavailable":
 			doc.Coverage.GraphState = "partial"
 		case "sbt_distribution_origin_unverified", "sbt_artifact_hash_unverified":

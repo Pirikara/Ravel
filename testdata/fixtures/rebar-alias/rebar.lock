@@ -1,0 +1,4 @@
+% Alias names and Hex package names can differ.
+{"1.1.0",
+ [{<<"my_certifi">>,{pkg,<<"certifi">>,<<"2.9.0">>},0},
+  {<<"idna">>,{pkg,<<"idna">>,<<"6.1.1">>},1}]}.
