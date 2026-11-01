@@ -1,0 +1,26 @@
+[workspace]
+platforms = ["linux-64", "osx-arm64"]
+
+[dependencies]
+python = "*"
+
+[target.unix.dependencies]
+zlib = "*"
+
+[feature.py.pypi-dependencies]
+pyparsing = "*"
+
+[environments.default]
+features = ["py"]
+
+[environments.default.target.linux-64.pypi-dependencies]
+mike = { git = "https://github.com/example/mike" }
+
+[environments.docs]
+no-default-feature = true
+
+[environments.docs.dependencies]
+zlib = "*"
+
+[environments.docs.pypi-dependencies]
+mike = "*"

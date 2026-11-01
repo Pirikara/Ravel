@@ -247,8 +247,10 @@ func CollectLock(filename, project string) (model.Document, error) {
 			doc.Edges = append(doc.Edges, model.Edge{From: parent.id, To: matches[0].id, Kind: "requires", Condition: "environment=" + parent.env + "; platform=" + parent.platform + "; constraint unverified", Evidence: evidence})
 		}
 	}
+	if err := addManifest(&doc, filename, lock, byScope); err != nil {
+		return model.Document{}, err
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues,
-		model.Issue{Code: "missing_direct_dependencies"},
 		model.Issue{Code: "pixi_requirement_constraints_unverified"},
 		model.Issue{Code: "pixi_distribution_bytes_unverified"},
 		model.Issue{Code: "manifest_freshness_unverified"})

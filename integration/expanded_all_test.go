@@ -42,7 +42,7 @@ func TestExpandedEcosystemsRecursiveScan(t *testing.T) {
 	if err := json.Unmarshal(out, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Coverage.Manager != "multi" || doc.Coverage.Packages != 30 || doc.Coverage.Edges != 14 || len(doc.Coverage.Inputs) != 7 || len(doc.Sources) != 9 {
+	if doc.Coverage.Manager != "multi" || doc.Coverage.Packages != 30 || doc.Coverage.Edges != 23 || len(doc.Coverage.Inputs) != 7 || len(doc.Sources) != 10 {
 		t.Fatalf("mixed coverage: %#v", doc.Coverage)
 	}
 	managers := map[string]bool{}
