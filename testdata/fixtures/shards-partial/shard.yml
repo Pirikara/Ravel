@@ -1,0 +1,5 @@
+name: partial
+version: 1.0.0
+dependencies:
+  missing:
+    github: example/missing

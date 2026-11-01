@@ -1,0 +1,10 @@
+name: example
+version: 1.0.0
+dependencies:
+  cli:
+    git: https://example.org/cli.git
+  minitest:
+    github: ysbaddaden/minitest.cr
+development_dependencies:
+  local:
+    path: ../local

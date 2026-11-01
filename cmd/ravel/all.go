@@ -27,14 +27,15 @@ import (
 	"ravel/internal/collectors/npm"
 	"ravel/internal/collectors/nuget"
 	"ravel/internal/collectors/oci"
-	"ravel/internal/collectors/pnpm"
 	"ravel/internal/collectors/pixi"
+	"ravel/internal/collectors/pnpm"
 	"ravel/internal/collectors/pub"
 	"ravel/internal/collectors/python"
 	"ravel/internal/collectors/rebar"
 	"ravel/internal/collectors/renv"
 	"ravel/internal/collectors/rpm"
 	"ravel/internal/collectors/sbt"
+	"ravel/internal/collectors/shards"
 	"ravel/internal/collectors/stack"
 	"ravel/internal/collectors/swiftpm"
 	"ravel/internal/collectors/yarn"
@@ -46,7 +47,7 @@ import (
 var staticManagers = []string{
 	"bundler", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
 	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "conan", "cocoapods",
-	"pipenv", "pdm", "go", "pub", "gradle", "maven", "sbt", "mix", "rebar", "cabal", "stack", "julia", "renv", "conda-lock", "pixi", "dpkg", "apk", "rpm", "oci",
+	"pipenv", "pdm", "go", "pub", "gradle", "maven", "sbt", "mix", "rebar", "shards", "cabal", "stack", "julia", "renv", "conda-lock", "pixi", "dpkg", "apk", "rpm", "oci",
 }
 
 // runScanAll scans static manager inputs at the directory root, and nested
@@ -328,7 +329,7 @@ func scanDirectories(root string) ([]string, error) {
 
 func recursiveCandidate(name string) bool {
 	switch name {
-	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "packages.config", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "mix.lock", "rebar.lock", "cabal.project.freeze", "Manifest.toml", "JuliaManifest.toml", "renv.lock", "conda-lock.yml", "conda-lock.yaml", "pixi.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout":
+	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "packages.config", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "mix.lock", "rebar.lock", "shard.lock", "cabal.project.freeze", "Manifest.toml", "JuliaManifest.toml", "renv.lock", "conda-lock.yml", "conda-lock.yaml", "pixi.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout":
 		return true
 	}
 	return isPylockName(name) || isJuliaManifestName(name) || isCondaLockName(name) || strings.HasSuffix(name, ".sbt.lock") || strings.HasSuffix(name, ".project.freeze") || strings.HasSuffix(name, ".yaml.lock") || name == "requirements.txt"
@@ -397,6 +398,8 @@ func collectStatic(manager, lock, project string) (model.Document, error) {
 		return mix.Collect(lock, project)
 	case "rebar":
 		return rebar.CollectLock(lock, project)
+	case "shards":
+		return shards.CollectLock(lock, project)
 	case "cabal":
 		return cabal.CollectFreeze(lock, project)
 	case "stack":

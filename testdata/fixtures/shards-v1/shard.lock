@@ -1,0 +1,8 @@
+version: 1.0
+shards:
+  legacy:
+    git: https://example.org/legacy.git
+    commit: abcdef1234567890abcdef1234567890abcdef12
+  hg_lib:
+    hg: https://example.org/hg-lib
+    version: 1.2.3

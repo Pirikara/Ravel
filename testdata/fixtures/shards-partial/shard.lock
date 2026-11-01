@@ -1,0 +1,7 @@
+version: 2.0
+shards:
+  bad_source:
+    github: invalid/path/extra
+    version: 1.0.0
+  no_version:
+    git: https://example.org/no-version.git

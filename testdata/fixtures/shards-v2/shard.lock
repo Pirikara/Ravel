@@ -1,0 +1,11 @@
+version: 2.0
+shards:
+  cli:
+    git: https://hidden:secret@example.org/cli.git?token=hidden
+    version: 1.1.0+git.commit.abcdef1234567890abcdef1234567890abcdef12
+  local:
+    path: ../local
+    version: 0.1.0
+  minitest:
+    github: ysbaddaden/minitest.cr
+    version: 0.3.0

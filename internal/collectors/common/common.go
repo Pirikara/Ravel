@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "shards_package_invalid", "shards_manifest_dependency_invalid", "shards_transitive_graph_unavailable":
+			doc.Coverage.GraphState = "partial"
+		case "shards_source_unresolved", "shards_distribution_bytes_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "pixi_package_unhandled", "pixi_package_identity_unresolved", "pixi_duplicate_package_record", "pixi_environment_invalid", "pixi_platform_invalid", "pixi_selected_package_unresolved", "pixi_duplicate_selection", "pixi_requirement_invalid", "pixi_virtual_requirement_unresolved", "pixi_requirement_constraints_unverified":
 			doc.Coverage.GraphState = "partial"
 		case "pixi_hash_invalid", "pixi_source_unresolved", "pixi_distribution_bytes_unverified":
