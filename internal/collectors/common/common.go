@@ -190,6 +190,10 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.GraphState = "partial"
 		case "conda_distribution_origin_unverified":
 			doc.Coverage.OriginState = "partial"
+		case "micromamba_runtime_graph_unavailable":
+			doc.Coverage.GraphState = "partial"
+		case "micromamba_runtime_origin_unavailable":
+			doc.Coverage.OriginState = "partial"
 		case "conda_installed_metadata_invalid", "conda_installed_metadata_oversized", "conda_installed_metadata_link_unresolved", "conda_installed_metadata_unsupported":
 			doc.Coverage.GraphState = "partial"
 			doc.Coverage.OriginState = "partial"

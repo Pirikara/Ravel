@@ -260,6 +260,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var httpdBinary *httpdBinaryState
 	var haproxyBinary *haproxyBinaryState
 	var memcachedBinary *memcachedBinaryState
+	var micromambaBinary *micromambaBinaryState
 	var phpCLIBinary *phpCLIBinaryState
 	var phpFPMBinary *phpFPMBinaryState
 	var postgresBinary *postgresBinaryState
@@ -273,7 +274,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
-		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, httpdBinaryPath, haproxyBinaryPath, memcachedBinaryPath, phpCLIBinaryPath, phpFPMBinaryPath, postgresBinaryPath, redisBinaryPath} {
+		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, httpdBinaryPath, haproxyBinaryPath, memcachedBinaryPath, micromambaBinaryPath, phpCLIBinaryPath, phpFPMBinaryPath, postgresBinaryPath, redisBinaryPath} {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -447,6 +448,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			if removed == "." || removed == memcachedBinaryPath || strings.HasPrefix(memcachedBinaryPath, removed+"/") {
 				memcachedBinary = nil
+			}
+			if removed == "." || removed == micromambaBinaryPath || strings.HasPrefix(micromambaBinaryPath, removed+"/") {
+				micromambaBinary = nil
 			}
 			if removed == "." || removed == phpCLIBinaryPath || strings.HasPrefix(phpCLIBinaryPath, removed+"/") {
 				phpCLIBinary = nil
@@ -663,6 +667,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if change.memcachedBinary != nil {
 			memcachedBinary = change.memcachedBinary
 		}
+		if change.micromambaBinary != nil {
+			micromambaBinary = change.micromambaBinary
+		}
 		if change.phpCLIBinary != nil {
 			phpCLIBinary = change.phpCLIBinary
 		}
@@ -817,7 +824,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(condaMetadata) == 0 && len(dotnetDeps) == 0 && len(dotnetAssemblies) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(condaMetadata) == 0 && len(dotnetDeps) == 0 && len(dotnetAssemblies) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && micromambaBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -1325,6 +1332,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 		}
 	}
+	if micromambaBinary != nil {
+		if micromambaBinary.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "micromamba_runtime_" + micromambaBinary.status, Name: micromambaBinaryPath})
+		} else {
+			installed := micromambaBinary.document
+			doc.Components = append(doc.Components, installed.Components...)
+			doc.Edges = append(doc.Edges, installed.Edges...)
+			doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
+		}
+	}
 	if phpCLIBinary != nil {
 		if phpCLIBinary.status != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "php_cli_" + phpCLIBinary.status, Name: phpCLIBinaryPath})
@@ -1508,6 +1525,7 @@ type layerChange struct {
 	httpdBinary              *httpdBinaryState
 	haproxyBinary            *haproxyBinaryState
 	memcachedBinary          *memcachedBinaryState
+	micromambaBinary         *micromambaBinaryState
 	phpCLIBinary             *phpCLIBinaryState
 	phpFPMBinary             *phpFPMBinaryState
 	postgresBinary           *postgresBinaryState
@@ -2210,6 +2228,28 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			change.whiteouts = append(change.whiteouts, name)
 			continue
 		}
+		if name == micromambaBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
+			if change.micromambaBinary != nil {
+				return layerChange{}, "", errors.New("duplicate OCI micromamba executable entry")
+			}
+			if header.Size > maxMicromambaBinaryBytes {
+				change.micromambaBinary = &micromambaBinaryState{status: "oversized"}
+			} else {
+				data, err := io.ReadAll(io.LimitReader(reader, maxMicromambaBinaryBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI micromamba executable entry")
+				}
+				input := "oci:" + item.Digest + "!/" + name
+				binaryDoc, err := inspectMicromambaBinary(data, input, project, architecture)
+				if err != nil {
+					change.micromambaBinary = &micromambaBinaryState{status: "invalid"}
+				} else {
+					change.micromambaBinary = &micromambaBinaryState{document: binaryDoc}
+				}
+			}
+			change.whiteouts = append(change.whiteouts, name)
+			continue
+		}
 		if name == phpCLIBinaryPath && (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) {
 			if change.phpCLIBinary != nil {
 				return layerChange{}, "", errors.New("duplicate OCI PHP CLI executable entry")
@@ -2498,6 +2538,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(memcachedBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Memcached executable beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	if change.micromambaBinary != nil {
+		for ancestor := path.Dir(micromambaBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains micromamba executable beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}
