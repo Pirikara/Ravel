@@ -19,6 +19,7 @@ import (
 	"ravel/internal/collectors/apk"
 	"ravel/internal/collectors/common"
 	"ravel/internal/collectors/composer"
+	"ravel/internal/collectors/conda"
 	"ravel/internal/collectors/dpkg"
 	"ravel/internal/collectors/javaarchive"
 	"ravel/internal/collectors/npm"
@@ -41,6 +42,8 @@ const (
 	maxPythonEggRequirementsLinesTotal = 100000
 	maxComposerInstalledFiles          = 100
 	maxComposerInstalledTotal          = 64 << 20
+	maxCondaMetadataFiles              = 10000
+	maxCondaMetadataTotal              = 64 << 20
 	maxDotnetDepsFiles                 = 500
 	maxDotnetDepsTotal                 = 64 << 20
 	maxNodeMetadataFiles               = 20000
@@ -129,6 +132,12 @@ type pythonEggRequirementsState struct {
 }
 
 type composerInstalledState struct {
+	data   []byte
+	layer  string
+	status string
+}
+
+type condaMetadataState struct {
 	data   []byte
 	layer  string
 	status string
@@ -231,6 +240,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	pythonEggRequirementsBytes := 0
 	pythonEggRequirementsLines := 0
 	composerInstalled := map[string]composerInstalledState{}
+	condaMetadata := map[string]condaMetadataState{}
 	composerPackageManifests := map[string]composerPackageManifestState{}
 	composerPackageLimited := false
 	dotnetDeps := map[string]dotnetDepsState{}
@@ -298,6 +308,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for name := range composerInstalled {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
+		for name := range condaMetadata {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
 				if current == "." {
@@ -461,6 +479,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(composerInstalled, name)
 				}
 			}
+			for name := range condaMetadata {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(condaMetadata, name)
+				}
+			}
 			for name := range composerPackageManifests {
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 					delete(composerPackageManifests, name)
@@ -551,6 +574,10 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		for name, state := range change.composerInstalled {
 			state.layer = layer.Digest
 			composerInstalled[name] = state
+		}
+		for name, state := range change.condaMetadata {
+			state.layer = layer.Digest
+			condaMetadata[name] = state
 		}
 		composerPackageNames := make([]string, 0, len(change.composerPackageManifests))
 		for name := range change.composerPackageManifests {
@@ -670,6 +697,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if len(composerInstalled) > maxComposerInstalledFiles {
 			return model.Document{}, errors.New("OCI image has too many Composer installed manifests")
 		}
+		if len(condaMetadata) > maxCondaMetadataFiles {
+			return model.Document{}, errors.New("OCI image has too many Conda package records")
+		}
+		condaBytes := 0
+		for _, state := range condaMetadata {
+			condaBytes += len(state.data)
+		}
+		if condaBytes > maxCondaMetadataTotal {
+			return model.Document{}, errors.New("OCI image Conda package records exceeded size limit")
+		}
 		if len(dotnetDeps) > maxDotnetDepsFiles {
 			return model.Document{}, errors.New("OCI image has too many .NET deps manifests")
 		}
@@ -780,7 +817,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(dotnetAssemblies) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(condaMetadata) == 0 && len(dotnetDeps) == 0 && len(dotnetAssemblies) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -862,6 +899,32 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Origins = append(doc.Origins, database.Origins...)
 		doc.Development = append(doc.Development, database.Development...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, database.Coverage.Issues...)
+	}
+	condaNames := make([]string, 0, len(condaMetadata))
+	for name := range condaMetadata {
+		condaNames = append(condaNames, name)
+	}
+	sort.Strings(condaNames)
+	condaFound := false
+	for _, name := range condaNames {
+		state := condaMetadata[name]
+		if state.status != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conda_installed_metadata_" + state.status, Name: name})
+			continue
+		}
+		installed, err := conda.CollectInstalledMetadata(state.data, "oci:"+state.layer+"!/"+name, project, name)
+		if err != nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conda_installed_metadata_invalid", Name: name})
+			continue
+		}
+		condaFound = true
+		doc.Components = append(doc.Components, installed.Components...)
+		doc.Edges = append(doc.Edges, installed.Edges...)
+	}
+	if condaFound {
+		doc.Coverage.Issues = append(doc.Coverage.Issues,
+			model.Issue{Code: "conda_dependency_graph_unavailable"},
+			model.Issue{Code: "conda_distribution_origin_unverified"})
 	}
 	pythonNames := make([]string, 0, len(pythonMetadata))
 	for name := range pythonMetadata {
@@ -1426,6 +1489,7 @@ type layerChange struct {
 	pythonEggRequirements    map[string]pythonEggRequirementsState
 	pipVendor                map[string][]byte
 	composerInstalled        map[string]composerInstalledState
+	condaMetadata            map[string]condaMetadataState
 	composerPackageManifests map[string]composerPackageManifestState
 	composerPackageLimited   bool
 	dotnetDeps               map[string]dotnetDepsState
@@ -1489,7 +1553,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
+	change := layerChange{files: map[string]databaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, condaMetadata: map[string]condaMetadataState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
 	seenDatabase := map[string]bool{}
 	seenDPKGLists := map[string]bool{}
 	parentReplaced := map[string]bool{}
@@ -1502,6 +1566,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	pythonEggLines := 0
 	pipVendorBytes := 0
 	composerInstalledBytes := 0
+	condaMetadataBytes := 0
 	composerPackageBytes := 0
 	dotnetDepsBytes := 0
 	dotnetAssemblyBytes := 0
@@ -1644,6 +1709,32 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			pipVendorBytes += len(data)
 			if len(change.pipVendor) > maxPipVendorFiles || pipVendorBytes > maxPipVendorFiles*maxPipVendorBytes {
 				return layerChange{}, "", errors.New("OCI layer has too much pip vendor metadata")
+			}
+			continue
+		}
+		if conda.IsInstalledMetadataPath(name) {
+			if _, duplicate := change.condaMetadata[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI Conda package record: %s", name)
+			}
+			state := condaMetadataState{}
+			switch {
+			case header.Typeflag == tar.TypeSymlink || header.Typeflag == tar.TypeLink:
+				state.status = "link_unresolved"
+			case header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA:
+				state.status = "unsupported"
+			case header.Size > conda.MaxInstalledMetadataBytes:
+				state.status = "oversized"
+			default:
+				data, err := io.ReadAll(io.LimitReader(reader, conda.MaxInstalledMetadataBytes+1))
+				if err != nil || len(data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI Conda package record")
+				}
+				state.data = data
+				condaMetadataBytes += len(data)
+			}
+			change.condaMetadata[name] = state
+			if len(change.condaMetadata) > maxCondaMetadataFiles || condaMetadataBytes > maxCondaMetadataTotal {
+				return layerChange{}, "", errors.New("OCI layer has too much Conda package metadata")
 			}
 			continue
 		}
@@ -2302,6 +2393,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains Composer metadata beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	for name := range change.condaMetadata {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains Conda metadata beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}

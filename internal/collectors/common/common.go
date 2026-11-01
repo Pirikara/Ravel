@@ -137,6 +137,13 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "conda_dependency_graph_unavailable":
+			doc.Coverage.GraphState = "partial"
+		case "conda_distribution_origin_unverified":
+			doc.Coverage.OriginState = "partial"
+		case "conda_installed_metadata_invalid", "conda_installed_metadata_oversized", "conda_installed_metadata_link_unresolved", "conda_installed_metadata_unsupported":
+			doc.Coverage.GraphState = "partial"
+			doc.Coverage.OriginState = "partial"
 		case "dotnet_standalone_assembly_graph_unavailable":
 			doc.Coverage.GraphState = "partial"
 		case "dotnet_standalone_assembly_origin_unavailable":

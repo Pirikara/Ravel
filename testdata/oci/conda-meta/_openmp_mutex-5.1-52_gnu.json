@@ -1,0 +1,1 @@
+{"name":"_openmp_mutex","version":"5.1","build":"52_gnu","build_number":0,"subdir":"linux-aarch64","depends":["_libgcc_mutex 0.1 main"]}
