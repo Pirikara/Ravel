@@ -2,7 +2,7 @@
 
 Release tags use semantic versions. Beta releases use `vX.Y.Z-beta.N` and are marked as GitHub prereleases.
 
-1. Confirm `LICENSE` is present, the working tree is clean, and CI has passed on the intended commit.
+1. Confirm `LICENSE` and `NOTICE` are present, the working tree is clean, and CI has passed on the intended commit.
 2. Run `go test ./... -count=1` and `go vet ./...`.
 3. Run `bash scripts/build-release.sh vX.Y.Z-beta.N --check` to compile all supported targets.
 4. Tag the verified commit and push the tag.

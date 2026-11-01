@@ -8,8 +8,8 @@ fi
 
 release_version="$1"
 release_mode="$2"
-if [[ "$release_mode" != "--check" && ! -f LICENSE ]]; then
-  echo "release archives require LICENSE" >&2
+if [[ "$release_mode" != "--check" && ( ! -f LICENSE || ! -f NOTICE ) ]]; then
+  echo "release archives require LICENSE and NOTICE" >&2
   exit 1
 fi
 if [[ "$release_mode" != "--check" ]]; then
@@ -83,7 +83,7 @@ for target in "${release_targets[@]}"; do
     continue
   fi
 
-  cp README.md LICENSE THIRD_PARTY_NOTICES.md "$release_dir/"
+  cp README.md LICENSE NOTICE THIRD_PARTY_NOTICES.md "$release_dir/"
   cp -R "$release_license_dir" "$release_dir/"
   if [[ "$release_os" == "windows" ]]; then
     (cd "$release_tmp" && zip -q -r "$release_output/$release_name.zip" "$release_name")
