@@ -15,9 +15,11 @@ const (
 )
 
 type dotnetAssemblyState struct {
-	digest string
-	layer  string
-	status string
+	digest  string
+	layer   string
+	name    string
+	version string
+	status  string
 }
 
 func inspectDotnetAssembly(data []byte) dotnetAssemblyState {
@@ -25,7 +27,9 @@ func inspectDotnetAssembly(data []byte) dotnetAssemblyState {
 		return dotnetAssemblyState{status: "invalid"}
 	}
 	hash := sha256.Sum256(data)
-	return dotnetAssemblyState{digest: "sha256:" + hex.EncodeToString(hash[:])}
+	state := dotnetAssemblyState{digest: "sha256:" + hex.EncodeToString(hash[:])}
+	state.name, state.version = managedPEVersion(data)
+	return state
 }
 
 // isManagedAssembly checks the PE CLR directory and CLI metadata root with

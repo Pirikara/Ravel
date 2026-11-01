@@ -76,6 +76,50 @@ func TestOCIDotnetManagedAssemblyEvidence(t *testing.T) {
 	}
 }
 
+func TestOCIDotnetStandaloneAssembly(t *testing.T) {
+	assembly := dotnetAssemblyFixture(t, "Acme.Runtime.dll")
+	for _, tc := range []struct {
+		name, filename string
+		layers         []ociTestLayer
+		wantVersion    string
+		wantIssue      string
+	}{
+		{"versioned", "app/plugins/Acme.Runtime.dll", []ociTestLayer{{entries: []ociTestEntry{{name: "app/plugins/Acme.Runtime.dll", data: assembly}}}}, "1.2.3", ""},
+		{"renamed", "app/plugins/Renamed.dll", []ociTestLayer{{entries: []ociTestEntry{{name: "app/plugins/Renamed.dll", data: assembly}}}}, "", "dotnet_standalone_assembly_identity_unverified"},
+		{"satellite", "app/plugins/Acme.Runtime.resources.dll", []ociTestLayer{{entries: []ociTestEntry{{name: "app/plugins/Acme.Runtime.resources.dll", data: assembly}}}}, "", ""},
+		{"whiteout", "app/plugins/Acme.Runtime.dll", []ociTestLayer{
+			{entries: []ociTestEntry{{name: "app/plugins/Acme.Runtime.dll", data: assembly}}},
+			{entries: []ociTestEntry{{name: "app/plugins/.wh.Acme.Runtime.dll"}}},
+		}, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			layout := ociTestLayout(t)
+			ociTestIndex(t, layout, ociTestImage(t, layout, "linux", "amd64", tc.layers))
+			doc, output, code := ociTestScan(t, layout)
+			if code != 0 {
+				t.Fatalf("standalone assembly scan failed: code=%d output=%s", code, output)
+			}
+			if doc.Coverage.Packages != 0 && tc.wantVersion == "" || doc.Coverage.Packages != 1 && tc.wantVersion != "" {
+				t.Fatalf("standalone assembly component count incorrect: %#v", doc.Coverage)
+			}
+			if tc.wantIssue != "" && !dotnetIssue(doc, tc.wantIssue) {
+				t.Fatalf("standalone assembly issue absent: %#v", doc.Coverage.Issues)
+			}
+			if tc.name == "satellite" && dotnetIssue(doc, "dotnet_standalone_assembly_identity_unverified") {
+				t.Fatalf("localized resource DLL was treated as a separate package: %#v", doc.Coverage.Issues)
+			}
+			if tc.wantVersion == "" {
+				return
+			}
+			component := dotnetComponent(t, doc, "Acme.Runtime")
+			hash := sha256.Sum256(assembly)
+			if component.Version != tc.wantVersion || component.PURL != "" || len(component.Hashes) != 1 || component.Hashes[0].Content != hex.EncodeToString(hash[:]) || component.Evidence[0].Method != "pe-version-resource" || !strings.HasSuffix(component.Evidence[0].InputPath, "!/"+tc.filename) || !dotnetIssue(doc, "dotnet_standalone_assembly_graph_unavailable") || !dotnetIssue(doc, "dotnet_standalone_assembly_origin_unavailable") {
+				t.Fatalf("standalone assembly identity or limits incorrect: %#v %#v", component, doc.Coverage)
+			}
+		})
+	}
+}
+
 func TestOCIDotnetManagedAssemblySizeBoundary(t *testing.T) {
 	deps := dotnetAssemblyFixture(t, "app.deps.json")
 	base := dotnetAssemblyFixture(t, "Acme.Runtime.dll")

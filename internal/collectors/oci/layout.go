@@ -780,7 +780,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(dotnetDeps) == 0 && len(dotnetAssemblies) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -1027,7 +1027,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Edges = append(doc.Edges, installed.Edges...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
-	if dotnetAssemblyLimited && len(dotnetDeps) > 0 {
+	collectStandaloneDotnetAssemblies(&doc, dotnetAssemblies, assemblyUsers)
+	if dotnetAssemblyLimited {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dotnet_runtime_assembly_scan_limited"})
 	}
 	nodeNames := make([]string, 0, len(nodeMetadata))

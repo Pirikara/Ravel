@@ -17,6 +17,44 @@ func TestManagedAssemblyHeaders(t *testing.T) {
 	if !isManagedAssembly(fixture) || inspectDotnetAssembly(fixture).digest == "" {
 		t.Fatal("generated .NET assembly was not recognized")
 	}
+	if state := inspectDotnetAssembly(fixture); state.name != "Acme.Runtime" || state.version != "1.2.3" {
+		t.Fatalf("generated VERSIONINFO was not read: %#v", state)
+	}
+	for _, tc := range []struct {
+		name   string
+		change func([]byte)
+	}{
+		{"resource outside file", func(data []byte) {
+			pe := binary.LittleEndian.Uint32(data[0x3c:])
+			binary.LittleEndian.PutUint32(data[pe+24+96+2*8:], ^uint32(0))
+		}},
+		{"resource too large", func(data []byte) {
+			pe := binary.LittleEndian.Uint32(data[0x3c:])
+			binary.LittleEndian.PutUint32(data[pe+24+96+2*8+4:], 1<<20+1)
+		}},
+		{"invalid version root", func(data []byte) {
+			key := bytes.Index(data, []byte{'V', 0, 'S', 0, '_', 0, 'V', 0})
+			if key < 6 {
+				t.Fatal("fixture has no version resource")
+			}
+			binary.LittleEndian.PutUint16(data[key-6:], 0)
+		}},
+		{"invalid fixed signature", func(data []byte) {
+			signature := bytes.Index(data, []byte{0xbd, 0x04, 0xef, 0xfe})
+			if signature < 0 {
+				t.Fatal("fixture has no VS_FIXEDFILEINFO signature")
+			}
+			data[signature] = 0
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := append([]byte(nil), fixture...)
+			tc.change(data)
+			if name, version := managedPEVersion(data); name != "" || version != "" {
+				t.Fatalf("malformed VERSIONINFO was accepted: %q %q", name, version)
+			}
+		})
+	}
 	for _, tc := range []struct {
 		name   string
 		change func([]byte) []byte
