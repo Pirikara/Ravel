@@ -137,6 +137,11 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "julia_manifest_entry_invalid", "julia_dependency_invalid":
+			doc.Coverage.GraphState = "partial"
+			doc.Coverage.OriginState = "partial"
+		case "julia_distribution_origin_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "stack_lock_selection_unverified", "stack_snapshot_contents_unavailable", "stack_lock_package_invalid", "stack_lock_package_unhandled":
 			doc.Coverage.GraphState = "partial"
 		case "stack_distribution_bytes_unverified":

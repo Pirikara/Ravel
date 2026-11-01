@@ -1,0 +1,5 @@
+name = "Versioned"
+uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+
+[deps]
+Alpha = "11111111-1111-4111-8111-111111111111"
