@@ -1,0 +1,9 @@
+{
+  "version": "0.4",
+  "graph_lock": {
+    "nodes": {
+      "0": {"path": "conanfile.txt", "requires": ["1"]},
+      "1": {"ref": "lib/2.0", "requires": ["99"], "context": "host"}
+    }
+  }
+}

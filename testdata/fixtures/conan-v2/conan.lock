@@ -1,0 +1,11 @@
+{
+  "version": "0.5",
+  "requires": [
+    "matrix/1.0#0123456789abcdef%1675278901.123",
+    "matrix/1.1#abcdef0123456789%1675294635.456",
+    "sound/2.0@acme/stable#1234567890abcdef"
+  ],
+  "build_requires": ["cmake/3.25.1#fedcba9876543210"],
+  "python_requires": ["generator/0.2#1234567812345678"],
+  "config_requires": []
+}

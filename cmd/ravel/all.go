@@ -14,6 +14,7 @@ import (
 	"ravel/internal/collectors/cargo"
 	"ravel/internal/collectors/cocoapods"
 	"ravel/internal/collectors/composer"
+	"ravel/internal/collectors/conan"
 	"ravel/internal/collectors/deno"
 	"ravel/internal/collectors/dpkg"
 	"ravel/internal/collectors/gomod"
@@ -35,7 +36,7 @@ import (
 
 var staticManagers = []string{
 	"bundler", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
-	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "cocoapods",
+	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "conan", "cocoapods",
 	"pipenv", "pdm", "go", "pub", "gradle", "maven", "dpkg", "apk", "rpm", "oci",
 }
 
@@ -318,7 +319,7 @@ func scanDirectories(root string) ([]string, error) {
 
 func recursiveCandidate(name string) bool {
 	switch name {
-	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout":
+	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout":
 		return true
 	}
 	return isPylockName(name) || name == "requirements.txt"
@@ -359,6 +360,8 @@ func collectStatic(manager, lock, project string) (model.Document, error) {
 		return cargo.Collect(lock, project)
 	case "composer":
 		return composer.Collect(lock, project)
+	case "conan":
+		return conan.Collect(lock, project)
 	case "cocoapods":
 		return cocoapods.Collect(lock, project)
 	case "pipenv":

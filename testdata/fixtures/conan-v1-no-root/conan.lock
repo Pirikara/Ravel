@@ -1,0 +1,9 @@
+{
+  "version": "0.4",
+  "graph_lock": {
+    "nodes": {
+      "1": {"ref": "app/1.0", "requires": ["2"], "context": "host"},
+      "2": {"ref": "lib/2.0", "context": "host"}
+    }
+  }
+}

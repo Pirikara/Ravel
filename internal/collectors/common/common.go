@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "conan_lock_selection_unverified", "conan_dependency_graph_unavailable", "conan_invalid_reference", "conan_unresolved_node":
+			doc.Coverage.GraphState = "partial"
+		case "conan_distribution_origin_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "conda_dependency_graph_unavailable":
 			doc.Coverage.GraphState = "partial"
 		case "conda_distribution_origin_unverified":

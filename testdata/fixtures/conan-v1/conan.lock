@@ -1,0 +1,11 @@
+{
+  "version": "0.4",
+  "graph_lock": {
+    "nodes": {
+      "0": {"path": "conanfile.txt", "requires": ["1", "3"], "context": "host"},
+      "1": {"ref": "openssl/3.0.5@acme/stable#0123456789abcdef", "requires": ["2"], "package_id": "abc123", "context": "host"},
+      "2": {"ref": "zlib/1.2.13#abcdef0123456789", "context": "host"},
+      "3": {"ref": "cmake/3.25.1", "context": "build"}
+    }
+  }
+}
