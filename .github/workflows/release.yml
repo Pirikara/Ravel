@@ -84,22 +84,24 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  draft:
-    if: github.event_name == 'push'
+  stage:
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
-      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/download-artifact@v8.0.2
         with:
           name: release-${{ env.RELEASE_TAG }}
       - name: Verify downloaded assets
-        working-directory: dist
-        run: shasum -a 256 -c SHA256SUMS
+        run: |
+          test -s release-notes.md
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 6
+          (cd dist && shasum -a 256 -c SHA256SUMS)
       - name: Create draft prerelease
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
