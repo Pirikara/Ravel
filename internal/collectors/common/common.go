@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "pixi_package_unhandled", "pixi_package_identity_unresolved", "pixi_duplicate_package_record", "pixi_environment_invalid", "pixi_platform_invalid", "pixi_selected_package_unresolved", "pixi_duplicate_selection", "pixi_requirement_invalid", "pixi_virtual_requirement_unresolved", "pixi_requirement_constraints_unverified":
+			doc.Coverage.GraphState = "partial"
+		case "pixi_hash_invalid", "pixi_source_unresolved", "pixi_distribution_bytes_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "conda_lock_package_invalid", "conda_lock_dependency_invalid", "conda_lock_platform_unlisted", "conda_virtual_requirement_unresolved", "conda_lock_constraints_unverified", "conda_lock_category_invalid":
 			doc.Coverage.GraphState = "partial"
 		case "conda_lock_hash_invalid", "conda_lock_source_unresolved", "conda_lock_distribution_bytes_unverified":

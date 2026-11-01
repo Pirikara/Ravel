@@ -1,0 +1,14 @@
+version: 7
+environments:
+  default:
+    packages:
+      linux-64:
+        - pypi: https://hidden:secret@files.pythonhosted.org/packages/example/demo-1.0-py3-none-any.whl?token=hidden
+        - pypi: https://example.org/missing-1.0.whl
+packages:
+  - pypi: https://hidden:secret@files.pythonhosted.org/packages/example/demo-1.0-py3-none-any.whl?token=hidden
+    name: demo
+    version: "1.0"
+    sha256: bad
+    requires_dist:
+      - missing>=1

@@ -13,7 +13,7 @@ import (
 
 func TestExpandedEcosystemsRecursiveScan(t *testing.T) {
 	root := t.TempDir()
-	for _, fixture := range []string{"julia-v2", "renv-basic", "sbt-basic", "rebar-basic", "conda-lock-basic"} {
+	for _, fixture := range []string{"julia-v2", "renv-basic", "sbt-basic", "rebar-basic", "conda-lock-basic", "pixi-v7"} {
 		source := filepath.Join("..", "testdata", "fixtures", fixture)
 		destination := filepath.Join(root, fixture)
 		if err := os.Mkdir(destination, 0o755); err != nil {
@@ -42,14 +42,14 @@ func TestExpandedEcosystemsRecursiveScan(t *testing.T) {
 	if err := json.Unmarshal(out, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Coverage.Manager != "multi" || doc.Coverage.Packages != 18 || doc.Coverage.Edges != 8 || len(doc.Coverage.Inputs) != 5 || len(doc.Sources) != 6 {
+	if doc.Coverage.Manager != "multi" || doc.Coverage.Packages != 27 || doc.Coverage.Edges != 11 || len(doc.Coverage.Inputs) != 6 || len(doc.Sources) != 7 {
 		t.Fatalf("mixed coverage: %#v", doc.Coverage)
 	}
 	managers := map[string]bool{}
 	for _, input := range doc.Coverage.Inputs {
 		managers[input.Manager] = true
 	}
-	for _, manager := range []string{"julia", "renv", "sbt", "rebar", "conda-lock"} {
+	for _, manager := range []string{"julia", "renv", "sbt", "rebar", "conda-lock", "pixi"} {
 		if !managers[manager] {
 			t.Fatalf("missing %s in mixed scan: %#v", manager, doc.Coverage.Inputs)
 		}
