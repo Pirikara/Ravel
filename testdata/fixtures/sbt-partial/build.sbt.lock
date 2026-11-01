@@ -1,0 +1,19 @@
+{
+  "lockVersion": 1,
+  "configurations": ["compile"],
+  "dependencies": [
+    {
+      "org": "org.example",
+      "name": "valid",
+      "version": "1.0.0",
+      "artifacts": [{"name": "valid.jar", "hash": "sha1:invalid"}],
+      "configurations": ["compile"]
+    },
+    {
+      "org": "org.example",
+      "name": "broken",
+      "version": "",
+      "configurations": ["compile"]
+    }
+  ]
+}

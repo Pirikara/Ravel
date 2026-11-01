@@ -1,0 +1,20 @@
+{
+  "lockVersion": 1,
+  "configurations": ["compile", "test"],
+  "dependencies": [
+    {
+      "org": "org.example",
+      "name": "shared",
+      "version": "1.0.0",
+      "artifacts": [{"name": "shared.jar", "hash": "sha1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],
+      "configurations": ["compile"]
+    },
+    {
+      "org": "org.example",
+      "name": "shared",
+      "version": "2.0.0",
+      "artifacts": [{"name": "shared.jar", "hash": "sha1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],
+      "configurations": ["test"]
+    }
+  ]
+}

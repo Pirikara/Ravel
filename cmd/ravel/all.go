@@ -31,6 +31,7 @@ import (
 	"ravel/internal/collectors/python"
 	"ravel/internal/collectors/renv"
 	"ravel/internal/collectors/rpm"
+	"ravel/internal/collectors/sbt"
 	"ravel/internal/collectors/stack"
 	"ravel/internal/collectors/swiftpm"
 	"ravel/internal/collectors/yarn"
@@ -42,7 +43,7 @@ import (
 var staticManagers = []string{
 	"bundler", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
 	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "conan", "cocoapods",
-	"pipenv", "pdm", "go", "pub", "gradle", "maven", "mix", "cabal", "stack", "julia", "renv", "dpkg", "apk", "rpm", "oci",
+	"pipenv", "pdm", "go", "pub", "gradle", "maven", "sbt", "mix", "cabal", "stack", "julia", "renv", "dpkg", "apk", "rpm", "oci",
 }
 
 // runScanAll scans static manager inputs at the directory root, and nested
@@ -96,7 +97,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 			}
 			lock, _, err := selectLock(directory, true, manager)
 			if err != nil {
-				if manager == "pylock" && strings.Contains(err.Error(), "multiple pylock files") || manager == "rpm" && strings.Contains(err.Error(), "multiple RPM databases") || manager == "cabal" && strings.Contains(err.Error(), "multiple Cabal freeze files") || manager == "stack" && strings.Contains(err.Error(), "multiple Stack lockfiles") || manager == "julia" && strings.Contains(err.Error(), "multiple Julia manifests") {
+				if manager == "pylock" && strings.Contains(err.Error(), "multiple pylock files") || manager == "rpm" && strings.Contains(err.Error(), "multiple RPM databases") || manager == "cabal" && strings.Contains(err.Error(), "multiple Cabal freeze files") || manager == "stack" && strings.Contains(err.Error(), "multiple Stack lockfiles") || manager == "julia" && strings.Contains(err.Error(), "multiple Julia manifests") || manager == "sbt" && strings.Contains(err.Error(), "multiple sbt lockfiles") {
 					fmt.Fprintln(os.Stderr, "ravel:", err)
 					return 2
 				}
@@ -327,7 +328,7 @@ func recursiveCandidate(name string) bool {
 	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "packages.config", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "mix.lock", "cabal.project.freeze", "Manifest.toml", "JuliaManifest.toml", "renv.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout":
 		return true
 	}
-	return isPylockName(name) || isJuliaManifestName(name) || strings.HasSuffix(name, ".project.freeze") || strings.HasSuffix(name, ".yaml.lock") || name == "requirements.txt"
+	return isPylockName(name) || isJuliaManifestName(name) || strings.HasSuffix(name, ".sbt.lock") || strings.HasSuffix(name, ".project.freeze") || strings.HasSuffix(name, ".yaml.lock") || name == "requirements.txt"
 }
 
 func collectStatic(manager, lock, project string) (model.Document, error) {
@@ -387,6 +388,8 @@ func collectStatic(manager, lock, project string) (model.Document, error) {
 			return maven.CollectPOM(lock, project)
 		}
 		return maven.CollectTree(lock, project)
+	case "sbt":
+		return sbt.CollectLock(lock, project)
 	case "mix":
 		return mix.Collect(lock, project)
 	case "cabal":

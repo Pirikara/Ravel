@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "sbt_dependency_graph_unavailable", "sbt_dependency_invalid", "sbt_configuration_invalid", "sbt_configuration_unavailable":
+			doc.Coverage.GraphState = "partial"
+		case "sbt_distribution_origin_unverified", "sbt_artifact_hash_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "renv_package_invalid", "renv_requirements_invalid", "renv_requirements_unavailable":
 			doc.Coverage.GraphState = "partial"
 		case "renv_distribution_origin_unverified", "renv_repository_unresolved", "renv_source_unverified":
