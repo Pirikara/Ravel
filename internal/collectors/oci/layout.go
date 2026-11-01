@@ -1607,7 +1607,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		if entries > maxLayerEntries {
 			return layerChange{}, "", errors.New("OCI layer has too many entries")
 		}
-		name, err := cleanTarPath(header.Name)
+		name, err := cleanLayerTarPath(header.Name)
 		if err != nil {
 			return layerChange{}, "", err
 		}
@@ -2594,6 +2594,21 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 
 func cleanTarPath(raw string) (string, error) {
 	if raw == "" || len(raw) > 4096 || strings.HasPrefix(raw, "/") || strings.ContainsAny(raw, "\\\x00") {
+		return "", errors.New("unsafe OCI layer path")
+	}
+	for _, segment := range strings.Split(raw, "/") {
+		if segment == ".." {
+			return "", errors.New("unsafe OCI layer path")
+		}
+	}
+	return path.Clean(raw), nil
+}
+
+// Linux layer names may contain literal backslashes (for example systemd's
+// escaped unit names). They are not separators in the image's POSIX paths.
+// Archive member names remain subject to the stricter cleanTarPath check.
+func cleanLayerTarPath(raw string) (string, error) {
+	if raw == "" || len(raw) > 4096 || strings.HasPrefix(raw, "/") || strings.ContainsRune(raw, '\x00') {
 		return "", errors.New("unsafe OCI layer path")
 	}
 	for _, segment := range strings.Split(raw, "/") {
