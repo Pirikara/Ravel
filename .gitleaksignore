@@ -1,0 +1,3 @@
+# Synthetic Git revision in the Mix lockfile fixture (example.invalid).
+66a1cc1d561a03931e80f5fc23267ec93d29718c:testdata/fixtures/mix-basic/mix.lock:generic-api-key:8
+testdata/fixtures/mix-basic/mix.lock:generic-api-key:8

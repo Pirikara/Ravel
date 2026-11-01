@@ -15,6 +15,8 @@ A package name is only part of the story. Ravel also records declared registries
 Build Ravel from source:
 
 ```sh
+git clone https://github.com/Pirikara/Ravel.git
+cd Ravel
 go build -o ravel ./cmd/ravel
 ./ravel scan path/to/project --output sbom.cdx.json --report coverage.json
 ```
@@ -103,4 +105,4 @@ Standard SBOM formats contain the relationships Ravel can assert unconditionally
 
 Ravel's results are scoped to the input it scanned. A report marked `complete_for_scope` means no known gap in that dimension **within that scope**; it does not certify an entire application or image. Use `--strict` in automation if a recorded coverage issue should fail the job.
 
-The project has a source-backed integration suite across the [supported inputs](docs/supported-inputs.md). See [development](docs/development.md) for test commands. Bug reports and pull requests are welcome; include a minimal, redacted input and the expected result when reporting a scan error.
+The project has a source-backed integration suite across the [supported inputs](docs/supported-inputs.md). Bug reports and pull requests are welcome; see [contributing](CONTRIBUTING.md) for how to report a scan error and [development](docs/development.md) for test commands.
