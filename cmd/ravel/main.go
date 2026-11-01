@@ -559,7 +559,7 @@ func selectLock(input string, directory bool, requested string) (string, string,
 			return "deno"
 		case "Package.resolved", "Package.swift":
 			return "swiftpm"
-		case "packages.lock.json", "project.assets.json":
+		case "packages.lock.json", "project.assets.json", "packages.config":
 			return "nuget"
 		case "uv.lock":
 			return "uv"
@@ -681,6 +681,12 @@ func selectLock(input string, directory bool, requested string) (string, string,
 				candidates["nuget"] = candidate
 				break
 			}
+		}
+	}
+	if candidates["nuget"] == "" {
+		candidate := filepath.Join(input, "packages.config")
+		if stat, err := os.Stat(candidate); err == nil && stat.Mode().IsRegular() {
+			candidates["nuget"] = candidate
 		}
 	}
 	if candidates["gradle"] == "" {

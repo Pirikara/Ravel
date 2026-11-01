@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "nuget_packages_config_graph_unavailable", "nuget_packages_config_installation_unverified":
+			doc.Coverage.GraphState = "partial"
+		case "nuget_packages_config_origin_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "mix_direct_dependencies_unavailable", "mix_dependency_constraints_unverified", "mix_dependency_unresolved", "mix_dependency_invalid", "mix_lock_entry_invalid", "mix_source_unhandled":
 			doc.Coverage.GraphState = "partial"
 		case "mix_distribution_origin_unverified", "mix_registry_unverified":
