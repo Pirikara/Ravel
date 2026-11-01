@@ -1,0 +1,7 @@
+active-repositories: hackage.haskell.org:merge
+constraints: any.HTTP ==4000.3.16,
+             any.Cabal ==3.2.1.0,
+             any.base installed,
+             tls +compat -hans +network,
+             any.HUnit ==1.6.2.0
+index-state: hackage.haskell.org 2022-07-07T01:01:53Z

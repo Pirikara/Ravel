@@ -1,0 +1,4 @@
+constraints: any.foo ==1.2.3,
+             any.bar ==2.0
+constraints: any.foo ==1.2.3,
+             any.baz ==0.1.0

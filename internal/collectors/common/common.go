@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "cabal_freeze_graph_unavailable", "cabal_freeze_unversioned_constraint":
+			doc.Coverage.GraphState = "partial"
+		case "cabal_freeze_origin_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "nuget_packages_config_graph_unavailable", "nuget_packages_config_installation_unverified":
 			doc.Coverage.GraphState = "partial"
 		case "nuget_packages_config_origin_unverified":
