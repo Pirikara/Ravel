@@ -141,7 +141,7 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.GraphState = "partial"
 		case "shards_source_unresolved", "shards_distribution_bytes_unverified":
 			doc.Coverage.OriginState = "partial"
-		case "pixi_package_unhandled", "pixi_package_identity_unresolved", "pixi_duplicate_package_record", "pixi_environment_invalid", "pixi_platform_invalid", "pixi_selected_package_unresolved", "pixi_duplicate_selection", "pixi_requirement_invalid", "pixi_virtual_requirement_unresolved", "pixi_requirement_constraints_unverified", "pixi_manifest_environment_unresolved", "pixi_manifest_feature_unresolved", "pixi_manifest_target_unresolved", "pixi_manifest_dependency_category_unhandled", "pixi_manifest_dependency_table_unresolved", "pixi_manifest_dependency_invalid", "pixi_manifest_feature_platform_unresolved":
+		case "pixi_package_unhandled", "pixi_package_identity_unresolved", "pixi_duplicate_package_record", "pixi_environment_invalid", "pixi_platform_invalid", "pixi_selected_package_unresolved", "pixi_duplicate_selection", "pixi_requirement_invalid", "pixi_virtual_requirement_unresolved", "pixi_requirement_constraints_unverified", "pixi_manifest_environment_unresolved", "pixi_manifest_feature_unresolved", "pixi_manifest_target_unresolved", "pixi_manifest_dependency_category_unhandled", "pixi_manifest_dependency_table_unresolved", "pixi_manifest_dependency_invalid", "pixi_manifest_feature_platform_unresolved", "pixi_manifest_requirement_invalid", "pixi_manifest_group_unresolved", "pixi_manifest_self_reference_unresolved", "pixi_manifest_marker_unverified":
 			doc.Coverage.GraphState = "partial"
 		case "pixi_hash_invalid", "pixi_source_unresolved", "pixi_distribution_bytes_unverified":
 			doc.Coverage.OriginState = "partial"

@@ -155,6 +155,109 @@ docs = { features = ["linux-only"], no-default-feature = true }
 	}
 }
 
+func TestPixiPyprojectNativeDependencies(t *testing.T) {
+	fixture := filepath.Join("..", "testdata", "fixtures", "pixi-pyproject")
+	doc := scanPixi(t, fixture)
+	if doc.Coverage.Manager != "pixi" || doc.Coverage.Packages != 19 || doc.Coverage.Edges != 19 || len(doc.Sources) != 1 || filepath.Base(doc.Sources[0]) != "pyproject.toml" {
+		t.Fatalf("Pixi pyproject coverage: %#v", doc.Coverage)
+	}
+	if !dotnetIssue(doc, "pixi_manifest_marker_unverified") || dotnetIssue(doc, "unresolved_dependency") || dotnetIssue(doc, "pixi_manifest_group_unresolved") {
+		t.Fatalf("Pixi native dependency gaps: %#v", doc.Coverage.Issues)
+	}
+	byID := map[string]model.Component{}
+	for _, pkg := range doc.Components {
+		byID[pkg.ID] = pkg
+	}
+	direct := map[string]model.Edge{}
+	for _, edge := range doc.Edges {
+		if edge.Kind != "direct" || edge.From != "root" || edge.Evidence.Collector != "pixi-manifest" {
+			t.Fatalf("unexpected Pixi pyproject edge: %#v", edge)
+		}
+		pkg := byID[edge.To]
+		key := strings.Split(pkg.Context, ";")[0] + "/" + pkg.Platform + "/" + pkg.Name
+		direct[key] = edge
+	}
+	for _, key := range []string{
+		"environment=default/linux-64/python", "environment=default/linux-64/packaging", "environment=default/linux-64/alpha",
+		"environment=default/osx-arm64/python", "environment=default/osx-arm64/packaging",
+		"environment=docs/linux-64/sphinx", "environment=dev/linux-64/pytest", "environment=dev/linux-64/ruff",
+		"environment=dev/osx-arm64/pytest", "environment=dev/linux-64/sample", "environment=dev/osx-arm64/sample", "environment=all/linux-64/sphinx", "environment=all/linux-64/beta",
+	} {
+		if _, found := direct[key]; !found {
+			t.Fatalf("missing Pixi native root %s", key)
+		}
+	}
+	if len(direct) != 19 || direct["environment=default/osx-arm64/alpha"].To != "" {
+		t.Fatalf("marker or override leaked a Pixi root: %#v", direct)
+	}
+	if edge := direct["environment=default/linux-64/alpha"]; !strings.Contains(edge.Condition, "marker unverified") {
+		t.Fatalf("PEP 508 marker was asserted: %#v", edge)
+	}
+	if edge := direct["environment=all/linux-64/sphinx"]; !strings.Contains(edge.Condition, "marker unverified") {
+		t.Fatalf("self-extra marker was asserted: %#v", edge)
+	}
+	for _, pkg := range doc.Components {
+		if pkg.Name == "packaging" && pkg.PURL != "" {
+			t.Fatalf("PyPI dependency overrode selected Conda package: %#v", pkg)
+		}
+	}
+	local := 0
+	for _, origin := range doc.Origins {
+		if origin.Kind == "local" {
+			local++
+			if origin.LocalPath != "./" || byID[origin.Occurrence].Name != "sample" {
+				t.Fatalf("Pixi local source: %#v", origin)
+			}
+		}
+	}
+	if local != 2 {
+		t.Fatalf("Pixi local occurrence count: %d", local)
+	}
+	all := scanPixi(t, fixture, "--all")
+	if all.Coverage.Packages != 19 || dotnetIssue(all, "collector_skipped_missing_lockfile") {
+		t.Fatalf("Pixi pyproject --all coverage: %#v", all.Coverage)
+	}
+}
+
+func TestPixiPyprojectGroupCycle(t *testing.T) {
+	root := t.TempDir()
+	lock, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "pixi-pyproject", "pixi.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "pixi.lock"), lock, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `[project]
+name = "cycle"
+
+[dependency-groups]
+a = [{ include-group = "b" }]
+b = [{ include-group = "a" }]
+
+[tool.pixi.workspace]
+platforms = ["linux-64", "osx-arm64"]
+
+[tool.pixi.environments]
+default = { features = ["a"] }
+docs = { features = ["a"] }
+dev = { features = ["a"] }
+all = { features = ["a"] }
+`
+	if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc := scanPixi(t, root)
+	if doc.Coverage.Packages != 19 || !dotnetIssue(doc, "pixi_manifest_group_unresolved") {
+		t.Fatalf("Pixi cyclic group was not reported: %#v", doc.Coverage)
+	}
+	for _, edge := range doc.Edges {
+		if edge.Kind == "direct" {
+			t.Fatalf("invented Pixi direct root from cyclic group: %#v", edge)
+		}
+	}
+}
+
 func TestPixiDiscoveryAndExports(t *testing.T) {
 	fixture := filepath.Join("..", "testdata", "fixtures", "pixi-v7")
 	root := t.TempDir()

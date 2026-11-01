@@ -13,7 +13,7 @@ import (
 
 func TestExpandedEcosystemsRecursiveScan(t *testing.T) {
 	root := t.TempDir()
-	for _, fixture := range []string{"julia-v2", "renv-basic", "sbt-basic", "rebar-basic", "conda-lock-basic", "pixi-v7", "shards-v2"} {
+	for _, fixture := range []string{"julia-v2", "renv-basic", "sbt-basic", "rebar-basic", "conda-lock-basic", "pixi-v7", "pixi-pyproject", "shards-v2"} {
 		source := filepath.Join("..", "testdata", "fixtures", fixture)
 		destination := filepath.Join(root, fixture)
 		if err := os.Mkdir(destination, 0o755); err != nil {
@@ -42,7 +42,7 @@ func TestExpandedEcosystemsRecursiveScan(t *testing.T) {
 	if err := json.Unmarshal(out, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Coverage.Manager != "multi" || doc.Coverage.Packages != 30 || doc.Coverage.Edges != 23 || len(doc.Coverage.Inputs) != 7 || len(doc.Sources) != 10 {
+	if doc.Coverage.Manager != "multi" || doc.Coverage.Packages != 49 || doc.Coverage.Edges != 42 || len(doc.Coverage.Inputs) != 8 || len(doc.Sources) != 12 {
 		t.Fatalf("mixed coverage: %#v", doc.Coverage)
 	}
 	managers := map[string]bool{}

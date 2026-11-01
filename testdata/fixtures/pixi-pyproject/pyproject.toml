@@ -1,0 +1,29 @@
+[project]
+name = "sample"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = ["packaging>=24", "alpha>=1; sys_platform == 'linux'"]
+
+[project.optional-dependencies]
+docs = ["sphinx>=7"]
+all = ["sample[docs]; sys_platform == 'linux'", "beta>=1"]
+
+[dependency-groups]
+test = ["pytest>=8"]
+dev = [{ include-group = "test" }, "ruff>=0.1"]
+
+[tool.pixi.workspace]
+platforms = ["linux-64", "osx-arm64"]
+channels = ["conda-forge"]
+
+[tool.pixi.dependencies]
+packaging = "*"
+
+[tool.pixi.feature.dev.pypi-dependencies]
+sample = { path = "." }
+
+[tool.pixi.environments]
+default = { features = [] }
+docs = { features = ["docs"], no-default-feature = true }
+dev = { features = ["dev"] }
+all = { features = ["all"], no-default-feature = true }

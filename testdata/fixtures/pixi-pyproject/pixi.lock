@@ -1,0 +1,57 @@
+version: 6
+environments:
+  default:
+    packages:
+      linux-64:
+        - conda: https://prefix.dev/conda-forge/linux-64/python-3.12.2-h123_0.conda
+        - conda: https://prefix.dev/conda-forge/noarch/packaging-24.0-pyhd8ed1ab_0.conda
+        - pypi: https://files.pythonhosted.org/packages/demo/alpha-1.0-py3-none-any.whl
+      osx-arm64:
+        - conda: https://prefix.dev/conda-forge/osx-arm64/python-3.12.2-h456_0.conda
+        - conda: https://prefix.dev/conda-forge/noarch/packaging-24.0-pyhd8ed1ab_0.conda
+  docs:
+    packages:
+      linux-64:
+        - pypi: https://files.pythonhosted.org/packages/demo/sphinx-7.0-py3-none-any.whl
+  dev:
+    packages:
+      linux-64:
+        - conda: https://prefix.dev/conda-forge/linux-64/python-3.12.2-h123_0.conda
+        - conda: https://prefix.dev/conda-forge/noarch/packaging-24.0-pyhd8ed1ab_0.conda
+        - pypi: https://files.pythonhosted.org/packages/demo/alpha-1.0-py3-none-any.whl
+        - pypi: https://files.pythonhosted.org/packages/demo/pytest-8.0-py3-none-any.whl
+        - pypi: https://files.pythonhosted.org/packages/demo/ruff-0.1-py3-none-any.whl
+        - pypi: ./
+      osx-arm64:
+        - conda: https://prefix.dev/conda-forge/osx-arm64/python-3.12.2-h456_0.conda
+        - conda: https://prefix.dev/conda-forge/noarch/packaging-24.0-pyhd8ed1ab_0.conda
+        - pypi: https://files.pythonhosted.org/packages/demo/pytest-8.0-py3-none-any.whl
+        - pypi: https://files.pythonhosted.org/packages/demo/ruff-0.1-py3-none-any.whl
+        - pypi: ./
+  all:
+    packages:
+      linux-64:
+        - pypi: https://files.pythonhosted.org/packages/demo/sphinx-7.0-py3-none-any.whl
+        - pypi: https://files.pythonhosted.org/packages/demo/beta-1.0-py3-none-any.whl
+packages:
+  - conda: https://prefix.dev/conda-forge/linux-64/python-3.12.2-h123_0.conda
+  - conda: https://prefix.dev/conda-forge/osx-arm64/python-3.12.2-h456_0.conda
+  - conda: https://prefix.dev/conda-forge/noarch/packaging-24.0-pyhd8ed1ab_0.conda
+  - pypi: https://files.pythonhosted.org/packages/demo/alpha-1.0-py3-none-any.whl
+    name: alpha
+    version: "1.0"
+  - pypi: https://files.pythonhosted.org/packages/demo/sphinx-7.0-py3-none-any.whl
+    name: sphinx
+    version: "7.0"
+  - pypi: https://files.pythonhosted.org/packages/demo/pytest-8.0-py3-none-any.whl
+    name: pytest
+    version: "8.0"
+  - pypi: https://files.pythonhosted.org/packages/demo/ruff-0.1-py3-none-any.whl
+    name: ruff
+    version: "0.1"
+  - pypi: https://files.pythonhosted.org/packages/demo/beta-1.0-py3-none-any.whl
+    name: beta
+    version: "1.0"
+  - pypi: ./
+    name: sample
+    version: 1.0.0

@@ -80,6 +80,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 	}
 	for _, directory := range directories {
 		foundManagers := map[string]bool{}
+		pixiPyproject := false
 		chosenJS, ignoredJS, err := selectedJSManager(directory)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ravel:", err)
@@ -121,6 +122,9 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 				return 1
 			}
 			for _, source := range doc.Sources {
+				if manager == "pixi" && filepath.Base(source) == "pyproject.toml" {
+					pixiPyproject = true
+				}
 				if samePath(output, source) || report != "" && samePath(report, source) {
 					fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite an included input")
 					return 2
@@ -130,7 +134,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 			foundManagers[manager] = true
 		}
 		foundJS := foundManagers["npm"] || foundManagers["pnpm"] || foundManagers["yarn"] || foundManagers["bun"] || foundManagers["deno"]
-		foundPython := foundManagers["uv"] || foundManagers["pylock"] || foundManagers["poetry"] || foundManagers["pipenv"] || foundManagers["pdm"] || foundManagers["requirements"]
+		foundPython := foundManagers["uv"] || foundManagers["pylock"] || foundManagers["poetry"] || foundManagers["pipenv"] || foundManagers["pdm"] || foundManagers["requirements"] || pixiPyproject
 		for _, manifest := range []struct {
 			name    string
 			covered bool

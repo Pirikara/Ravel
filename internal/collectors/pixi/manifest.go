@@ -19,14 +19,21 @@ const maxManifestBytes = 4 << 20
 
 type directRequest struct {
 	name, manager, pointer string
+	marker                 bool
 }
 
 func addManifest(doc *model.Document, lockPath string, lock lockfile, byScope map[string]map[string][]occurrence) error {
 	manifestPath := filepath.Join(filepath.Dir(lockPath), "pixi.toml")
 	file, err := os.Open(manifestPath)
+	pyproject := false
 	if errors.Is(err, os.ErrNotExist) {
-		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
-		return nil
+		manifestPath = filepath.Join(filepath.Dir(lockPath), "pyproject.toml")
+		file, err = os.Open(manifestPath)
+		pyproject = true
+		if errors.Is(err, os.ErrNotExist) {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
+			return nil
+		}
 	}
 	if err != nil {
 		return err
@@ -37,18 +44,28 @@ func addManifest(doc *model.Document, lockPath string, lock lockfile, byScope ma
 		return err
 	}
 	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxManifestBytes {
-		return errors.New("pixi.toml size is invalid or exceeds limit")
+		return errors.New("Pixi manifest size is invalid or exceeds limit")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, maxManifestBytes+1))
 	if err != nil {
 		return err
 	}
 	if len(data) == 0 || len(data) > maxManifestBytes {
-		return errors.New("pixi.toml exceeds size limit")
+		return errors.New("Pixi manifest exceeds size limit")
 	}
-	var manifest map[string]any
-	if err := toml.Unmarshal(data, &manifest); err != nil {
-		return fmt.Errorf("invalid pixi.toml: %w", err)
+	var parsed map[string]any
+	if err := toml.Unmarshal(data, &parsed); err != nil {
+		return fmt.Errorf("invalid Pixi manifest: %w", err)
+	}
+	manifest := parsed
+	var native *nativeDependencies
+	if pyproject {
+		manifest = asTable(asTable(parsed["tool"])["pixi"])
+		if manifest == nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
+			return nil
+		}
+		native = newNativeDependencies(doc, parsed)
 	}
 	doc.Sources = append(doc.Sources, manifestPath)
 	features := asTable(manifest["feature"])
@@ -81,25 +98,33 @@ func addManifest(doc *model.Document, lockPath string, lock lockfile, byScope ma
 				if defaultFeature := asTable(features["default"]); defaultFeature != nil {
 					requests = appendRequests(doc, requests, defaultFeature, "/feature/default", platform)
 				}
+				if native != nil {
+					requests = append(requests, native.defaultRequests...)
+				}
 			}
 			for _, featureName := range featureNames {
 				if featureName == "default" && includeDefault {
 					continue
 				}
 				feature := asTable(features[featureName])
-				if feature == nil {
+				if feature == nil && (native == nil || !native.hasFeature(featureName)) {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "pixi_manifest_feature_unresolved", Name: featureName, Scope: envName})
 					continue
 				}
-				if !featureApplies(doc, feature, featureName, platform) {
+				if feature != nil && !featureApplies(doc, feature, featureName, platform) {
 					continue
 				}
-				requests = appendRequests(doc, requests, feature, "/feature/"+featureName, platform)
+				if feature != nil {
+					requests = appendRequests(doc, requests, feature, "/feature/"+featureName, platform)
+				}
+				if native != nil && native.hasFeature(featureName) {
+					requests = append(requests, native.featureRequests(featureName)...)
+				}
 			}
 			if envTable != nil {
 				requests = appendRequests(doc, requests, envTable, "/environments/"+envName, platform)
 			}
-			appendRootEdges(doc, requests, byScope[envName+"\x00"+platform], envName, platform, manifestPath, data)
+			appendRootEdges(doc, filterOverriddenPyPI(requests), byScope[envName+"\x00"+platform], envName, platform, manifestPath, data)
 		}
 	}
 	return nil
@@ -219,6 +244,9 @@ func appendRootEdges(doc *model.Document, requests []directRequest, selected map
 		seen[key] = true
 		matches := index[key]
 		if len(matches) != 1 {
+			if len(matches) == 0 && request.marker {
+				continue
+			}
 			code := "unresolved_dependency"
 			if len(matches) > 1 {
 				code = "ambiguous_dependency"
@@ -226,7 +254,11 @@ func appendRootEdges(doc *model.Document, requests []directRequest, selected map
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: code, Name: request.name, Scope: envName + "/" + platform})
 			continue
 		}
-		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: matches[0].id, Kind: "direct", Condition: "environment=" + envName + "; platform=" + platform + "; manifest constraint unverified", Evidence: common.Evidence(filename, "pixi-manifest", request.pointer, data)})
+		condition := "environment=" + envName + "; platform=" + platform + "; manifest constraint unverified"
+		if request.marker {
+			condition += "; PEP 508 marker unverified"
+		}
+		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: matches[0].id, Kind: "direct", Condition: condition, Evidence: common.Evidence(filename, "pixi-manifest", request.pointer, data)})
 	}
 }
 

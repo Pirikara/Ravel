@@ -334,6 +334,10 @@ func addHashes(doc *model.Document, component *model.Component, record resolvedR
 
 func addOrigin(doc *model.Document, id string, record resolvedRecord, evidence model.Evidence) {
 	locator := record.locator
+	if record.manager == "pypi" && (strings.HasPrefix(locator, "./") || strings.HasPrefix(locator, "../")) && len(locator) <= 1024 && strings.IndexFunc(locator, unicode.IsControl) < 0 && !strings.ContainsAny(locator, "?#") {
+		doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "local", LocalPath: locator, Status: "declared", Evidence: evidence})
+		return
+	}
 	if strings.HasPrefix(locator, "git+") {
 		parsed, err := url.Parse(strings.TrimPrefix(locator, "git+"))
 		if err == nil && revisionPattern.MatchString(parsed.Fragment) {
