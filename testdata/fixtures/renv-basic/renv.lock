@@ -1,0 +1,32 @@
+{
+  "R": {
+    "Version": "4.4.2",
+    "Repositories": [
+      {"Name": "CRAN", "URL": "https://cloud.r-project.org"}
+    ]
+  },
+  "Packages": {
+    "markdown": {
+      "Package": "markdown",
+      "Version": "1.13",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "4584a57f565dd7987d59dda3a02cfb41",
+      "Requirements": ["mime", "R"]
+    },
+    "mime": {
+      "Package": "mime",
+      "Version": "0.12",
+      "Source": "GitHub",
+      "RemoteUrl": "https://secret@example.com/org/mime.git?token=hidden",
+      "RemoteSha": "aabbccddee11223344556677889900aabbccddee",
+      "Requirements": []
+    },
+    "localpkg": {
+      "Package": "localpkg",
+      "Version": "0.1.0",
+      "Source": "../localpkg",
+      "Requirements": []
+    }
+  }
+}

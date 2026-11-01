@@ -137,6 +137,10 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "renv_package_invalid", "renv_requirements_invalid", "renv_requirements_unavailable":
+			doc.Coverage.GraphState = "partial"
+		case "renv_distribution_origin_unverified", "renv_repository_unresolved", "renv_source_unverified":
+			doc.Coverage.OriginState = "partial"
 		case "julia_manifest_entry_invalid", "julia_dependency_invalid":
 			doc.Coverage.GraphState = "partial"
 			doc.Coverage.OriginState = "partial"
