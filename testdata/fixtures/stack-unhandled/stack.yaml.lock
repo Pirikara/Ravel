@@ -1,0 +1,8 @@
+packages:
+- completed:
+    url: https://example.invalid/archive.tar.gz
+    name: archive-only
+    version: 1.0.0
+- completed:
+    hackage: single-1.2.3
+snapshots: []

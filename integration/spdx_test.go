@@ -123,7 +123,8 @@ func TestSPDX23AllFixtures(t *testing.T) {
 				if c.Context != "" {
 					found := false
 					for _, pkg := range output.Packages {
-						if pkg.Name == c.Name && pkg.Comment == "Ravel context: "+c.Context {
+						context := "Ravel context: " + c.Context
+						if pkg.Name == c.Name && (pkg.Comment == context || strings.HasPrefix(pkg.Comment, context+"; ")) {
 							found = true
 						}
 					}
@@ -156,8 +157,8 @@ func TestSPDX23AllFixtures(t *testing.T) {
 			}
 		})
 	}
-	if count != 197 {
-		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 197", count)
+	if count != 199 {
+		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 199", count)
 	}
 }
 

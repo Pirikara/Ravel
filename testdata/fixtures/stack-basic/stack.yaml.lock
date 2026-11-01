@@ -1,0 +1,21 @@
+# Synthetic Stack lockfile. Completed locations are not a selected build graph.
+packages:
+- completed:
+    hackage: acme-missiles-0.3@sha256:2ba66a092a32593880a87fb00f3213762d7bca65a687d45965778deb8694c5d1,613
+  original:
+    hackage: acme-missiles-0.3
+- completed:
+    hackage: text-2.1.1@rev:3
+  original:
+    hackage: text-2.1.1
+- completed:
+    git: https://user:secret@example.invalid/repo.git?token=secret
+    commit: abcdef0123456789abcdef0123456789abcdef01
+    name: internal-lib
+    version: 0.4.0
+    subdir: packages/internal-lib
+snapshots:
+- completed:
+    url: https://example.invalid/snapshot.yaml?token=secret
+    sha256: 4c31d4ef975b0211078862566aedf3b82b6cea569fc2cde4c72a51e5a8d236ce
+  original: lts-24.43
