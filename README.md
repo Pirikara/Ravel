@@ -43,12 +43,22 @@ Use a component ID with `explain` when the same name appears more than once. See
 
 Ravel does not turn a lockfile URL into proof of a download. It labels a registry or distribution URL as **declared** unless stronger evidence is available. When the source is unknown, it leaves the claim open.
 
-For example, `explain Requests` on the included Poetry fixture shows the declared registry, the dependency it found, and the remaining graph limit:
+Try `explain` on the included Poetry fixture to see a declared registry, a dependency, and a remaining graph limit:
+
+```sh
+./ravel scan testdata/fixtures/poetry-basic --format ravel-json --output poetry.ravel.json
+./ravel explain Requests --input poetry.ravel.json
+```
 
 ```text
-Requests@2.32.3
+Requests@2.32.3 [poetry:4f5ea5c82373ceb75c4042fe]
 origin: declared_registry https://pypi.example.test/simple [declared]
+  evidence: poetry-lock testdata/fixtures/poetry-basic/poetry.lock /package/0
+required by: poetry-basic
+  evidence: poetry-manifest testdata/fixtures/poetry-basic/pyproject.toml /dependencies/requests
 depends on: idna@3.10
+  evidence: poetry-lock testdata/fixtures/poetry-basic/poetry.lock /package/dependencies/idna
+  evidence: poetry-lock testdata/fixtures/poetry-basic/poetry.lock /package/0
 coverage: graph=partial origin=complete_for_scope
 ```
 
