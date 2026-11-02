@@ -11,6 +11,33 @@ builds report Go's embedded module or commit version when available, falling
 back to `dev`. Release binaries and versioned `go install` builds report their
 tagged prerelease version.
 
+## Local paths and remote repositories
+
+`ravel scan` accepts one local path. Point it at a lockfile, package archive,
+installed root filesystem, saved container image, or project directory:
+
+```sh
+ravel scan ./project/poetry.lock --output poetry.cdx.json --report poetry.coverage.json
+ravel scan ./project --output project.cdx.json --report project.coverage.json
+```
+
+For a remote Git repository, clone or check out the revision you want, then
+scan that local checkout:
+
+```sh
+git clone https://github.com/OWNER/PROJECT.git project
+git -C project checkout REF
+ravel scan project --all --recursive --output project.cdx.json --report project.coverage.json
+```
+
+Replace `REF` with a commit or tag for a repeatable scan. Use
+`git clone --recurse-submodules` when the inputs you need are in submodules.
+`--all --recursive` scans supported static inputs in nested projects; manifests
+that need package-manager resolution are reported as skipped. Direct Git URLs,
+remote repository archives, and image registry references are not scan inputs.
+Fetch or save them locally first. Ravel does not automatically record the
+scanned checkout's Git commit ID, so keep it alongside the generated result.
+
 ## Scan workflows
 
 ### One project or a polyglot tree

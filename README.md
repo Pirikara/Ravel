@@ -26,15 +26,25 @@ Verify the archive against `SHA256SUMS`, extract it, and put `ravel` (or `ravel.
 
 ## Get started
 
-Scan a project:
+Scan a project directory or a specific lockfile:
 
 ```sh
 ravel scan path/to/project --output sbom.cdx.json --report coverage.json
+ravel scan path/to/project/poetry.lock --output poetry.cdx.json --report poetry.coverage.json
 ```
 
-This writes a CycloneDX 1.7 SBOM and a coverage report. Scanning is local and offline by default; Ravel does not run a package manager unless you explicitly opt into resolution.
+Each command writes a CycloneDX 1.7 SBOM and a coverage report. Scanning is local and offline by default; Ravel does not run a package manager unless you explicitly opt into resolution.
 
 Run `ravel version` to identify the build you are using.
+
+`scan` reads a local file or directory. For a repository hosted elsewhere, clone it first and scan the checkout:
+
+```sh
+git clone https://github.com/OWNER/PROJECT.git project
+ravel scan project --all --recursive --output project.cdx.json --report project.coverage.json
+```
+
+Ravel does not fetch a Git URL or pull a container image when passed to `scan`. See the [CLI guide](docs/cli.md) for local file, repository, and saved-image examples.
 
 To inspect the evidence behind a finding, save Ravel's native format:
 
