@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/anchore/go-rpmdb v0.2.2
 	github.com/evanw/esbuild v0.28.2
-	github.com/klauspost/compress v1.20.2
+	github.com/klauspost/compress v1.20.3
 	github.com/package-url/packageurl-go v0.1.7
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
