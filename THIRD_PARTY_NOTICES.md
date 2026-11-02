@@ -5,7 +5,7 @@ Their license notices are reproduced here for distributions of Ravel binaries.
 Release archives also include `THIRD_PARTY_LICENSES/`, with the license and
 notice files for every Go module compiled into a release binary.
 
-## github.com/klauspost/compress v1.20.2 (zstd)
+## github.com/klauspost/compress v1.20.3 (zstd)
 
 Copyright (c) 2012 The Go Authors. All rights reserved.
 Copyright (c) 2019 Klaus Post. All rights reserved.
@@ -60,7 +60,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## modernc.org/sqlite v1.55.0
+## modernc.org/sqlite v1.61.0
 
 Copyright (c) 2017 The Sqlite Authors. All rights reserved.
 
