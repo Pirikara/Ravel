@@ -1,5 +1,7 @@
 # CLI guide
 
+The examples below assume `ravel` is on your `PATH`; see [installation](install.md).
+
 `scan` accepts a supported file or project directory. CycloneDX JSON goes to
 stdout unless `--output` is set; progress and errors go to stderr. Run `ravel`
 without arguments for command syntax.
@@ -14,8 +16,8 @@ tagged prerelease version.
 ### One project or a polyglot tree
 
 ```sh
-./ravel scan path/to/project --output sbom.cdx.json --report coverage.json
-./ravel scan path/to/polyglot-project --all --recursive --output combined.cdx.json
+ravel scan path/to/project --output sbom.cdx.json --report coverage.json
+ravel scan path/to/polyglot-project --all --recursive --output combined.cdx.json
 ```
 
 `--all` combines static inputs in one directory. `--recursive` also scans subprojects while skipping generated directories such as `.git`, `node_modules`, and `vendor`. Archives are not automatically discovered. If multiple JavaScript lockfiles coexist, Ravel uses `package.json`'s `packageManager` field; otherwise select a manager explicitly.
@@ -23,12 +25,12 @@ tagged prerelease version.
 ### A package archive or installed system
 
 ```sh
-./ravel scan path/to/app.jar --output app.cdx.json
-./ravel scan path/to/package.whl --output wheel.cdx.json
-./ravel scan path/to/package.nupkg --output nuget.cdx.json
-./ravel scan path/to/debian-rootfs --manager dpkg --output debian.cdx.json
-./ravel scan path/to/alpine-rootfs --manager apk --output alpine.cdx.json
-./ravel scan path/to/fedora-rootfs --manager rpm --output fedora.cdx.json
+ravel scan path/to/app.jar --output app.cdx.json
+ravel scan path/to/package.whl --output wheel.cdx.json
+ravel scan path/to/package.nupkg --output nuget.cdx.json
+ravel scan path/to/debian-rootfs --manager dpkg --output debian.cdx.json
+ravel scan path/to/alpine-rootfs --manager apk --output alpine.cdx.json
+ravel scan path/to/fedora-rootfs --manager rpm --output fedora.cdx.json
 ```
 
 `.war`, `.gem`, and npm `.tgz` archives are also accepted. An archive proves the bytes Ravel read; it does not by itself prove which registry supplied them.
@@ -37,7 +39,7 @@ tagged prerelease version.
 
 ```sh
 docker save --output image.docker.tar image:tag
-./ravel scan image.docker.tar --platform linux/amd64 \
+ravel scan image.docker.tar --platform linux/amd64 \
   --output image.cdx.json --report image.coverage.json
 ```
 
@@ -46,10 +48,10 @@ You can also scan an OCI layout directory, a `.oci.tar` archive, or a gzip-compr
 ### Inspect, compare, and combine
 
 ```sh
-./ravel scan path/to/project --format ravel-json --output project.ravel.json
-./ravel explain 'package-name' --input project.ravel.json
-./ravel diff before.ravel.json after.ravel.json --format json
-./ravel merge --name my-app --format cyclonedx-json \
+ravel scan path/to/project --format ravel-json --output project.ravel.json
+ravel explain 'package-name' --input project.ravel.json
+ravel diff before.ravel.json after.ravel.json --format json
+ravel merge --name my-app --format cyclonedx-json \
   --output combined.cdx.json npm.ravel.json cargo.ravel.json
 ```
 
@@ -77,7 +79,7 @@ You can also scan an OCI layout directory, a `.oci.tar` archive, or a gzip-compr
 The repository includes an RPM database with two test packages:
 
 ```sh
-./ravel scan testdata/fixtures/rpm-sqlite-basic \
+ravel scan testdata/fixtures/rpm-sqlite-basic \
   --manager rpm \
   --output rpm.cdx.json \
   --report rpm.coverage.json
@@ -112,9 +114,9 @@ The three Ravel edges include two installed-package edges and one dependency who
 A normal `scan` does not execute a package manager. For **Go modules, Cargo, Maven, Gradle, or SwiftPM**, resolution is opt-in:
 
 ```sh
-./ravel scan path/to/cargo/project --manager cargo \
+ravel scan path/to/cargo/project --manager cargo \
   --resolve --allow-exec --network deny
-./ravel scan path/to/gradle/project --manager gradle \
+ravel scan path/to/gradle/project --manager gradle \
   --resolve --allow-exec --configuration runtimeClasspath --network deny
 ```
 
@@ -123,7 +125,7 @@ A normal `scan` does not execute a package manager. For **Go modules, Cargo, Mav
 `enrich` is a separate, explicit network operation. It reads Ravel JSON and adds development repository **candidates** from matched registry metadata without changing package identities, distribution origins, or dependency edges:
 
 ```sh
-./ravel enrich scan.ravel.json --ecosystem npm --network allow \
+ravel enrich scan.ravel.json --ecosystem npm --network allow \
   --output enriched.ravel.json
 ```
 

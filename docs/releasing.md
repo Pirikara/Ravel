@@ -9,4 +9,4 @@ Release tags use semantic versions. Beta releases use `vX.Y.Z-beta.N` and are ma
 5. Tag the verified commit and push the tag. The [release workflow](../.github/workflows/release.yml) reruns tests, builds the five archives and dependency licenses, verifies checksums, and creates a draft GitHub prerelease. It leaves publication to a maintainer.
 6. Check the draft's notes, asset names, and checksums before publishing.
 
-Run the workflow manually with an existing tag to verify its build without changing the release. This is useful for `v0.1.0-beta.1`, whose tag predates the workflow. Its notes file is [here](releases/v0.1.0-beta.1.md). Publishing a release is a separate step from making the repository public.
+Run the workflow manually with an existing tag to verify its build without changing the release. The `v0.1.0-beta.1` notes file is [here](releases/v0.1.0-beta.1.md). Publishing a release is a separate step from making the repository public.

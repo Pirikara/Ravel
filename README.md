@@ -4,32 +4,43 @@
 
 [![CI](https://github.com/Pirikara/Ravel/actions/workflows/ci.yml/badge.svg)](https://github.com/Pirikara/Ravel/actions/workflows/ci.yml)
 
-**Beta** · Go 1.27+
+**Beta** · Binaries for macOS, Linux, and Windows · Go 1.27+ for source builds
 
 Ravel is a command-line SBOM generator for project lockfiles, package archives, installed systems, and local container images. It produces CycloneDX or SPDX, and lets you trace package and dependency claims back to the input that supports them.
 
 A package name is only part of the story. Ravel also records declared registries and distribution URLs when the input provides them, keeps development repositories separate from download sources, and reports what it could not establish.
 
+## Install
+
+Download the archive for your platform from the [v0.1.0-beta.1 release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.1):
+
+| Platform | Archive |
+| --- | --- |
+| macOS Apple silicon | `ravel_v0.1.0-beta.1_darwin_arm64.tar.gz` |
+| macOS Intel | `ravel_v0.1.0-beta.1_darwin_amd64.tar.gz` |
+| Linux x86-64 | `ravel_v0.1.0-beta.1_linux_amd64.tar.gz` |
+| Linux ARM64 | `ravel_v0.1.0-beta.1_linux_arm64.tar.gz` |
+| Windows x86-64 | `ravel_v0.1.0-beta.1_windows_amd64.zip` |
+
+Verify the archive against `SHA256SUMS`, extract it, and put `ravel` (or `ravel.exe`) on your `PATH`. The [install guide](docs/install.md) has commands for each OS. With Go 1.27+, you can also install the tagged version with `go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.1`.
+
 ## Get started
 
-Build Ravel from source:
+Scan a project:
 
 ```sh
-git clone https://github.com/Pirikara/Ravel.git
-cd Ravel
-go build -o ravel ./cmd/ravel
-./ravel scan path/to/project --output sbom.cdx.json --report coverage.json
+ravel scan path/to/project --output sbom.cdx.json --report coverage.json
 ```
 
 This writes a CycloneDX 1.7 SBOM and a coverage report. Scanning is local and offline by default; Ravel does not run a package manager unless you explicitly opt into resolution.
 
-Run `./ravel version` to identify the build you are using.
+Run `ravel version` to identify the build you are using.
 
 To inspect the evidence behind a finding, save Ravel's native format:
 
 ```sh
-./ravel scan path/to/project --format ravel-json --output scan.ravel.json
-./ravel explain package-name --input scan.ravel.json
+ravel scan path/to/project --format ravel-json --output scan.ravel.json
+ravel explain package-name --input scan.ravel.json
 ```
 
 Use a component ID with `explain` when the same name appears more than once. See the [CLI guide](docs/cli.md) for all commands and options.
@@ -45,11 +56,13 @@ Use a component ID with `explain` when the same name appears more than once. See
 
 Ravel does not turn a lockfile URL into proof of a download. It labels a registry or distribution URL as **declared** unless stronger evidence is available. When the source is unknown, it leaves the claim open.
 
-Try `explain` on the included Poetry fixture to see a declared registry, a dependency, and a remaining graph limit:
+To reproduce this example, clone the repository and scan its Poetry fixture. It shows a declared registry, a dependency, and a remaining graph limit:
 
 ```sh
-./ravel scan testdata/fixtures/poetry-basic --format ravel-json --output poetry.ravel.json
-./ravel explain Requests --input poetry.ravel.json
+git clone https://github.com/Pirikara/Ravel.git
+cd Ravel
+ravel scan testdata/fixtures/poetry-basic --format ravel-json --output poetry.ravel.json
+ravel explain Requests --input poetry.ravel.json
 ```
 
 ```text
@@ -80,7 +93,7 @@ The [full input matrix](docs/supported-inputs.md) lists formats and versions. [K
 Scan a polyglot repository:
 
 ```sh
-./ravel scan path/to/repository --all --recursive \
+ravel scan path/to/repository --all --recursive \
   --output repository.cdx.json --report repository.coverage.json
 ```
 
@@ -88,7 +101,7 @@ Scan a locally saved container image:
 
 ```sh
 docker save --output image.docker.tar image:tag
-./ravel scan image.docker.tar \
+ravel scan image.docker.tar \
   --output image.cdx.json --report image.coverage.json
 ```
 
@@ -97,8 +110,8 @@ Ravel reads local image data; it does not pull images. For a multi-platform OCI 
 Compare or combine native scans:
 
 ```sh
-./ravel diff before.ravel.json after.ravel.json
-./ravel merge --name my-app --output combined.cdx.json \
+ravel diff before.ravel.json after.ravel.json
+ravel merge --name my-app --output combined.cdx.json \
   frontend.ravel.json backend.ravel.json
 ```
 
