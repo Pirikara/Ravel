@@ -1,6 +1,6 @@
 # Install Ravel
 
-The current beta is `v0.1.0-beta.2`. Download its binaries and `SHA256SUMS` from the [GitHub release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.2).
+The current beta is `v0.1.0-beta.3`. Download its binaries and `SHA256SUMS` from the [GitHub release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.3).
 
 | Platform | Target |
 | --- | --- |
@@ -15,7 +15,7 @@ The current beta is `v0.1.0-beta.2`. Download its binaries and `SHA256SUMS` from
 Set `target` to the value for your machine from the table. This example uses macOS Apple silicon:
 
 ```sh
-version=v0.1.0-beta.2
+version=v0.1.0-beta.3
 target=darwin_arm64
 archive="ravel_${version}_${target}.tar.gz"
 base="https://github.com/Pirikara/Ravel/releases/download/${version}"
@@ -44,7 +44,7 @@ Add `$HOME/.local/bin` to your shell's `PATH` configuration to keep the command 
 In PowerShell, download and verify the Windows archive:
 
 ```powershell
-$version = 'v0.1.0-beta.2'
+$version = 'v0.1.0-beta.3'
 $archive = "ravel_${version}_windows_amd64.zip"
 $base = "https://github.com/Pirikara/Ravel/releases/download/$version"
 
@@ -77,11 +77,11 @@ ravel version
 
 ## Use the container image
 
-For CI or other container-based workflows, the multi-platform Linux image is published at `ghcr.io/pirikara/ravel:v0.1.0-beta.2`:
+For CI or other container-based workflows, the multi-platform Linux image is published at `ghcr.io/pirikara/ravel:v0.1.0-beta.3`:
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$PWD:/work" ghcr.io/pirikara/ravel:v0.1.0-beta.2 \
+  -v "$PWD:/work" ghcr.io/pirikara/ravel:v0.1.0-beta.3 \
   scan . --all --recursive --output sbom.cdx.json
 ```
 
@@ -92,7 +92,7 @@ The container bundles the CLI and its license files. It does not include Go, Swi
 With Go 1.27 or newer:
 
 ```sh
-go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.2
+go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.3
 ```
 
 The binary is installed in `GOBIN`, or in `GOPATH/bin` when `GOBIN` is unset. Make sure that directory is on your `PATH`.
