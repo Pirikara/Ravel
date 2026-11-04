@@ -6,3 +6,4 @@
 coverage.json
 /comparison/
 /dist/
+__pycache__/

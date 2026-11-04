@@ -12,17 +12,17 @@ A package name is only part of the story. Ravel also records declared registries
 
 ## Install
 
-Download the archive for your platform from the [v0.1.0-beta.3 release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.3):
+Choose a tag from [GitHub Releases](https://github.com/Pirikara/Ravel/releases), then download its archive for your platform:
 
 | Platform | Archive |
 | --- | --- |
-| macOS Apple silicon | `ravel_v0.1.0-beta.3_darwin_arm64.tar.gz` |
-| macOS Intel | `ravel_v0.1.0-beta.3_darwin_amd64.tar.gz` |
-| Linux x86-64 | `ravel_v0.1.0-beta.3_linux_amd64.tar.gz` |
-| Linux ARM64 | `ravel_v0.1.0-beta.3_linux_arm64.tar.gz` |
-| Windows x86-64 | `ravel_v0.1.0-beta.3_windows_amd64.zip` |
+| macOS Apple silicon | `ravel_<TAG>_darwin_arm64.tar.gz` |
+| macOS Intel | `ravel_<TAG>_darwin_amd64.tar.gz` |
+| Linux x86-64 | `ravel_<TAG>_linux_amd64.tar.gz` |
+| Linux ARM64 | `ravel_<TAG>_linux_arm64.tar.gz` |
+| Windows x86-64 | `ravel_<TAG>_windows_amd64.zip` |
 
-Verify the archive against `SHA256SUMS`, extract it, and put `ravel` (or `ravel.exe`) on your `PATH`. The [install guide](docs/install.md) has commands for each OS. On macOS and Linux, `brew install pirikara/tap/ravel` installs the same release binary. With Go 1.27+, you can also run `go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.3`.
+Verify the archive against `SHA256SUMS`, extract it, and put `ravel` (or `ravel.exe`) on your `PATH`. The [install guide](docs/install.md) has commands for each OS. On macOS and Linux, `brew install pirikara/tap/ravel` installs the current release binary. With Go 1.27+, run `go install github.com/Pirikara/Ravel/cmd/ravel@<TAG>` after replacing `<TAG>` with a release tag.
 
 ## Get started
 
@@ -37,7 +37,7 @@ Each command writes a CycloneDX 1.7 SBOM and a coverage report. Scanning is loca
 
 Run `ravel version` to identify the build you are using.
 
-Development builds after beta.3 include `ravel update --check` and `ravel update`. A directly installed macOS or Linux release binary can update itself, and a Homebrew installation upgrades through Homebrew. Go and container installations receive the appropriate update command. The current beta.3 binary does not include this command yet.
+Use `ravel update --check` to check for a new version, or `ravel update` to install it. A directly installed macOS or Linux release binary can update itself, and a Homebrew installation upgrades through Homebrew. Go and container installations receive the appropriate update command.
 
 `scan` reads a local file or directory. For a repository hosted elsewhere, clone it first and scan the checkout:
 
@@ -136,8 +136,9 @@ ravel scan image:tag --image-source docker --output image.cdx.json
 For CI, the same CLI is available as a Linux container. Mount a project directory and select your user ID so output files remain writable:
 
 ```sh
+tag=YOUR_RELEASE_TAG
 docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$PWD:/work" ghcr.io/pirikara/ravel:v0.1.0-beta.3 \
+  -v "$PWD:/work" "ghcr.io/pirikara/ravel:${tag}" \
   scan . --all --recursive --output sbom.cdx.json
 ```
 

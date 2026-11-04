@@ -11,8 +11,8 @@ RUN set -eu; \
     base="https://github.com/Pirikara/Ravel/releases/download/${RELEASE_TAG}"; \
     mkdir -p /release /bundle; \
     cd /release; \
-    curl --fail --location --retry 3 --output "$archive" "$base/$archive"; \
-    curl --fail --location --retry 3 --output SHA256SUMS "$base/SHA256SUMS"; \
+    curl --fail --location --retry 10 --retry-all-errors --retry-delay 2 --output "$archive" "$base/$archive"; \
+    curl --fail --location --retry 10 --retry-all-errors --retry-delay 2 --output SHA256SUMS "$base/SHA256SUMS"; \
     awk -v name="$archive" '$2 == name { print }' SHA256SUMS > selected.sum; \
     test "$(wc -l < selected.sum)" -eq 1; \
     sha256sum -c selected.sum; \

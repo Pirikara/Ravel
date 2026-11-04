@@ -1,13 +1,11 @@
 # Releasing Ravel
 
-Release tags use semantic versions. Beta releases use `vX.Y.Z-beta.N` and are marked as GitHub prereleases.
+Beta releases use `vX.Y.Z-beta.N` tags and are published as GitHub prereleases. The [Release workflow](../.github/workflows/release.yml) handles the full release from one manual run.
 
-1. Confirm `LICENSE` and `NOTICE` are present, the working tree is clean, and CI has passed on the intended commit.
-2. Run `go test ./... -count=1` and `go vet ./...`.
-3. Run `bash scripts/build-release.sh vX.Y.Z-beta.N --check` to compile all supported targets.
-4. Add `docs/releases/vX.Y.Z-beta.N.md` with release notes and commit it before tagging.
-5. Tag the verified commit and push the tag. The [release workflow](../.github/workflows/release.yml) reruns tests, builds the five archives and dependency licenses, verifies checksums, and creates a draft GitHub prerelease. It leaves publication to a maintainer.
-6. Check the draft's notes, asset names, and checksums before publishing. Publishing triggers the [container workflow](../.github/workflows/container.yml), which builds Linux amd64 and arm64 images from those release archives and pushes the versioned tag to GHCR.
-7. Check the container workflow and make the GHCR package public if it is still private. Update the [Homebrew tap](https://github.com/Pirikara/homebrew-tap) formula to the new archive URLs and checksums, then verify an install.
+1. Merge the changes to `main` and confirm its CI succeeds.
+2. In GitHub Actions, open **Release**, select **Run workflow** on `main`, and enter the new tag (for example `v0.1.0-beta.4`). Alternatively, run `gh workflow run release.yml --ref main -f tag=v0.1.0-beta.4`.
+3. Watch the single workflow. It tests and cross-builds five archives, verifies checksums, creates the tag and published GitHub prerelease with generated notes, publishes the Linux amd64/arm64 container to GHCR, and updates the Homebrew tap formula. It also checks that the container is publicly pullable.
 
-Run the workflow manually with an existing tag to verify its build without changing the release. The `v0.1.0-beta.1` notes file is [here](releases/v0.1.0-beta.1.md). Publishing a release is a separate step from making the repository public.
+The workflow rejects an existing tag pointing to another commit and stops if `main` advances during verification. Rerunning the same tag is supported after a later publish step fails: the existing release assets must match the verified build. No release preparation commit or manual draft publication is needed. README and installation examples use a tag selected from [GitHub Releases](https://github.com/Pirikara/Ravel/releases), so they do not require a version edit for each beta.
+
+The tap update uses the `HOMEBREW_TAP_DEPLOY_KEY` Actions secret, a write-enabled deploy key scoped only to [`Pirikara/homebrew-tap`](https://github.com/Pirikara/homebrew-tap). If the secret is missing or the key is invalid, the workflow stops before publishing. The `GITHUB_TOKEN` writes the release tag and GitHub Release only in Ravel and pushes the GHCR image.

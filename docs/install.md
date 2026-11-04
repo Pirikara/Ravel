@@ -1,6 +1,6 @@
 # Install Ravel
 
-The current beta is `v0.1.0-beta.3`. Download its binaries and `SHA256SUMS` from the [GitHub release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.3).
+Choose a tag from [GitHub Releases](https://github.com/Pirikara/Ravel/releases). Download its binaries and `SHA256SUMS` from that release.
 
 | Platform | Target |
 | --- | --- |
@@ -15,7 +15,7 @@ The current beta is `v0.1.0-beta.3`. Download its binaries and `SHA256SUMS` from
 Set `target` to the value for your machine from the table. This example uses macOS Apple silicon:
 
 ```sh
-version=v0.1.0-beta.3
+version=YOUR_RELEASE_TAG
 target=darwin_arm64
 archive="ravel_${version}_${target}.tar.gz"
 base="https://github.com/Pirikara/Ravel/releases/download/${version}"
@@ -44,7 +44,7 @@ Add `$HOME/.local/bin` to your shell's `PATH` configuration to keep the command 
 In PowerShell, download and verify the Windows archive:
 
 ```powershell
-$version = 'v0.1.0-beta.3'
+$version = 'YOUR_RELEASE_TAG'
 $archive = "ravel_${version}_windows_amd64.zip"
 $base = "https://github.com/Pirikara/Ravel/releases/download/$version"
 
@@ -77,11 +77,12 @@ ravel version
 
 ## Use the container image
 
-For CI or other container-based workflows, the multi-platform Linux image is published at `ghcr.io/pirikara/ravel:v0.1.0-beta.3`:
+For CI or other container-based workflows, the multi-platform Linux image is published as `ghcr.io/pirikara/ravel:<TAG>`:
 
 ```sh
+tag=YOUR_RELEASE_TAG
 docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$PWD:/work" ghcr.io/pirikara/ravel:v0.1.0-beta.3 \
+  -v "$PWD:/work" "ghcr.io/pirikara/ravel:${tag}" \
   scan . --all --recursive --output sbom.cdx.json
 ```
 
@@ -92,7 +93,7 @@ The container bundles the CLI and its license files. It does not include Go, Swi
 With Go 1.27 or newer:
 
 ```sh
-go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.3
+go install github.com/Pirikara/Ravel/cmd/ravel@YOUR_RELEASE_TAG
 ```
 
 The binary is installed in `GOBIN`, or in `GOPATH/bin` when `GOBIN` is unset. Make sure that directory is on your `PATH`.

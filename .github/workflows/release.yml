@@ -1,115 +1,132 @@
-name: Release draft
+name: Release
 
 on:
-  push:
-    tags: ['v*-beta.*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing beta tag to verify without changing its release
+        description: Beta tag to publish (for example v0.1.0-beta.4)
         required: true
         type: string
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
-  group: release-${{ inputs.tag || github.ref_name }}
+  group: release
   cancel-in-progress: false
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
     env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Validate tag and notes
+      - name: Validate source and create local tag
+        id: source
         run: |
           set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
-          [[ "$(git rev-parse HEAD)" == "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" ]]
-          test -f "docs/releases/$RELEASE_TAG.md"
+          git fetch origin main --tags
+          source_commit="$(git rev-parse HEAD)"
+          test "$source_commit" = "$(git rev-parse origin/main)"
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" >/dev/null; then
+            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$source_commit"
+          else
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              tag -a "$RELEASE_TAG" -m "Ravel $RELEASE_TAG" "$source_commit"
+          fi
+          echo "commit=$source_commit" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: true
       - run: go test ./... -count=1
       - run: go vet ./...
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Build release archives
         run: bash scripts/build-release.sh "$RELEASE_TAG" dist
-      - name: Verify checksums
-        working-directory: dist
-        run: shasum -a 256 -c SHA256SUMS
-      - name: Render release notes
+      - name: Verify checksums and formula rendering
         run: |
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          tag = os.environ['RELEASE_TAG']
-          repo = os.environ['GITHUB_REPOSITORY']
-          root = Path.cwd().resolve()
-          notes = root / 'docs' / 'releases' / f'{tag}.md'
-          body = notes.read_text()
-
-          def link(match):
-              target = match.group(1)
-              if target.startswith(('https://', 'http://', '#')):
-                  return match.group(0)
-              relative, marker, fragment = target.partition('#')
-              resolved = (notes.parent / relative).resolve()
-              path = resolved.relative_to(root)
-              if not resolved.is_file():
-                  raise ValueError(f'missing release note link: {target}')
-              url = f'https://github.com/{repo}/blob/{tag}/{path.as_posix()}'
-              if marker:
-                  url += f'#{fragment}'
-              return f']({url})'
-
-          rendered = re.sub(r'\]\(([^)]+)\)', link, body)
-          (root / 'release-notes.md').write_text(rendered)
-          PY
+          (cd dist && shasum -a 256 -c SHA256SUMS)
+          python3 scripts/render-homebrew-formula.py "$RELEASE_TAG" dist/SHA256SUMS /tmp/ravel.rb
+          ruby -c /tmp/ravel.rb
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: release-${{ env.RELEASE_TAG }}
-          path: |
-            dist/
-            release-notes.md
+          name: release-${{ inputs.tag }}
+          path: dist/
           if-no-files-found: error
           retention-days: 14
 
-  stage:
-    needs: build
+  publish:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      SOURCE_COMMIT: ${{ needs.verify.outputs.commit }}
     steps:
+      - name: Check tap deploy key
+        env:
+          TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: test -n "$TAP_DEPLOY_KEY"
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          fetch-depth: 0
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: Pirikara/homebrew-tap
+          ref: main
+          path: tap
+          token: ''
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: release-${{ env.RELEASE_TAG }}
-      - name: Verify downloaded assets
+          name: release-${{ inputs.tag }}
+      - name: Verify downloaded archives
         run: |
-          test -s release-notes.md
           test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 6
           (cd dist && shasum -a 256 -c SHA256SUMS)
-      - name: Create draft prerelease
-        if: github.event_name == 'push'
+      - name: Publish tag and GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+        run: bash scripts/publish-release.sh "$RELEASE_TAG" "$SOURCE_COMMIT"
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/pirikara/ravel:${{ inputs.tag }}
+          build-args: RELEASE_TAG=${{ inputs.tag }}
+      - name: Verify public container
+        run: |
+          docker logout ghcr.io
+          test "$(docker run --rm --pull always "ghcr.io/pirikara/ravel:$RELEASE_TAG" version)" = "ravel $RELEASE_TAG"
+      - name: Update Homebrew tap
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "release already exists: $RELEASE_TAG" >&2
-            exit 1
+          python3 scripts/render-homebrew-formula.py "$RELEASE_TAG" dist/SHA256SUMS tap/Formula/ravel.rb
+          ruby -c tap/Formula/ravel.rb
+          git -C tap diff --check
+          if ! git -C tap diff --quiet; then
+            git -C tap -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -am "Update Ravel to $RELEASE_TAG"
+            git -C tap push origin HEAD:main
           fi
-          gh release create "$RELEASE_TAG" dist/* \
-            --repo "$GITHUB_REPOSITORY" --draft --prerelease --verify-tag \
-            --title "Ravel $RELEASE_TAG" --notes-file release-notes.md
