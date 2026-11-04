@@ -1,6 +1,6 @@
 # Install Ravel
 
-The current beta is `v0.1.0-beta.1`. Download its binaries and `SHA256SUMS` from the [GitHub release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.1).
+The current beta is `v0.1.0-beta.2`. Download its binaries and `SHA256SUMS` from the [GitHub release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.2).
 
 | Platform | Target |
 | --- | --- |
@@ -15,7 +15,7 @@ The current beta is `v0.1.0-beta.1`. Download its binaries and `SHA256SUMS` from
 Set `target` to the value for your machine from the table. This example uses macOS Apple silicon:
 
 ```sh
-version=v0.1.0-beta.1
+version=v0.1.0-beta.2
 target=darwin_arm64
 archive="ravel_${version}_${target}.tar.gz"
 base="https://github.com/Pirikara/Ravel/releases/download/${version}"
@@ -44,7 +44,7 @@ Add `$HOME/.local/bin` to your shell's `PATH` configuration to keep the command 
 In PowerShell, download and verify the Windows archive:
 
 ```powershell
-$version = 'v0.1.0-beta.1'
+$version = 'v0.1.0-beta.2'
 $archive = "ravel_${version}_windows_amd64.zip"
 $base = "https://github.com/Pirikara/Ravel/releases/download/$version"
 
@@ -66,12 +66,33 @@ ravel version
 
 Add `%USERPROFILE%\bin` to your user `Path` environment variable to keep the command available in future sessions.
 
+## Install with Homebrew
+
+On macOS and Linux, the [Pirikara tap](https://github.com/Pirikara/homebrew-tap) installs the release binary:
+
+```sh
+brew install pirikara/tap/ravel
+ravel version
+```
+
+## Use the container image
+
+For CI or other container-based workflows, the multi-platform Linux image is published at `ghcr.io/pirikara/ravel:v0.1.0-beta.2`:
+
+```sh
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD:/work" ghcr.io/pirikara/ravel:v0.1.0-beta.2 \
+  scan . --all --recursive --output sbom.cdx.json
+```
+
+The container bundles the CLI and its license files. It does not include Go, Swift, or other package managers for `--resolve --allow-exec`. Use the native binary for those workflows. When scanning a private registry image from within this container, mount an appropriate Docker credential configuration.
+
 ## Install with Go
 
 With Go 1.27 or newer:
 
 ```sh
-go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.1
+go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.2
 ```
 
 The binary is installed in `GOBIN`, or in `GOPATH/bin` when `GOBIN` is unset. Make sure that directory is on your `PATH`.

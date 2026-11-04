@@ -7,6 +7,7 @@ Release tags use semantic versions. Beta releases use `vX.Y.Z-beta.N` and are ma
 3. Run `bash scripts/build-release.sh vX.Y.Z-beta.N --check` to compile all supported targets.
 4. Add `docs/releases/vX.Y.Z-beta.N.md` with release notes and commit it before tagging.
 5. Tag the verified commit and push the tag. The [release workflow](../.github/workflows/release.yml) reruns tests, builds the five archives and dependency licenses, verifies checksums, and creates a draft GitHub prerelease. It leaves publication to a maintainer.
-6. Check the draft's notes, asset names, and checksums before publishing.
+6. Check the draft's notes, asset names, and checksums before publishing. Publishing triggers the [container workflow](../.github/workflows/container.yml), which builds Linux amd64 and arm64 images from those release archives and pushes the versioned tag to GHCR.
+7. Check the container workflow and make the GHCR package public if it is still private. Update the [Homebrew tap](https://github.com/Pirikara/homebrew-tap) formula to the new archive URLs and checksums, then verify an install.
 
 Run the workflow manually with an existing tag to verify its build without changing the release. The `v0.1.0-beta.1` notes file is [here](releases/v0.1.0-beta.1.md). Publishing a release is a separate step from making the repository public.
