@@ -419,13 +419,6 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel: --platform requires an OCI image layout")
 		return 2
 	}
-	if info.IsDir() && *manager == "auto" && !*resolve && len(runtimeDeclarations.Requirements) > 0 &&
-		(selected == "go" && filepath.Base(lock) != "modules.txt" ||
-			selected == "cargo" && filepath.Base(lock) == "Cargo.toml" ||
-			selected == "swiftpm" && filepath.Base(lock) == "Package.swift" ||
-			selected == "gradle" && (filepath.Base(lock) == "build.gradle" || filepath.Base(lock) == "build.gradle.kts")) {
-		return runScanAll(path, *format, *output, *report, *strict, false)
-	}
 	selectedInputLock := lock
 	if selected == "go" && *resolve && filepath.Base(lock) == "modules.txt" {
 		candidate := filepath.Join(filepath.Dir(filepath.Dir(lock)), "go.mod")

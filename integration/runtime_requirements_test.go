@@ -149,7 +149,7 @@ func TestRuntimeOnlyRepositoryAndStandardExports(t *testing.T) {
 func TestGoManifestWithoutVendorReportsRuntimeAndMissingGraph(t *testing.T) {
 	root := t.TempDir()
 	runtimeTestWrite(t, root, "go.mod", "module example.com/demo\n\ngo 1.25.0\n")
-	doc, message, code := runtimeTestScan(t, root)
+	doc, message, code := runtimeTestScan(t, root, "--all")
 	if code != 0 || doc.Coverage.Packages != 0 || doc.Coverage.GraphState != "partial" || len(doc.Runtimes) != 1 || doc.Runtimes[0].Requirement != "1.25.0" {
 		t.Fatalf("Go runtime-only scan failed: code=%d message=%s doc=%#v", code, message, doc)
 	}
@@ -162,8 +162,20 @@ func TestGoManifestWithoutVendorReportsRuntimeAndMissingGraph(t *testing.T) {
 	if !foundSkip {
 		t.Fatalf("missing package graph was not reported: %#v", doc.Coverage.Issues)
 	}
-	if _, message, code := runtimeTestScan(t, root, "--manager", "go"); code != 2 || !strings.Contains(message, "--resolve") {
-		t.Fatalf("explicit Go scan did not require resolver opt-in: code=%d message=%s", code, message)
+	if _, message, code := runtimeTestScan(t, root); code != 2 || !strings.Contains(message, "--resolve") {
+		t.Fatalf("Go scan did not require resolver opt-in: code=%d message=%s", code, message)
+	}
+}
+
+func TestSwiftToolsVersionDoesNotBypassResolverGate(t *testing.T) {
+	root := t.TempDir()
+	runtimeTestWrite(t, root, "Package.swift", "// swift-tools-version: 6.0\nimport PackageDescription\n")
+	if _, message, code := runtimeTestScan(t, root); code != 2 || !strings.Contains(message, "--resolve") {
+		t.Fatalf("SwiftPM scan did not require resolver opt-in: code=%d message=%s", code, message)
+	}
+	doc, message, code := runtimeTestScan(t, root, "--all")
+	if code != 0 || doc.Coverage.GraphState != "partial" || len(doc.Runtimes) != 1 || doc.Runtimes[0].Name != "swift-tools" {
+		t.Fatalf("Swift tools version was not available in static scan: code=%d message=%s doc=%#v", code, message, doc)
 	}
 }
 
