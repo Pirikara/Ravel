@@ -6,23 +6,23 @@
 
 **Beta** · Binaries for macOS, Linux, and Windows · Go 1.27+ for source builds
 
-Ravel is a command-line SBOM generator for project lockfiles, package archives, installed systems, and local container images. It produces CycloneDX or SPDX, and lets you trace package and dependency claims back to the input that supports them.
+Ravel is a command-line SBOM generator for project lockfiles, package archives, installed systems, and container images. It produces CycloneDX or SPDX, and lets you trace package and dependency claims back to the input that supports them.
 
 A package name is only part of the story. Ravel also records declared registries and distribution URLs when the input provides them, keeps development repositories separate from download sources, and reports what it could not establish.
 
 ## Install
 
-Download the archive for your platform from the [v0.1.0-beta.1 release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.1):
+Download the archive for your platform from the [v0.1.0-beta.2 release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.2):
 
 | Platform | Archive |
 | --- | --- |
-| macOS Apple silicon | `ravel_v0.1.0-beta.1_darwin_arm64.tar.gz` |
-| macOS Intel | `ravel_v0.1.0-beta.1_darwin_amd64.tar.gz` |
-| Linux x86-64 | `ravel_v0.1.0-beta.1_linux_amd64.tar.gz` |
-| Linux ARM64 | `ravel_v0.1.0-beta.1_linux_arm64.tar.gz` |
-| Windows x86-64 | `ravel_v0.1.0-beta.1_windows_amd64.zip` |
+| macOS Apple silicon | `ravel_v0.1.0-beta.2_darwin_arm64.tar.gz` |
+| macOS Intel | `ravel_v0.1.0-beta.2_darwin_amd64.tar.gz` |
+| Linux x86-64 | `ravel_v0.1.0-beta.2_linux_amd64.tar.gz` |
+| Linux ARM64 | `ravel_v0.1.0-beta.2_linux_arm64.tar.gz` |
+| Windows x86-64 | `ravel_v0.1.0-beta.2_windows_amd64.zip` |
 
-Verify the archive against `SHA256SUMS`, extract it, and put `ravel` (or `ravel.exe`) on your `PATH`. The [install guide](docs/install.md) has commands for each OS. With Go 1.27+, you can also install the tagged version with `go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.1`.
+Verify the archive against `SHA256SUMS`, extract it, and put `ravel` (or `ravel.exe`) on your `PATH`. The [install guide](docs/install.md) has commands for each OS. On macOS and Linux, `brew install pirikara/tap/ravel` installs the same release binary. With Go 1.27+, you can also run `go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.2`.
 
 ## Get started
 
@@ -44,7 +44,7 @@ git clone https://github.com/OWNER/PROJECT.git project
 ravel scan project --all --recursive --output project.cdx.json --report project.coverage.json
 ```
 
-Ravel does not fetch a Git URL or pull a container image when passed to `scan`. See the [CLI guide](docs/cli.md) for local file, repository, and saved-image examples.
+Ravel does not fetch a Git repository when passed a URL; clone it first. A container image reference such as `image:tag` is pulled from its registry, or from the local Docker daemon with `--image-source docker`. See the [CLI guide](docs/cli.md) for examples.
 
 To inspect the evidence behind a finding, save Ravel's native format:
 
@@ -122,6 +122,16 @@ The image is pulled for the selected platform. Ravel uses your Docker credential
 ```sh
 ravel scan image:tag --image-source docker --output image.cdx.json
 ```
+
+For CI, the same CLI is available as a Linux container. Mount a project directory and select your user ID so output files remain writable:
+
+```sh
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD:/work" ghcr.io/pirikara/ravel:v0.1.0-beta.2 \
+  scan . --all --recursive --output sbom.cdx.json
+```
+
+The container includes the release binary and its licenses. Package-manager resolution requires the corresponding tools, so use the native binary for `--resolve --allow-exec` workflows.
 
 You can also scan a saved container image:
 
