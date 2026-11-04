@@ -58,6 +58,8 @@ func main() {
 		code = runEnrich(os.Args[2:])
 	case "vex":
 		code = runVEX(os.Args[2:])
+	case "update":
+		code = runUpdate(os.Args[2:])
 	default:
 		usage()
 	}
@@ -82,6 +84,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "       ravel merge [--name PROJECT] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] INPUT.ravel.json...")
 	fmt.Fprintln(os.Stderr, "       ravel enrich INPUT.ravel.json --network allow [--ecosystem rubygems|npm|pypi] [--registry HTTPS_URL] [--max-requests N] [--format ravel-json|cyclonedx-json|spdx-json] [--output FILE] [--report FILE] [--strict]")
 	fmt.Fprintln(os.Stderr, "       ravel vex --input INPUT.ravel.json --vex FILE.openvex.json [--format text|json] [--output FILE]")
+	fmt.Fprintln(os.Stderr, "       ravel update [--check] [--channel auto|stable|beta]")
 }
 
 func runMerge(args []string) int {
