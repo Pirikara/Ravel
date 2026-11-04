@@ -37,6 +37,8 @@ Each command writes a CycloneDX 1.7 SBOM and a coverage report. Scanning is loca
 
 Run `ravel version` to identify the build you are using.
 
+Development builds after beta.3 include `ravel update --check` and `ravel update`. A directly installed macOS or Linux release binary can update itself, and a Homebrew installation upgrades through Homebrew. Go and container installations receive the appropriate update command. The current beta.3 binary does not include this command yet.
+
 `scan` reads a local file or directory. For a repository hosted elsewhere, clone it first and scan the checkout:
 
 ```sh
