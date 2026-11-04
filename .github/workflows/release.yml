@@ -89,7 +89,6 @@ jobs:
           repository: Pirikara/homebrew-tap
           ref: main
           path: tap
-          token: ''
           ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
       - uses: actions/download-artifact@v8.0.2
         with:
