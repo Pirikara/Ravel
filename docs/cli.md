@@ -100,6 +100,17 @@ ravel merge --name my-app --format cyclonedx-json \
 
 `explain` accepts a package name, PURL, or component ID. If multiple occurrences share a name, use the component ID. `merge` takes at least two Ravel JSON inputs, preserves distinct occurrences, and rejects duplicate input scopes.
 
+### OpenVEX correlation
+
+```sh
+ravel scan path/to/project --format ravel-json --output project.ravel.json
+ravel vex --input project.ravel.json --vex supplier.openvex.json
+ravel vex --input project.ravel.json --vex supplier.openvex.json \
+  --format json --output vex-matches.json
+```
+
+`vex` reads a local OpenVEX v0.2.0 document. It reports each statement with its issuer, timestamp, vulnerability ID, status, rationale, and products, along with the VEX input's SHA-256 digest. A product matches an SBOM component only when its `@id` PURL or `identifiers.purl` is exactly equal to the component PURL. All matching component IDs are listed with `matchMethod: exact_purl`; unmatched products remain visible with a reason. The issuer's subcomponent PURLs are shown for context but are not correlated to the SBOM. Product IDs based only on hashes, CPEs, or other identifiers remain unmatched. An issuer's status for a dependency does not establish the status of the application that contains it. Ravel does not check signatures, establish the issuer's authority, detect vulnerabilities, or change the SBOM or any vulnerability finding. The output is a correlation report, not a VEX document authored by Ravel.
+
 ## Coverage and output formats
 
 | Output | Use it for | Retained detail |
