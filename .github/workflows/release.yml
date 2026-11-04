@@ -93,6 +93,7 @@ jobs:
       - uses: actions/download-artifact@v8.0.2
         with:
           name: release-${{ inputs.tag }}
+          path: dist
       - name: Verify downloaded archives
         run: |
           test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 6
