@@ -2,6 +2,8 @@
 
 The table describes inputs Ravel reads today. A listed format does not imply complete dependency or origin coverage; the report describes each scan's actual scope.
 
+Repository directories also expose explicit runtime requirements from `.nvmrc`, `.node-version`, `.python-version`, `.ruby-version`, `.tool-versions`, `package.json` `engines.node`, `pyproject.toml` `requires-python` and Poetry's Python requirement, `go.mod` / `go.work` `go` and `toolchain`, Cargo `rust-version`, `rust-toolchain` / `rust-toolchain.toml`, `.NET` `global.json` SDK version, `Package.swift` tools version, and `pubspec.yaml` Dart/Flutter SDK constraints. These are declarations, not verified installed runtime versions.
+
 | Ecosystem | Inputs | Notes |
 | --- | --- | --- |
 | Ruby | `Gemfile.lock`; `.gem` archives | GEM, GIT, and PATH sources; archive metadata and SHA-256. |

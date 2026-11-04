@@ -44,6 +44,18 @@ type bom struct {
 
 func CycloneDX(doc model.Document) ([]byte, error) {
 	root := component{Type: "application", BomRef: "root", Name: doc.Project}
+	for _, runtime := range doc.Runtimes {
+		value, err := json.Marshal(struct {
+			Name        string `json:"name"`
+			Requirement string `json:"requirement"`
+			Relation    string `json:"relation"`
+			Policy      string `json:"policy,omitempty"`
+		}{runtime.Name, runtime.Requirement, runtime.Relation, runtime.Policy})
+		if err != nil {
+			return nil, err
+		}
+		root.Properties = append(root.Properties, property{Name: "ravel:runtimeRequirement", Value: string(value)})
+	}
 	out := bom{
 		BomFormat: "CycloneDX", SpecVersion: "1.7", Version: 1,
 		Metadata:   map[string]any{"component": root},
