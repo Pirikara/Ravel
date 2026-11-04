@@ -12,17 +12,17 @@ A package name is only part of the story. Ravel also records declared registries
 
 ## Install
 
-Download the archive for your platform from the [v0.1.0-beta.2 release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.2):
+Download the archive for your platform from the [v0.1.0-beta.3 release](https://github.com/Pirikara/Ravel/releases/tag/v0.1.0-beta.3):
 
 | Platform | Archive |
 | --- | --- |
-| macOS Apple silicon | `ravel_v0.1.0-beta.2_darwin_arm64.tar.gz` |
-| macOS Intel | `ravel_v0.1.0-beta.2_darwin_amd64.tar.gz` |
-| Linux x86-64 | `ravel_v0.1.0-beta.2_linux_amd64.tar.gz` |
-| Linux ARM64 | `ravel_v0.1.0-beta.2_linux_arm64.tar.gz` |
-| Windows x86-64 | `ravel_v0.1.0-beta.2_windows_amd64.zip` |
+| macOS Apple silicon | `ravel_v0.1.0-beta.3_darwin_arm64.tar.gz` |
+| macOS Intel | `ravel_v0.1.0-beta.3_darwin_amd64.tar.gz` |
+| Linux x86-64 | `ravel_v0.1.0-beta.3_linux_amd64.tar.gz` |
+| Linux ARM64 | `ravel_v0.1.0-beta.3_linux_arm64.tar.gz` |
+| Windows x86-64 | `ravel_v0.1.0-beta.3_windows_amd64.zip` |
 
-Verify the archive against `SHA256SUMS`, extract it, and put `ravel` (or `ravel.exe`) on your `PATH`. The [install guide](docs/install.md) has commands for each OS. On macOS and Linux, `brew install pirikara/tap/ravel` installs the same release binary. With Go 1.27+, you can also run `go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.2`.
+Verify the archive against `SHA256SUMS`, extract it, and put `ravel` (or `ravel.exe`) on your `PATH`. The [install guide](docs/install.md) has commands for each OS. On macOS and Linux, `brew install pirikara/tap/ravel` installs the same release binary. With Go 1.27+, you can also run `go install github.com/Pirikara/Ravel/cmd/ravel@v0.1.0-beta.3`.
 
 ## Get started
 
@@ -135,7 +135,7 @@ For CI, the same CLI is available as a Linux container. Mount a project director
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$PWD:/work" ghcr.io/pirikara/ravel:v0.1.0-beta.2 \
+  -v "$PWD:/work" ghcr.io/pirikara/ravel:v0.1.0-beta.3 \
   scan . --all --recursive --output sbom.cdx.json
 ```
 
