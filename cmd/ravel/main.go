@@ -73,7 +73,7 @@ func buildVersion() string {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: ravel version")
-	fmt.Fprintln(os.Stderr, "       ravel scan PATH [--manager NAME|--all [--recursive]] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
+	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG [--manager NAME|--all [--recursive]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
 	fmt.Fprintln(os.Stderr, "       ravel explain PACKAGE --input ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel diff BEFORE.ravel.json AFTER.ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel merge [--name PROJECT] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] INPUT.ravel.json...")
@@ -308,6 +308,7 @@ func runScan(args []string) int {
 	network := fs.String("network", "deny", "deny or allow")
 	configuration := fs.String("configuration", "runtimeClasspath", "Gradle configuration to resolve")
 	platform := fs.String("platform", "", "OCI image platform: os/architecture[/variant]")
+	imageSource := fs.String("image-source", "registry", "image reference source: registry or docker")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -318,14 +319,18 @@ func runScan(args []string) int {
 	if fs.NArg() == 1 {
 		path = fs.Arg(0)
 	}
-	if *network != "deny" && *network != "allow" || *resolve && !*allowExec || *network == "allow" && !*resolve {
+	if *network != "deny" && *network != "allow" || *resolve && !*allowExec {
 		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec; --network must be deny or allow")
+		return 2
+	}
+	if *imageSource != "registry" && *imageSource != "docker" {
+		fmt.Fprintln(os.Stderr, "ravel: --image-source must be registry or docker")
 		return 2
 	}
 	remotePath := strings.ToLower(path)
 	for _, prefix := range []string{"http://", "https://", "git://", "ssh://", "docker://", "oci://", "git@"} {
 		if strings.HasPrefix(remotePath, prefix) {
-			fmt.Fprintln(os.Stderr, "ravel: scan accepts a local path; clone the Git repository or save the image before scanning")
+			fmt.Fprintln(os.Stderr, "ravel: scan accepts a local path or image reference, not a URL")
 			return 2
 		}
 	}
@@ -334,8 +339,8 @@ func runScan(args []string) int {
 		return 2
 	}
 	if *all {
-		if *manager != "auto" || *resolve || *allowExec || *configuration != "runtimeClasspath" || *platform != "" {
-			fmt.Fprintln(os.Stderr, "ravel: --all is static and cannot be combined with --manager, --resolve, --allow-exec, --configuration, or --platform")
+		if *manager != "auto" || *resolve || *allowExec || *configuration != "runtimeClasspath" || *platform != "" || *imageSource != "registry" || *network == "allow" {
+			fmt.Fprintln(os.Stderr, "ravel: --all is static and cannot be combined with --manager, --resolve, --allow-exec, --configuration, --platform, --image-source, or --network allow")
 			return 2
 		}
 		return runScanAll(path, *format, *output, *report, *strict, *recursive)
@@ -345,9 +350,33 @@ func runScan(args []string) int {
 		return 2
 	}
 	info, err := os.Stat(path)
+	if os.IsNotExist(err) && looksLikeImageReference(path) {
+		if *manager != "auto" && *manager != "oci" || *resolve || *allowExec || *configuration != "runtimeClasspath" || *imageSource == "docker" && *network == "allow" {
+			fmt.Fprintln(os.Stderr, "ravel: image references require --manager auto|oci and cannot use resolver options")
+			return 2
+		}
+		forbiddenNetwork := false
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "network" && f.Value.String() == "deny" {
+				forbiddenNetwork = true
+			}
+		})
+		if forbiddenNetwork && *imageSource == "registry" {
+			fmt.Fprintln(os.Stderr, "ravel: registry images require network access; omit --network or use --network allow")
+			return 2
+		}
+		if *imageSource == "registry" {
+			return runScanImage(path, *platform, *format, *output, *report, *strict, false)
+		}
+		return runScanImage(path, *platform, *format, *output, *report, *strict, true)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 1
+	}
+	if *imageSource != "registry" || *network == "allow" && !*resolve {
+		fmt.Fprintln(os.Stderr, "ravel: --image-source requires an image reference; --network allow requires --resolve")
+		return 2
 	}
 	project := filepath.Base(path)
 	if !info.IsDir() {
@@ -505,8 +534,13 @@ func runScan(args []string) int {
 			return 2
 		}
 	}
+	return writeScanResult(doc, *format, *output, *report, *strict)
+}
+
+func writeScanResult(doc model.Document, format, output, reportPath string, strict bool) int {
 	var data []byte
-	switch *format {
+	var err error
+	switch format {
 	case "cyclonedx-json":
 		data, err = export.CycloneDX(doc)
 	case "spdx-json":
@@ -521,23 +555,23 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 1
 	}
-	if err := write(*output, append(data, '\n')); err != nil {
+	if err := write(output, append(data, '\n')); err != nil {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 1
 	}
-	if *report != "" {
-		coverage, err := coverageReport(doc, *format)
+	if reportPath != "" {
+		coverage, err := coverageReport(doc, format)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ravel:", err)
 			return 1
 		}
-		if err := write(*report, append(coverage, '\n')); err != nil {
+		if err := write(reportPath, append(coverage, '\n')); err != nil {
 			fmt.Fprintln(os.Stderr, "ravel:", err)
 			return 1
 		}
 	}
 	fmt.Fprintf(os.Stderr, "ravel: %d packages, %d edges, graph=%s, origin=%s\n", doc.Coverage.Packages, doc.Coverage.Edges, doc.Coverage.GraphState, doc.Coverage.OriginState)
-	if *strict && len(doc.Coverage.Issues) > 0 {
+	if strict && len(doc.Coverage.Issues) > 0 {
 		return 3
 	}
 	return 0
