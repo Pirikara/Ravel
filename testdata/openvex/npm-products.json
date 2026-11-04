@@ -1,0 +1,30 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://example.test/vex/npm-products/1",
+  "author": "Example Security Team",
+  "timestamp": "2026-10-01T12:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {"name": "CVE-2026-10001"},
+      "products": [
+        {"@id": "pkg:npm/is-number@7.0.0"},
+        {"@id": "pkg:npm/beta@2.0.0"}
+      ],
+      "status": "under_investigation"
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-10002"},
+      "products": [
+        {
+          "@id": "https://example.test/products/is-number",
+          "identifiers": {"purl": "pkg:npm/is-number@7.0.0"},
+          "subcomponents": [{"@id": "pkg:npm/other@3.0.0"}]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The affected code is absent from this build."
+    }
+  ]
+}

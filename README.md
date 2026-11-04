@@ -55,6 +55,14 @@ ravel explain package-name --input scan.ravel.json
 
 Use a component ID with `explain` when the same name appears more than once. See the [CLI guide](docs/cli.md) for all commands and options.
 
+To compare an externally issued OpenVEX document with a scan, use `ravel vex`:
+
+```sh
+ravel vex --input scan.ravel.json --vex advisory.openvex.json --format json
+```
+
+The result identifies exact PURL matches and retains the issuer's status and rationale. Ravel does not scan for vulnerabilities or issue VEX conclusions. See [VEX correlation](docs/cli.md#openvex-correlation) for the matching rules and limits.
+
 ## Why Ravel
 
 | Question | What Ravel records |
