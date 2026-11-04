@@ -55,6 +55,11 @@ func Losses(doc model.Document, format string) []Loss {
 			evidence++
 		}
 	}
+	for _, runtime := range doc.Runtimes {
+		if runtime.Evidence.Collector != "" {
+			evidence++
+		}
+	}
 	add("evidence_records_omitted", evidence)
 	sources := len(doc.Sources)
 	if doc.Source != "" {

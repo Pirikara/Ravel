@@ -109,6 +109,7 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			source.Occurrence = id
 			doc.Development = append(doc.Development, source)
 		}
+		doc.Runtimes = append(doc.Runtimes, input.Runtimes...)
 	}
 	common.Finalize(&doc)
 	if allGraphComplete {

@@ -22,6 +22,7 @@ import (
 	"github.com/Pirikara/Ravel/internal/collectors/oci"
 	"github.com/Pirikara/Ravel/internal/collectors/python"
 	"github.com/Pirikara/Ravel/internal/collectors/rpm"
+	"github.com/Pirikara/Ravel/internal/collectors/runtimeversion"
 	"github.com/Pirikara/Ravel/internal/collectors/swiftpm"
 	"github.com/Pirikara/Ravel/internal/export"
 	"github.com/Pirikara/Ravel/internal/merge"
@@ -394,8 +395,15 @@ func runScan(args []string) int {
 			project = filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path)))))
 		}
 	}
+	runtimeDeclarations := runtimeversion.Result{}
+	if info.IsDir() {
+		runtimeDeclarations = runtimeversion.CollectDirectory(path)
+	}
 	lock, selected, err := selectLock(path, info.IsDir(), *manager)
 	if err != nil {
+		if info.IsDir() && *manager == "auto" && err.Error() == "no supported lockfile found" && len(runtimeDeclarations.Requirements) > 0 {
+			return runScanAll(path, *format, *output, *report, *strict, false)
+		}
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 2
 	}
@@ -528,6 +536,15 @@ func runScan(args []string) int {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 1
 	}
+	if repositoryManager(selected) {
+		if !info.IsDir() {
+			runtimeDeclarations = runtimeversion.CollectDirectory(filepath.Dir(path))
+		}
+		if err := attachRuntimeRequirements(&doc, runtimeDeclarations, *output, *report); err != nil {
+			fmt.Fprintln(os.Stderr, "ravel:", err)
+			return 2
+		}
+	}
 	for _, source := range doc.Sources {
 		if samePath(*output, source) || *report != "" && samePath(*report, source) {
 			fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite an included input")
@@ -570,7 +587,7 @@ func writeScanResult(doc model.Document, format, output, reportPath string, stri
 			return 1
 		}
 	}
-	fmt.Fprintf(os.Stderr, "ravel: %d packages, %d edges, graph=%s, origin=%s\n", doc.Coverage.Packages, doc.Coverage.Edges, doc.Coverage.GraphState, doc.Coverage.OriginState)
+	fmt.Fprintf(os.Stderr, "ravel: %d packages, %d edges, %d runtime requirements, graph=%s, origin=%s\n", doc.Coverage.Packages, doc.Coverage.Edges, len(doc.Runtimes), doc.Coverage.GraphState, doc.Coverage.OriginState)
 	if strict && len(doc.Coverage.Issues) > 0 {
 		return 3
 	}

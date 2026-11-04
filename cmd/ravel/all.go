@@ -14,6 +14,7 @@ import (
 	"github.com/Pirikara/Ravel/internal/collectors/cabal"
 	"github.com/Pirikara/Ravel/internal/collectors/cargo"
 	"github.com/Pirikara/Ravel/internal/collectors/cocoapods"
+	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/collectors/composer"
 	"github.com/Pirikara/Ravel/internal/collectors/conan"
 	"github.com/Pirikara/Ravel/internal/collectors/condalock"
@@ -34,6 +35,7 @@ import (
 	"github.com/Pirikara/Ravel/internal/collectors/rebar"
 	"github.com/Pirikara/Ravel/internal/collectors/renv"
 	"github.com/Pirikara/Ravel/internal/collectors/rpm"
+	"github.com/Pirikara/Ravel/internal/collectors/runtimeversion"
 	"github.com/Pirikara/Ravel/internal/collectors/sbt"
 	"github.com/Pirikara/Ravel/internal/collectors/shards"
 	"github.com/Pirikara/Ravel/internal/collectors/stack"
@@ -69,6 +71,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 	var inputs []model.Document
 	var skipped []model.Issue
 	var observed []string
+	runtimeDeclarations := runtimeversion.Result{}
 	project := filepath.Base(filepath.Clean(path))
 	directories := []string{path}
 	if recursive {
@@ -79,6 +82,10 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 		}
 	}
 	for _, directory := range directories {
+		foundRuntime := runtimeversion.CollectDirectory(directory)
+		runtimeDeclarations.Requirements = append(runtimeDeclarations.Requirements, foundRuntime.Requirements...)
+		runtimeDeclarations.Sources = append(runtimeDeclarations.Sources, foundRuntime.Sources...)
+		runtimeDeclarations.Issues = append(runtimeDeclarations.Issues, foundRuntime.Issues...)
 		foundManagers := map[string]bool{}
 		pixiPyproject := false
 		chosenJS, ignoredJS, err := selectedJSManager(directory)
@@ -151,17 +158,27 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 			}
 		}
 	}
-	if len(inputs) == 0 {
+	if len(inputs) == 0 && len(runtimeDeclarations.Requirements) == 0 {
 		fmt.Fprintln(os.Stderr, "ravel: no statically scannable inputs found; Go, Cargo, Gradle, and SwiftPM manifests without lock data require --resolve --allow-exec in a separate scan")
 		return 2
 	}
-	doc := inputs[0]
+	doc := common.NewDocument(path, project, "runtime", nil)
+	if len(inputs) > 0 {
+		doc = inputs[0]
+	} else {
+		doc.Coverage.GraphState = "unknown"
+		doc.Coverage.OriginState = "unknown"
+	}
 	if len(inputs) > 1 {
 		doc, err = merge.Documents(project, inputs)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ravel:", err)
 			return 1
 		}
+	}
+	if err := attachRuntimeRequirements(&doc, runtimeDeclarations, output, report); err != nil {
+		fmt.Fprintln(os.Stderr, "ravel:", err)
+		return 2
 	}
 	if len(skipped) > 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, skipped...)
@@ -220,7 +237,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 			return 1
 		}
 	}
-	fmt.Fprintf(os.Stderr, "ravel: %d inputs, %d packages, graph=%s, origin=%s\n", len(inputs), doc.Coverage.Packages, doc.Coverage.GraphState, doc.Coverage.OriginState)
+	fmt.Fprintf(os.Stderr, "ravel: %d inputs, %d packages, %d runtime requirements, graph=%s, origin=%s\n", len(inputs), doc.Coverage.Packages, len(doc.Runtimes), doc.Coverage.GraphState, doc.Coverage.OriginState)
 	if strict && len(doc.Coverage.Issues) > 0 {
 		return 3
 	}
@@ -333,7 +350,7 @@ func scanDirectories(root string) ([]string, error) {
 
 func recursiveCandidate(name string) bool {
 	switch name {
-	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "packages.config", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "pubspec.lock", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "mix.lock", "rebar.lock", "shard.lock", "cabal.project.freeze", "Manifest.toml", "JuliaManifest.toml", "renv.lock", "conda-lock.yml", "conda-lock.yaml", "pixi.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout":
+	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "packages.config", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "go.work", "pubspec.lock", "pubspec.yaml", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "mix.lock", "rebar.lock", "shard.lock", "cabal.project.freeze", "Manifest.toml", "JuliaManifest.toml", "renv.lock", "conda-lock.yml", "conda-lock.yaml", "pixi.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout", ".nvmrc", ".node-version", ".python-version", ".ruby-version", ".tool-versions", "rust-toolchain", "rust-toolchain.toml", "global.json":
 		return true
 	}
 	return isPylockName(name) || isJuliaManifestName(name) || isCondaLockName(name) || strings.HasSuffix(name, ".sbt.lock") || strings.HasSuffix(name, ".project.freeze") || strings.HasSuffix(name, ".yaml.lock") || name == "requirements.txt"

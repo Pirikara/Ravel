@@ -16,7 +16,7 @@ import (
 func NewDocument(path, project, manager string, data []byte) model.Document {
 	return model.Document{
 		SchemaVersion: "0.1", Project: project, Source: path,
-		Components: []model.Component{}, Edges: []model.Edge{}, Origins: []model.Origin{}, Development: []model.Development{},
+		Components: []model.Component{}, Edges: []model.Edge{}, Origins: []model.Origin{}, Development: []model.Development{}, Runtimes: []model.RuntimeRequirement{},
 		Coverage: model.Coverage{Manager: manager, GraphState: "complete_for_scope", OriginState: "complete_for_scope", Issues: []model.Issue{}},
 	}
 }

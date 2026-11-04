@@ -63,6 +63,17 @@ type Development struct {
 	Evidence   Evidence `json:"evidence"`
 }
 
+// RuntimeRequirement is a repository declaration. It does not claim that the
+// runtime is installed in the scanned checkout or in a deployment image.
+type RuntimeRequirement struct {
+	Name        string   `json:"name"`
+	Requirement string   `json:"requirement"`
+	Relation    string   `json:"relation"`
+	Scope       string   `json:"scope"`
+	Policy      string   `json:"policy,omitempty"`
+	Evidence    Evidence `json:"evidence"`
+}
+
 type Issue struct {
 	Code  string `json:"code"`
 	Name  string `json:"name,omitempty"`
@@ -93,13 +104,14 @@ type Coverage struct {
 }
 
 type Document struct {
-	SchemaVersion string        `json:"schemaVersion"`
-	Project       string        `json:"project"`
-	Source        string        `json:"source"`
-	Sources       []string      `json:"sources,omitempty"`
-	Components    []Component   `json:"components"`
-	Edges         []Edge        `json:"edges"`
-	Origins       []Origin      `json:"origins"`
-	Development   []Development `json:"development"`
-	Coverage      Coverage      `json:"coverage"`
+	SchemaVersion string               `json:"schemaVersion"`
+	Project       string               `json:"project"`
+	Source        string               `json:"source"`
+	Sources       []string             `json:"sources,omitempty"`
+	Components    []Component          `json:"components"`
+	Edges         []Edge               `json:"edges"`
+	Origins       []Origin             `json:"origins"`
+	Development   []Development        `json:"development"`
+	Runtimes      []RuntimeRequirement `json:"runtimes,omitempty"`
+	Coverage      Coverage             `json:"coverage"`
 }

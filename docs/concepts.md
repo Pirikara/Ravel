@@ -19,6 +19,7 @@ A Ravel JSON document keeps these records separate:
 | **Edge** | A relationship backed by evidence. A `condition` marks a relationship that depends on an unselected target, range, marker, or other unresolved choice. |
 | **Origin** | A distribution location or source declaration, with its evidence and status. |
 | **Development** | A candidate source repository. It is distinct from the place that distributed the package. |
+| **Runtime** | A repository-declared version selection or compatibility requirement, with its scope and file evidence. It does not assert an installed runtime. |
 | **Coverage** | Package and edge counts, graph and origin states, and specific issues. |
 
 Ravel records hashes for observed archive bytes and checks available lockfile integrity data. It removes credentials, URL queries, and fragments before storing URLs. A default registry Package URL (PURL) is omitted when that registry cannot be established from the input.

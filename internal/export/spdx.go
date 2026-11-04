@@ -87,6 +87,15 @@ func SPDX23(doc model.Document) ([]byte, error) {
 		DocumentDescribes: []string{"SPDXRef-Root"}, Packages: []spdxPackage{},
 	}
 	root := spdxPackage{ID: "SPDXRef-Root", Name: doc.Project, Purpose: "APPLICATION", DownloadLocation: "NOASSERTION", LicenseConcluded: "NOASSERTION", LicenseDeclared: "NOASSERTION", CopyrightText: "NOASSERTION"}
+	for _, runtime := range doc.Runtimes {
+		if root.Comment != "" {
+			root.Comment += "; "
+		}
+		root.Comment += "Repository runtime declaration (not installed): " + runtime.Name + " " + runtime.Relation + " " + runtime.Requirement
+		if runtime.Policy != "" {
+			root.Comment += " (policy " + runtime.Policy + ")"
+		}
+	}
 	out.Packages = append(out.Packages, root)
 	ids := map[string]string{"root": root.ID}
 	for _, c := range doc.Components {
