@@ -95,7 +95,7 @@ coverage: graph=partial origin=complete_for_scope
 | Repository runtime declarations | Node, Python, Ruby, Go, Rust, Swift tools, Dart, Flutter, and .NET SDK version requirements from common project files. |
 | Package archives | JAR/WAR, wheel, npm tarball, NuGet package, and Ruby gem. |
 | Installed systems | Debian, Alpine, and RPM package databases; installed Python, Node, Ruby, Composer, Conda, .NET, Java, Go, and Rust metadata in images. |
-| Container images | Local OCI layouts and OCI or Docker save archives, with final-layer package and runtime detection. |
+| Container images | Registry image references, local Docker images, OCI layouts, and OCI or Docker save archives, with final-layer package and runtime detection. |
 
 The [full input matrix](docs/supported-inputs.md) lists formats and versions. [Known limits](docs/limitations.md) describe cases where a lockfile or installed database cannot establish a complete graph or origin.
 

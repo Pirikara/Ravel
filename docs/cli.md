@@ -2,7 +2,7 @@
 
 The examples below assume `ravel` is on your `PATH`; see [installation](install.md).
 
-`scan` accepts a supported file or project directory. CycloneDX JSON goes to
+`scan` accepts a supported file, project directory, or container image reference. CycloneDX JSON goes to
 stdout unless `--output` is set; progress and errors go to stderr. Run `ravel`
 without arguments for command syntax.
 
@@ -33,9 +33,10 @@ ravel scan project --all --recursive --output project.cdx.json --report project.
 Replace `REF` with a commit or tag for a repeatable scan. Use
 `git clone --recurse-submodules` when the inputs you need are in submodules.
 `--all --recursive` scans supported static inputs in nested projects; manifests
-that need package-manager resolution are reported as skipped. Direct Git URLs,
-remote repository archives are not scan inputs. Fetch them locally first. Ravel does not automatically record the
-scanned checkout's Git commit ID, so keep it alongside the generated result.
+that need package-manager resolution are reported as skipped. Direct Git URLs
+and remote repository archives are not scan inputs. Fetch them locally first.
+Ravel does not automatically record the scanned checkout's Git commit ID, so
+keep it alongside the generated result.
 
 ## Scan workflows
 
