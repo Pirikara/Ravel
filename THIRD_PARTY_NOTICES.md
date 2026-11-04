@@ -1,7 +1,8 @@
 # Third-party notices
 
-The RPM database reader and APK zstd decoder use the following Go modules.
-Their license notices are reproduced here for distributions of Ravel binaries.
+The RPM database reader and APK zstd decoder use the Go modules listed below;
+their license notices are reproduced here for distributions of Ravel binaries.
+Registry image retrieval uses `github.com/google/go-containerregistry` (Apache-2.0).
 Release archives also include `THIRD_PARTY_LICENSES/`, with the license and
 notice files for every Go module compiled into a release binary.
 

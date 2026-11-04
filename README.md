@@ -107,7 +107,20 @@ ravel scan path/to/repository --all --recursive \
   --output repository.cdx.json --report repository.coverage.json
 ```
 
-Scan a locally saved container image:
+Scan an image directly from a registry:
+
+```sh
+ravel scan ghcr.io/owner/image:tag --platform linux/amd64 \
+  --output image.cdx.json --report image.coverage.json
+```
+
+The image is pulled for the selected platform. Ravel uses your Docker credential configuration for private registries and records the resolved manifest digest in Ravel JSON. To scan an image that exists only in the local Docker daemon, add `--image-source docker`:
+
+```sh
+ravel scan image:tag --image-source docker --output image.cdx.json
+```
+
+You can also scan a saved container image:
 
 ```sh
 docker save --output image.docker.tar image:tag
@@ -115,7 +128,7 @@ ravel scan image.docker.tar \
   --output image.cdx.json --report image.coverage.json
 ```
 
-Ravel reads local image data; it does not pull images. For a multi-platform OCI layout, select a platform with `--platform`.
+For a multi-platform OCI layout, select a platform with `--platform`. A registry scan defaults to `linux` on the host architecture when no platform is specified.
 
 Compare or combine native scans:
 

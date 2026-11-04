@@ -34,8 +34,7 @@ Replace `REF` with a commit or tag for a repeatable scan. Use
 `git clone --recurse-submodules` when the inputs you need are in submodules.
 `--all --recursive` scans supported static inputs in nested projects; manifests
 that need package-manager resolution are reported as skipped. Direct Git URLs,
-remote repository archives, and image registry references are not scan inputs.
-Fetch or save them locally first. Ravel does not automatically record the
+remote repository archives are not scan inputs. Fetch them locally first. Ravel does not automatically record the
 scanned checkout's Git commit ID, so keep it alongside the generated result.
 
 ## Scan workflows
@@ -65,12 +64,15 @@ ravel scan path/to/fedora-rootfs --manager rpm --output fedora.cdx.json
 ### A container image
 
 ```sh
+ravel scan ghcr.io/owner/image:tag --platform linux/amd64 \
+  --output image.cdx.json --report image.coverage.json
+ravel scan image:tag --image-source docker --output local-image.cdx.json
 docker save --output image.docker.tar image:tag
 ravel scan image.docker.tar --platform linux/amd64 \
   --output image.cdx.json --report image.coverage.json
 ```
 
-You can also scan an OCI layout directory, a `.oci.tar` archive, or a gzip-compressed `.docker.tar.gz` / `.oci.tar.gz` archive. For a generic `.tar` or `.tar.gz` file, specify `--manager oci`.
+An image reference uses the registry by default, with Docker credential configuration when authentication is required. `--image-source docker` reads only the local Docker daemon. Registry scans select `linux` on the host architecture by default; set `--platform os/architecture[/variant]` for another platform. Ravel records the selected manifest digest as the image source in Ravel JSON. A registry scan requires network access; an explicit `--network deny` is rejected. You can also scan an OCI layout directory, a `.oci.tar` archive, or a gzip-compressed `.docker.tar.gz` / `.oci.tar.gz` archive. For a generic `.tar` or `.tar.gz` file, specify `--manager oci`.
 
 ### Inspect, compare, and combine
 
