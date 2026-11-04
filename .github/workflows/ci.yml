@@ -22,3 +22,8 @@ jobs:
           cache: true
       - run: go test ./... -count=1
       - run: go vet ./...
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Lint workflows and release script
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
+          docker run --rm --entrypoint shellcheck -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 scripts/publish-release.sh

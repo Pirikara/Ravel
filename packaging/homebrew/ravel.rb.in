@@ -1,0 +1,34 @@
+class Ravel < Formula
+  desc "Generate evidence-backed SBOMs from projects and container images"
+  homepage "https://github.com/Pirikara/Ravel"
+  version "$VERSION"
+  license "Apache-2.0"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "https://github.com/Pirikara/Ravel/releases/download/$TAG/ravel_${TAG}_darwin_arm64.tar.gz"
+      sha256 "$DARWIN_ARM64"
+    else
+      url "https://github.com/Pirikara/Ravel/releases/download/$TAG/ravel_${TAG}_darwin_amd64.tar.gz"
+      sha256 "$DARWIN_AMD64"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.arm?
+      url "https://github.com/Pirikara/Ravel/releases/download/$TAG/ravel_${TAG}_linux_arm64.tar.gz"
+      sha256 "$LINUX_ARM64"
+    else
+      url "https://github.com/Pirikara/Ravel/releases/download/$TAG/ravel_${TAG}_linux_amd64.tar.gz"
+      sha256 "$LINUX_AMD64"
+    end
+  end
+
+  def install
+    bin.install "ravel"
+  end
+
+  test do
+    assert_match "ravel v#{version}", shell_output("#{bin}/ravel version")
+  end
+end

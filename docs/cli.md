@@ -13,7 +13,7 @@ tagged prerelease version.
 
 ## Update Ravel
 
-The `update` command is available in development builds after beta.3 and will be included in the next release. It contacts the public GitHub Releases API:
+The `update` command contacts the public GitHub Releases API:
 
 ```sh
 ravel update --check
