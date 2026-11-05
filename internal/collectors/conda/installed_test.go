@@ -1,6 +1,7 @@
 package conda
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,6 +35,39 @@ func TestInstalledMetadata(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := CollectInstalledMetadata(tc.data, "sample", "sample", tc.filename); err == nil {
 				t.Fatal("invalid Conda record was accepted")
+			}
+		})
+	}
+}
+
+func TestInstalledMetadataRecordedURL(t *testing.T) {
+	const filename = "opt/conda/conda-meta/tokenizers-1.2.3-py314_0.json"
+	record := map[string]any{"name": "tokenizers", "version": "1.2.3", "build": "py314_0", "subdir": "linux-aarch64", "fn": "tokenizers-1.2.3-py314_0.conda", "channel": "https://repo.example.test/main/linux-aarch64"}
+	validURL := "https://repo.example.test/main/linux-aarch64/tokenizers-1.2.3-py314_0.conda"
+	for _, tc := range []struct{ name, url, channel, want string }{
+		{"matching archive", validURL + "?token=secret", "https://repo.example.test/main/linux-aarch64", validURL},
+		{"wrong identity", "https://repo.example.test/main/linux-aarch64/other-1.2.3-py314_0.conda", "https://repo.example.test/main/linux-aarch64", ""},
+		{"secret parent", "https://repo.example.test/token/secret/tokenizers-1.2.3-py314_0.conda", "https://repo.example.test/token/secret", ""},
+		{"wrong subdir", "https://repo.example.test/main/noarch/tokenizers-1.2.3-py314_0.conda", "https://repo.example.test/main/noarch", ""},
+		{"wrong channel", validURL, "https://other.example.test/main/linux-aarch64", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record["url"] = tc.url
+			record["channel"] = tc.channel
+			data, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc, err := CollectInstalledMetadata(data, filename, "sample", filename)
+			if err != nil || len(doc.Components) != 1 || doc.Components[0].PURL != "" {
+				t.Fatalf("Conda record invalid: doc=%#v err=%v", doc, err)
+			}
+			if tc.want == "" {
+				if len(doc.Origins) != 0 {
+					t.Fatalf("unsafe origin emitted: %#v", doc.Origins)
+				}
+			} else if len(doc.Origins) != 1 || doc.Origins[0].SafeURL != tc.want || doc.Origins[0].Status != "recorded_in_install_metadata" || doc.Origins[0].Evidence.Pointer != "/url" {
+				t.Fatalf("recorded origin missing: %#v", doc.Origins)
 			}
 		})
 	}

@@ -85,6 +85,43 @@ func TestOCICondaInstalledMetadata(t *testing.T) {
 	}
 }
 
+func TestOCICondaRecordedArchiveURL(t *testing.T) {
+	const filename = "python-3.12.7-h123_0.json"
+	const archiveURL = "https://repo.example.test/main/linux-aarch64/python-3.12.7-h123_0.conda"
+	var record map[string]any
+	if err := json.Unmarshal(condaFixture(t, filename), &record); err != nil {
+		t.Fatal(err)
+	}
+	record["url"] = archiveURL + "?token=secret"
+	record["fn"] = "python-3.12.7-h123_0.conda"
+	record["channel"] = "https://repo.example.test/main/linux-aarch64"
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout := ociTestLayout(t)
+	ociTestIndex(t, layout, ociTestImage(t, layout, "linux", "arm64", []ociTestLayer{{entries: []ociTestEntry{{name: "opt/conda/conda-meta/" + filename, data: data}}}}))
+	doc, output, code := ociTestScan(t, layout)
+	if code != 0 || len(doc.Origins) != 1 || doc.Origins[0].SafeURL != archiveURL || doc.Origins[0].Status != "recorded_in_install_metadata" || doc.Components[0].PURL != "" {
+		t.Fatalf("recorded Conda URL missing or overclaimed: code=%d output=%s doc=%#v", code, output, doc)
+	}
+	cdx, err := exec.Command(executable, "scan", layout, "--format", "cyclonedx-json").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exported struct {
+		Components []struct {
+			ExternalReferences []struct {
+				Type string `json:"type"`
+				URL  string `json:"url"`
+			} `json:"externalReferences"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(cdx, &exported); err != nil || len(exported.Components) != 1 || len(exported.Components[0].ExternalReferences) != 1 || exported.Components[0].ExternalReferences[0].Type != "distribution" || exported.Components[0].ExternalReferences[0].URL != archiveURL {
+		t.Fatalf("Conda URL absent from CycloneDX: err=%v output=%s", err, cdx)
+	}
+}
+
 func TestOCICondaOverlayAndInvalidMetadata(t *testing.T) {
 	const python = "opt/conda/conda-meta/python-3.12.7-h123_0.json"
 	const zlib = "opt/conda/conda-meta/zlib-1.3.1-h2_0.json"

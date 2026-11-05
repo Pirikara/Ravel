@@ -46,6 +46,24 @@ func TestCleanNpmTarball(t *testing.T) {
 	}
 }
 
+func TestCleanCondaArtifact(t *testing.T) {
+	const filename = "tokenizers-1.2.3-py314_0.conda"
+	for _, tc := range []struct{ raw, filename, subdir, want string }{
+		{"https://repo.example.test/main/linux-aarch64/" + filename, filename, "linux-aarch64", "https://repo.example.test/main/linux-aarch64/" + filename},
+		{"https://repo.example.test/main/linux-aarch64/" + filename + "?token=secret#fragment", filename, "linux-aarch64", "https://repo.example.test/main/linux-aarch64/" + filename},
+		{"https://repo.example.test/main/noarch/" + filename, filename, "linux-aarch64", ""},
+		{"https://repo.example.test/token/secret/" + filename, filename, "linux-aarch64", ""},
+		{"https://user:secret@repo.example.test/main/linux-aarch64/" + filename, filename, "linux-aarch64", ""},
+		{"http://repo.example.test/main/linux-aarch64/" + filename, filename, "linux-aarch64", ""},
+		{"https://repo.example.test/main/linux-aarch64/other.conda", filename, "linux-aarch64", ""},
+		{"https://repo.example.test/main/linux-aarch64/" + filename, "tokenizers-1.2.3-py314_0.zip", "linux-aarch64", ""},
+	} {
+		if got := safeurl.CleanCondaArtifact(tc.raw, tc.filename, tc.subdir); got != tc.want {
+			t.Errorf("CleanCondaArtifact(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
 func TestGitHubActionsRepositoryURL(t *testing.T) {
 	for _, tc := range []struct {
 		url  string

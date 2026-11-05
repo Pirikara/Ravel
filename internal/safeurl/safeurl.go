@@ -3,6 +3,7 @@ package safeurl
 import (
 	"fmt"
 	"net/url"
+	"path"
 	"strings"
 )
 
@@ -93,6 +94,28 @@ func CleanNpmTarball(raw, name, version string) string {
 	u.ForceQuery = false
 	u.Fragment = ""
 	u.RawFragment = ""
+	return u.String()
+}
+
+// CleanCondaArtifact keeps a recorded Conda archive URL only when the final
+// path segment matches the installed package identity. The parent path still
+// passes the generic secret-path filter; the archive filename is known data.
+func CleanCondaArtifact(raw, filename, subdir string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Opaque != "" ||
+		path.Clean(u.Path) != u.Path || path.Base(u.Path) != filename ||
+		!strings.HasSuffix(filename, ".conda") && !strings.HasSuffix(filename, ".tar.bz2") ||
+		subdir != "" && path.Base(path.Dir(u.Path)) != subdir {
+		return ""
+	}
+	parent := *u
+	parent.Path = path.Dir(u.Path)
+	parent.RawPath, parent.RawQuery, parent.Fragment = "", "", ""
+	if Clean(parent.String()) == "" {
+		return ""
+	}
+	u.RawPath, u.RawQuery, u.Fragment = "", "", ""
+	u.ForceQuery, u.RawFragment = false, ""
 	return u.String()
 }
 
