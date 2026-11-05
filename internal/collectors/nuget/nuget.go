@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 )
@@ -51,6 +53,7 @@ func Collect(file, project string) (model.Document, error) {
 			ev := common.Evidence(file, "nuget-lock", "/dependencies/"+escapePointer(target)+"/"+escapePointer(name), data)
 			component := model.Component{
 				ID: ref, Kind: "package", Name: name, Version: entry.Resolved, Platform: target,
+				PURL: packageurl.NewPackageURL("nuget", "", name, entry.Resolved, nil, "").ToString(), PURLBasis: "ecosystem_inferred",
 				Evidence: []model.Evidence{ev}, Hashes: common.Integrity("sha512-" + entry.ContentHash),
 			}
 			doc.Components = append(doc.Components, component)

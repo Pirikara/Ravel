@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
@@ -68,6 +70,10 @@ func Collect(file, project string) (model.Document, error) {
 			byName[strings.ToLower(pkg.Name)] = append(byName[strings.ToLower(pkg.Name)], n)
 			ev := common.Evidence(file, "composer-lock", fmt.Sprintf("/packages/%d/%d", group, i), data)
 			component := model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, Evidence: []model.Evidence{ev}}
+			if pkg.Source.Type != "path" && pkg.Dist.Type != "path" {
+				component.PURL = packageurl.NewPackageURL("composer", strings.ToLower(parts[0]), strings.ToLower(parts[1]), pkg.Version, nil, "").ToString()
+				component.PURLBasis = "ecosystem_inferred"
+			}
 			doc.Components = append(doc.Components, component)
 			originCount := 0
 			if pkg.Source.URL != "" {

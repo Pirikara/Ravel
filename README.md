@@ -75,7 +75,7 @@ The result identifies exact PURL matches and retains the issuer's status and rat
 | What remains uncertain? | A coverage report with specific issues for the scanned scope and information lost in standard-format export. |
 
 Ravel does not turn a lockfile URL into proof of a download. It labels a registry or distribution URL as **declared** unless stronger evidence is available. When the source is unknown, it leaves the claim open.
-Package names and versions can still be reported when a lockfile omits its registry. Ravel leaves the PURL empty in that case rather than claiming the package came from a public default registry.
+When a pnpm, Bun, NuGet, Composer, or Deno npm lock entry identifies an ecosystem package but omits its registry, Ravel emits an ecosystem PURL with `purlBasis: ecosystem_inferred`. CycloneDX carries this as `ravel:purlBasis`; SPDX records it in the package comment. The PURL does not verify which registry supplied the package. Ravel retains any declared distribution URL and reports a missing source when no such URL is available. Entries with explicit private distribution URLs and local dependencies are handled separately.
 
 To reproduce this example, clone the repository and scan its Poetry fixture. It shows a declared registry, a dependency, and a remaining graph limit:
 

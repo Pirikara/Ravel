@@ -13,6 +13,7 @@ import (
 	packageurl "github.com/package-url/packageurl-go"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/report"
 )
@@ -329,7 +330,7 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, component := range doc.Components {
-				if (tc.manager == "nuget" || tc.manager == "maven" || tc.manager == "gradle") && component.PURL != "" {
+				if (tc.manager == "maven" || tc.manager == "gradle") && component.PURL != "" {
 					t.Fatalf("%s package without observed repository assigned default-repository PURL: %s", tc.manager, component.PURL)
 				}
 				if component.PURL == "" {
@@ -421,8 +422,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatalf("scp-style Bundler Git source lost or assigned RubyGems identity: %#v", doc)
 		}
 	case "nuget-generated-10", "nuget-assets-generated-10":
-		if len(doc.Components) != 1 || doc.Components[0].PURL != "" || len(doc.Components[0].Hashes) != 1 || doc.Components[0].Hashes[0].Alg != "SHA-512" || !connected("root", find("Ravel.Beta", "1.2.3")) {
-			t.Fatal("locally generated NuGet package was assigned NuGet.org identity or lost content hash")
+		if len(doc.Components) != 1 || doc.Components[0].PURL != "pkg:nuget/Ravel.Beta@1.2.3" || doc.Components[0].PURLBasis != "ecosystem_inferred" || len(doc.Components[0].Hashes) != 1 || doc.Components[0].Hashes[0].Alg != "SHA-512" || !connected("root", find("Ravel.Beta", "1.2.3")) || len(doc.Origins) != 0 {
+			t.Fatal("NuGet inferred identity, unknown source, or content hash lost")
 		}
 	case "npm-generated-12", "pnpm-generated-10":
 		if !connected("root", find("is-number", "7.0.0")) || len(doc.Components[0].Hashes) != 1 || doc.Components[0].Hashes[0].Alg != "SHA-512" {
@@ -431,8 +432,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		if fixture == "npm-generated-12" && doc.Components[0].PURL != "pkg:npm/is-number@7.0.0" {
 			t.Fatal("default npm registry PURL missing")
 		}
-		if fixture == "pnpm-generated-10" && doc.Components[0].PURL != "" {
-			t.Fatal("pnpm lock without tarball URL assumed default npm registry")
+		if fixture == "pnpm-generated-10" && (doc.Components[0].PURL != "pkg:npm/is-number@7.0.0" || doc.Components[0].PURLBasis != "ecosystem_inferred" || len(doc.Origins) != 0 || !strings.Contains(string(bomData), `"name": "ravel:purlBasis"`)) {
+			t.Fatal("pnpm lock lost inferred package identity or claimed a registry origin")
 		}
 	case "npm-v4-generated-12", "npm-v4-unpatched", "npm-v4-patch-missing", "npm-v4-patch-mismatch", "npm-v4-patch-unsafe", "npm-v4-manifest-mismatch", "npm-v4-range-selector", "npm-v4-lock-missing-patch":
 		if len(doc.Components) != 1 || !connected("root", find("is-number", "7.0.0")) || doc.Components[0].PURL != "pkg:npm/is-number@7.0.0" || len(doc.Components[0].Hashes) != 1 {
@@ -517,8 +518,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Bun nested dependency resolved to the wrong installed version")
 		}
 		for _, component := range doc.Components {
-			if component.PURL != "" || len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-512" {
-				t.Fatalf("Bun generated lock lost integrity or guessed registry identity: %+v", component)
+			if component.PURL != common.NpmPURL(component.Name, component.Version) || component.PURLBasis != "ecosystem_inferred" || len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-512" {
+				t.Fatalf("Bun generated lock lost inferred identity or integrity: %+v", component)
 			}
 		}
 	case "bun-v2-stale":
@@ -562,7 +563,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Bun package.json and lock mismatch was not reported")
 		}
 	case "bun-v2-alias-generated-1_4":
-		if !connected("root", find("is-number", "7.0.0")) || doc.Components[0].PURL != "" || len(doc.Components[0].Hashes) != 1 || slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "dependency_constraint_unverified" }) {
+		if !connected("root", find("is-number", "7.0.0")) || doc.Components[0].PURL != "pkg:npm/is-number@7.0.0" || doc.Components[0].PURLBasis != "ecosystem_inferred" || len(doc.Components[0].Hashes) != 1 || slices.ContainsFunc(doc.Coverage.Issues, func(issue model.Issue) bool { return issue.Code == "dependency_constraint_unverified" }) {
 			t.Fatal("Bun npm alias lost its installed package identity or range verification")
 		}
 	case "bun-v2-git-url":
@@ -978,7 +979,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Bun Git source was not preserved")
 		}
 	case "bun-generated-1_3":
-		if len(doc.Components) != 1 || len(doc.Components[0].Hashes) != 1 || doc.Components[0].Hashes[0].Alg != "SHA-512" || len(doc.Origins) != 0 || doc.Components[0].PURL != "" {
+		if len(doc.Components) != 1 || len(doc.Components[0].Hashes) != 1 || doc.Components[0].Hashes[0].Alg != "SHA-512" || len(doc.Origins) != 0 || doc.Components[0].PURL != "pkg:npm/is-number@7.0.0" || doc.Components[0].PURLBasis != "ecosystem_inferred" {
 			t.Fatalf("generated Bun lockfile integrity or origin was misread: %#v", doc)
 		}
 	case "deno-v3-bbp-stytch":
@@ -989,8 +990,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Deno v3 direct or transitive dependency graph missing")
 		}
 		for _, component := range doc.Components {
-			if component.PURL != "" || len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-512" {
-				t.Fatalf("Deno v3 package was assigned an unsupported registry or lost its hash: %#v", component)
+			if component.PURL != common.NpmPURL(component.Name, component.Version) || component.PURLBasis != "ecosystem_inferred" || len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-512" {
+				t.Fatalf("Deno v3 inferred identity or hash lost: %#v", component)
 			}
 		}
 	case "deno-v4":
@@ -1004,7 +1005,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Deno URL import was not retained as a module")
 		}
 	case "deno-generated-2_9":
-		if len(doc.Components) != 1 || len(doc.Components[0].Hashes) != 1 || doc.Components[0].Hashes[0].Alg != "SHA-512" || len(doc.Origins) != 0 || doc.Components[0].PURL != "" {
+		if len(doc.Components) != 1 || len(doc.Components[0].Hashes) != 1 || doc.Components[0].Hashes[0].Alg != "SHA-512" || len(doc.Origins) != 0 || doc.Components[0].PURL != "pkg:npm/is-number@7.0.0" || doc.Components[0].PURLBasis != "ecosystem_inferred" {
 			t.Fatalf("generated Deno lockfile integrity or source was misread: %#v", doc)
 		}
 	case "deno-v5":
@@ -1261,8 +1262,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("pnpm v6 package dependency graph missing")
 		}
 		for _, c := range doc.Components {
-			if len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-512" || c.PURL != "" {
-				t.Fatal("pnpm v6 integrity missing or default registry identity invented")
+			if len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-512" || c.PURL != common.NpmPURL(c.Name, c.Version) || c.PURLBasis != "ecosystem_inferred" {
+				t.Fatal("pnpm v6 inferred identity or integrity missing")
 			}
 		}
 	case "pnpm-v6-workspace-8":
@@ -1500,6 +1501,9 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		monolog, psr := find("monolog/monolog", "3.0.0"), find("psr/log", "3.0.0")
 		if !connected("root", monolog) || !connected(monolog, psr) {
 			t.Fatal("Composer graph missing")
+		}
+		if componentPURL(monolog) != "pkg:composer/monolog/monolog@3.0.0" || componentPURL(psr) != "pkg:composer/psr/log@3.0.0" {
+			t.Fatal("Composer ecosystem identity missing")
 		}
 		var vcs, dist bool
 		for _, o := range doc.Origins {
@@ -2017,7 +2021,7 @@ func TestExplainCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("explain failed: %v: %s", err, output)
 	}
-	for _, want := range []string{"monolog/monolog@3.0.0", "https://github.com/Seldaek/monolog.git", "https://api.github.com/repos/Seldaek/monolog/zipball/abcdef1234567890", "required by: composer-basic", "depends on: psr/log@3.0.0", "composer.lock", "composer.json", "coverage: graph=partial"} {
+	for _, want := range []string{"monolog/monolog@3.0.0", "pkg:composer/monolog/monolog@3.0.0", "purl basis: ecosystem_inferred", "https://github.com/Seldaek/monolog.git", "https://api.github.com/repos/Seldaek/monolog/zipball/abcdef1234567890", "required by: composer-basic", "depends on: psr/log@3.0.0", "composer.lock", "composer.json", "coverage: graph=partial"} {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("explanation missing %q: %s", want, output)
 		}
@@ -2033,7 +2037,7 @@ func TestExplainCLI(t *testing.T) {
 	if err := json.Unmarshal(output, &detail); err != nil {
 		t.Fatal(err)
 	}
-	if detail.Component.PURL != "" || len(detail.Origins) != 2 || len(detail.Incoming) != 1 || len(detail.Outgoing) != 1 {
+	if detail.Component.PURL != "pkg:composer/monolog/monolog@3.0.0" || detail.Component.PURLBasis != "ecosystem_inferred" || len(detail.Origins) != 2 || len(detail.Incoming) != 1 || len(detail.Outgoing) != 1 {
 		t.Fatalf("unexpected explanation: %#v", detail)
 	}
 	if err := exec.Command(executable, "explain", query, "extra", "--input", input).Run(); err == nil {

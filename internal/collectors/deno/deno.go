@@ -259,6 +259,8 @@ func Collect(file, project string) (model.Document, error) {
 			doc.Origins = append(doc.Origins, model.Origin{Occurrence: entry.ref, Kind: "registry_identity", SafeURL: "https://jsr.io", Status: "inferred", Evidence: ev})
 		} else {
 			component.Hashes = common.Integrity(meta.Integrity)
+			component.PURL = common.NpmPURL(entry.name, entry.version)
+			component.PURLBasis = "ecosystem_inferred"
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "source_unresolved", Name: entry.name})
 		}
 		doc.Components = append(doc.Components, component)

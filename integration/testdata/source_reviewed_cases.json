@@ -18,7 +18,7 @@
       "packages": [
         {"name": "is-number", "version": "7.0.0", "sourceSnippets": ["is-number@7.0.0:"]}
       ],
-      "unknownPURL": ["is-number@7.0.0"]
+      "inferredPURL": ["is-number@7.0.0"]
     },
     {
       "fixture": "bun-generated-1_4",
@@ -67,7 +67,7 @@
       "packages": [
         {"name": "Ravel.Beta", "version": "1.2.3", "sourceSnippets": ["\"Ravel.Beta\": {", "\"resolved\": \"1.2.3\""]}
       ],
-      "unknownPURL": ["Ravel.Beta@1.2.3"]
+      "inferredPURL": ["Ravel.Beta@1.2.3"]
     },
     {
       "fixture": "composer-generated-2",

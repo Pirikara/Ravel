@@ -22,6 +22,6 @@ A Ravel JSON document keeps these records separate:
 | **Runtime** | A repository-declared version selection or compatibility requirement, with its scope and file evidence. It does not assert an installed runtime. |
 | **Coverage** | Package and edge counts, graph and origin states, and specific issues. |
 
-Ravel records hashes for observed archive bytes and checks available lockfile integrity data. It removes credentials, URL queries, and fragments before storing URLs. A default registry Package URL (PURL) is omitted when that registry cannot be established from the input.
+Ravel records hashes for observed archive bytes and checks available lockfile integrity data. It removes credentials, URL queries, and fragments before storing URLs. For selected lockfile ecosystems, an inferred PURL identifies the package coordinate even when the source registry is unknown. `purlBasis: ecosystem_inferred` marks that distinction; the origin remains unresolved.
 
 CycloneDX and SPDX exports include only dependency edges that are unconditional for the scanned scope. **Ravel JSON retains conditional edges and their evidence**. The coverage report lists any information lost in the requested export separately from scan issues.

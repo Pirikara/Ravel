@@ -123,6 +123,17 @@ func TestSPDX23AllFixtures(t *testing.T) {
 				if c.PURL != "" && purls[c.PURL] == 0 {
 					t.Fatalf("missing PURL %s", c.PURL)
 				}
+				if c.PURLBasis != "" {
+					found := false
+					for _, pkg := range output.Packages {
+						if pkg.Name == c.Name && strings.Contains(pkg.Comment, "Ravel PURL basis: "+c.PURLBasis+" (registry origin unverified)") {
+							found = true
+						}
+					}
+					if !found {
+						t.Fatalf("missing SPDX PURL basis for %s", c.Name)
+					}
+				}
 				if c.Context != "" {
 					found := false
 					for _, pkg := range output.Packages {

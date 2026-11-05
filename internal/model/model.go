@@ -16,16 +16,19 @@ type Hash struct {
 }
 
 type Component struct {
-	ID       string     `json:"id"`
-	Kind     string     `json:"kind"`
-	Name     string     `json:"name"`
-	Version  string     `json:"version"`
-	Platform string     `json:"platform,omitempty"`
-	Context  string     `json:"context,omitempty"`
-	PURL     string     `json:"purl,omitempty"`
-	Hashes   []Hash     `json:"hashes,omitempty"`
-	Patches  []Patch    `json:"patches,omitempty"`
-	Evidence []Evidence `json:"evidence"`
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	Version  string `json:"version"`
+	Platform string `json:"platform,omitempty"`
+	Context  string `json:"context,omitempty"`
+	PURL     string `json:"purl,omitempty"`
+	// PURLBasis marks an ecosystem coordinate inferred from lockfile syntax
+	// without a confirmed registry. Empty retains the collector's prior policy.
+	PURLBasis string     `json:"purlBasis,omitempty"`
+	Hashes    []Hash     `json:"hashes,omitempty"`
+	Patches   []Patch    `json:"patches,omitempty"`
+	Evidence  []Evidence `json:"evidence"`
 }
 
 // Patch describes a project-local modification declared for a package. Hashes
