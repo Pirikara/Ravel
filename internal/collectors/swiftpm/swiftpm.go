@@ -121,5 +121,5 @@ func swiftPURL(name, version, source string) string {
 	for _, segment := range segments[:len(segments)-1] {
 		namespace += "/" + url.PathEscape(segment)
 	}
-	return "pkg:swift/" + namespace + "/" + url.PathEscape(name) + "@" + url.PathEscape(version)
+	return "pkg:swift/" + namespace + "/" + url.PathEscape(name) + "@" + common.PURLVersion(version)
 }

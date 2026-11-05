@@ -210,7 +210,7 @@ func collectRustAuditPayload(data []byte, digest, source, project, binaryPath st
 		itemEvidence.Pointer = "elf/section/.dep-v0/packages/" + strconv.Itoa(i)
 		purl := ""
 		if sources[i] == "crates.io" {
-			purl = "pkg:cargo/" + url.PathEscape(item.Name) + "@" + url.PathEscape(item.Version)
+			purl = "pkg:cargo/" + url.PathEscape(item.Name) + "@" + common.PURLVersion(item.Version)
 		}
 		doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: item.Name, Version: item.Version, Context: "binary=/" + binaryPath + ";source=" + sources[i], PURL: purl, Evidence: []model.Evidence{itemEvidence}})
 	}

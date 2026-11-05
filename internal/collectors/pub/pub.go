@@ -35,7 +35,7 @@ type description struct {
 	Relative    bool   `yaml:"relative"`
 }
 
-var packageName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+var packageName = regexp.MustCompile(`^_*[a-z][a-z0-9_]*$`)
 var gitRevision = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
 
 func Collect(file, project string) (model.Document, error) {

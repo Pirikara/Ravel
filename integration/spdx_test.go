@@ -160,8 +160,8 @@ func TestSPDX23AllFixtures(t *testing.T) {
 			}
 		})
 	}
-	if count != 228 {
-		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 228", count)
+	if count != 231 {
+		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 231", count)
 	}
 }
 

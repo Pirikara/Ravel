@@ -392,7 +392,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		}
 	case "yarn-classic-alias":
 		main, parser := find("mermaid", "12.0.0"), find("@mermaid-js/parser", "2.0.0")
-		if !connected("root", main) || !connected(main, parser) || componentPURL(main) != "" || len(doc.Components) != 2 {
+		if !connected("root", main) || !connected(main, parser) || componentPURL(main) != "pkg:npm/mermaid@12.0.0" || len(doc.Components) != 2 {
 			t.Fatal("Yarn alias lost the installed package or its dependency graph")
 		}
 		for _, component := range doc.Components {

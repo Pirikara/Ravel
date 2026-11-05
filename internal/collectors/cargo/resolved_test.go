@@ -96,3 +96,9 @@ func TestCargoPURLOnlyForKnownCratesIO(t *testing.T) {
 		}
 	}
 }
+
+func TestCargoPURLCanonicalPlus(t *testing.T) {
+	if got := cargoPURL("wasip2", "1.0.3+wasi-0.2.9", "sparse+https://index.crates.io/"); got != "pkg:cargo/wasip2@1.0.3%2Bwasi-0.2.9" {
+		t.Fatalf("Cargo PURL version is not canonical: %q", got)
+	}
+}
