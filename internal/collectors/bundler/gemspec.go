@@ -13,7 +13,8 @@ import (
 
 var gemspecBlock = regexp.MustCompile(`(?m)^\s*Gem::Specification\.new\s+do\s+\|([A-Za-z_][A-Za-z0-9_]*)\|`)
 var gemspecVersionConstant = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_:]*::VERSION\b`)
-var rubyVersionAssignment = regexp.MustCompile(`(?m)^\s*VERSION\s*=\s*["']([0-9A-Za-z.+_-]+)["']\s*(?:#.*)?$`)
+var gemspecVersionLiteral = regexp.MustCompile(`^[0-9][0-9A-Za-z.+_-]{0,127}$`)
+var rubyVersionAssignment = regexp.MustCompile(`(?m)^\s*VERSION\s*=\s*(.+)$`)
 var rubyRequire = regexp.MustCompile(`(?m)^\s*require(_relative)?\s+["']([^"']+/version)["']\s*(?:#.*)?$`)
 
 // CollectGemspec reads literal identity from a source gemspec. It never runs Ruby.
@@ -49,7 +50,7 @@ func CollectGemspec(file, project string) (model.Document, error) {
 	versionExpression := assignment("version")
 	version := ""
 	versionFile := ""
-	if literal := rubyLiteral(versionExpression); literal != "" {
+	if literal := rubyLiteral(versionExpression); gemspecVersionLiteral.MatchString(literal) {
 		version = literal
 	} else if gemspecVersionConstant.MatchString(versionExpression) {
 		version, versionFile = resolveGemspecVersion(file, data)
@@ -80,7 +81,7 @@ func CollectGemspec(file, project string) (model.Document, error) {
 
 func rubyLiteral(expression string) string {
 	expression = strings.TrimSpace(expression)
-	if len(expression) < 3 || expression[0] != expression[len(expression)-1] || expression[0] != '\'' && expression[0] != '"' || strings.ContainsAny(expression[1:len(expression)-1], "\r\n\\") {
+	if len(expression) < 3 || expression[0] != expression[len(expression)-1] || expression[0] != '\'' && expression[0] != '"' || strings.ContainsAny(expression[1:len(expression)-1], "\r\n\\") || strings.ContainsRune(expression[1:len(expression)-1], rune(expression[0])) {
 		return ""
 	}
 	return expression[1 : len(expression)-1]
@@ -122,7 +123,10 @@ func resolveGemspecVersion(file string, gemspec []byte) (string, string) {
 			}
 			versions := rubyVersionAssignment.FindAllSubmatch(data, 2)
 			if len(versions) == 1 {
-				return string(versions[0][1]), candidate
+				version := rubyLiteral(string(versions[0][1]))
+				if gemspecVersionLiteral.MatchString(version) {
+					return version, candidate
+				}
 			}
 		}
 	}
