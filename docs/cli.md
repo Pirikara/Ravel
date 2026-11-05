@@ -61,6 +61,10 @@ ravel scan path/to/polyglot-project --all --recursive --output combined.cdx.json
 
 `--all` combines static inputs in one directory. `--recursive` also scans subprojects while skipping generated directories and test fixtures such as `.git`, `node_modules`, `vendor`, `tmp`, and `fixtures`. Archives are not automatically discovered. If multiple JavaScript lockfiles coexist, Ravel uses `package.json`'s `packageManager` field; otherwise select a manager explicitly.
 
+For repository comparisons that include checked-in fixtures, temporary test projects, or vendored source trees, add `--include-test-and-vendor` to `--all --recursive`. It descends into `tmp`, `fixtures`, `testdata`, and `vendor`; installed package stores such as `node_modules` remain excluded. Invalid lockfiles found in these extra trees are listed as `collector_skipped_invalid_input` coverage issues, and `--strict` fails. The default scan keeps its smaller source scope. Bundler variants such as `Gemfile.next.lock` are distinct inputs with `--all`; point at one file for a single variant.
+
+Add `--include-binaries` to inspect executable Go ELF and Mach-O files in the selected repository trees. It reads embedded module and toolchain versions from the binary, keeps the executable's SHA-256, and marks the unrecoverable module-to-module graph and package origin as incomplete. Executables larger than 256 MiB and generated directories such as `build`, `dist`, and `node_modules` are outside this scan. The option streams each executable and does not invoke it.
+
 Recursive discovery stops after 500,000 filesystem entries to bound the scan. Scan larger trees in smaller scopes.
 
 ### Repository runtime versions

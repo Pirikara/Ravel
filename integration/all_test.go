@@ -146,6 +146,149 @@ func TestScanAllStaticManagers(t *testing.T) {
 	}
 }
 
+func TestAlternateBundlerLockfiles(t *testing.T) {
+	root := t.TempDir()
+	fixture, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "bundler-basic", "Gemfile.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, relative := range []string{"Gemfile.lock", "Gemfile.next.lock", "nested/Gemfile.rails-8.lock"} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, fixture, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(args ...string) model.Document {
+		t.Helper()
+		out, err := exec.Command(executable, append([]string{"scan"}, args...)...).Output()
+		if err != nil {
+			t.Fatalf("scan %q: %v %s", args, err, out)
+		}
+		var doc model.Document
+		if err := json.Unmarshal(out, &doc); err != nil {
+			t.Fatal(err)
+		}
+		return doc
+	}
+	doc := read(root, "--all", "--recursive", "--format", "ravel-json")
+	if len(doc.Coverage.Inputs) != 3 || len(doc.Components) != 6 || len(doc.Edges) != 6 {
+		t.Fatalf("alternate Bundler locks omitted: %#v", doc.Coverage)
+	}
+	ids := map[string]bool{}
+	for _, component := range doc.Components {
+		if ids[component.ID] {
+			t.Fatalf("duplicate component ID across lockfiles: %s", component.ID)
+		}
+		ids[component.ID] = true
+	}
+	if out, err := exec.Command(executable, "scan", root, "--all", "--output", filepath.Join(root, "Gemfile.next.lock")).CombinedOutput(); err == nil || !strings.Contains(string(out), "cannot overwrite") {
+		t.Fatalf("alternate lockfile could be overwritten: %v %s", err, out)
+	}
+	for _, input := range []string{filepath.Join(root, "Gemfile.next.lock"), filepath.Join(root, "nested"), filepath.Join(root, "nested", "Gemfile.rails-8.lock")} {
+		doc := read(input, "--format", "ravel-json")
+		if len(doc.Components) != 2 || doc.Coverage.Manager != "bundler" {
+			t.Fatalf("auto scan missed alternate lock %s: %#v", input, doc.Coverage)
+		}
+	}
+}
+
+func TestIncludeTestAndVendor(t *testing.T) {
+	root := t.TempDir()
+	fixture, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "bundler-basic", "Gemfile.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for relative, content := range map[string][]byte{
+		"Gemfile.lock":                fixture,
+		"spec/fixtures/Gemfile.lock":  fixture,
+		"vendor/example/Gemfile.lock": fixture,
+		"tmp/broken/Gemfile.lock":     []byte("invalid fixture\n"),
+		"node_modules/Gemfile.lock":   fixture,
+	} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(args ...string) model.Document {
+		t.Helper()
+		out, err := exec.Command(executable, append([]string{"scan", root, "--all", "--recursive", "--format", "ravel-json"}, args...)...).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc model.Document
+		if err := json.Unmarshal(out, &doc); err != nil {
+			t.Fatal(err)
+		}
+		return doc
+	}
+	ordinary := read()
+	if len(ordinary.Components) != 2 || ordinary.Coverage.Manager != "bundler" {
+		t.Fatalf("default scan included extra trees: %#v", ordinary.Coverage)
+	}
+	inclusive := read("--include-test-and-vendor")
+	if len(inclusive.Coverage.Inputs) != 3 || len(inclusive.Components) != 6 || inclusive.Coverage.GraphState != "partial" {
+		t.Fatalf("inclusive scan missed source trees: %#v", inclusive.Coverage)
+	}
+	foundInvalid := false
+	for _, issue := range inclusive.Coverage.Issues {
+		foundInvalid = foundInvalid || issue.Code == "collector_skipped_invalid_input" && strings.HasSuffix(issue.Scope, "tmp/broken/Gemfile.lock")
+	}
+	if !foundInvalid {
+		t.Fatal("invalid lockfile in test tree was not reported")
+	}
+	if out, err := exec.Command(executable, "scan", root, "--include-test-and-vendor").CombinedOutput(); err == nil || !strings.Contains(string(out), "requires --all --recursive") {
+		t.Fatalf("inclusive scan without recursive accepted: %v %s", err, out)
+	}
+}
+
+func TestIncludeRepositoryGoBinary(t *testing.T) {
+	root := t.TempDir()
+	binary := filepath.Join(root, "ravel-binary")
+	if err := os.Link(executable, binary); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "script"), []byte("#!/bin/sh\necho test\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "main.go")
+	if err := os.WriteFile(source, []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	macho := filepath.Join(root, "darwin-binary")
+	build := exec.Command("go", "build", "-o", macho, source)
+	build.Env = append(os.Environ(), "GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build Mach-O fixture: %v %s", err, out)
+	}
+	out, err := exec.Command(executable, "scan", root, "--all", "--recursive", "--include-binaries", "--format", "ravel-json").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc model.Document
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Coverage.Inputs) != 2 || len(doc.Components) < 4 {
+		t.Fatalf("Go ELF binary was not scanned: %#v", doc.Coverage)
+	}
+	foundApp, foundMachO, foundStdlib := false, false, false
+	for _, component := range doc.Components {
+		foundApp = foundApp || component.Kind == "application" && component.Name == "ravel-binary"
+		foundMachO = foundMachO || component.Kind == "application" && component.Name == "darwin-binary"
+		foundStdlib = foundStdlib || component.Name == "stdlib" && strings.HasPrefix(component.Version, "go")
+	}
+	if !foundApp || !foundMachO || !foundStdlib {
+		t.Fatalf("Go binary identity and toolchain missing: %#v", doc.Components)
+	}
+}
+
 func TestScanAllSelectsDeclaredJSManager(t *testing.T) {
 	dir := t.TempDir()
 	for _, input := range []struct{ fixture, name string }{

@@ -78,7 +78,7 @@ func buildVersion() string {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: ravel version")
-	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG [--manager NAME|--all [--recursive]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
+	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
 	fmt.Fprintln(os.Stderr, "       ravel explain PACKAGE --input ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel diff BEFORE.ravel.json AFTER.ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel merge [--name PROJECT] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] INPUT.ravel.json...")
@@ -309,6 +309,8 @@ func runScan(args []string) int {
 	manager := fs.String("manager", "auto", "package manager")
 	all := fs.Bool("all", false, "scan all static managers in one directory")
 	recursive := fs.Bool("recursive", false, "include nested projects with --all")
+	includeTestVendor := fs.Bool("include-test-and-vendor", false, "include tmp, fixtures, testdata, and vendor with --all --recursive")
+	includeBinaries := fs.Bool("include-binaries", false, "include local Go ELF and Mach-O executables with --all --recursive")
 	strict := fs.Bool("strict", false, "fail on partial coverage")
 	resolve := fs.Bool("resolve", false, "resolve dependencies with a package manager command")
 	allowExec := fs.Bool("allow-exec", false, "allow a package manager command")
@@ -346,11 +348,27 @@ func runScan(args []string) int {
 		return 2
 	}
 	if *all {
+		if *includeTestVendor && !*recursive {
+			fmt.Fprintln(os.Stderr, "ravel: --include-test-and-vendor requires --all --recursive")
+			return 2
+		}
+		if *includeBinaries && !*recursive {
+			fmt.Fprintln(os.Stderr, "ravel: --include-binaries requires --all --recursive")
+			return 2
+		}
 		if *manager != "auto" || *resolve || *allowExec || *configuration != "runtimeClasspath" || *platform != "" || *imageSource != "registry" || *network == "allow" {
 			fmt.Fprintln(os.Stderr, "ravel: --all is static and cannot be combined with --manager, --resolve, --allow-exec, --configuration, --platform, --image-source, or --network allow")
 			return 2
 		}
-		return runScanAll(path, *format, *output, *report, *strict, *recursive)
+		return runScanAll(path, *format, *output, *report, *strict, *recursive, *includeTestVendor, *includeBinaries)
+	}
+	if *includeTestVendor {
+		fmt.Fprintln(os.Stderr, "ravel: --include-test-and-vendor requires --all --recursive")
+		return 2
+	}
+	if *includeBinaries {
+		fmt.Fprintln(os.Stderr, "ravel: --include-binaries requires --all --recursive")
+		return 2
 	}
 	if *recursive {
 		fmt.Fprintln(os.Stderr, "ravel: --recursive requires --all")
@@ -408,7 +426,7 @@ func runScan(args []string) int {
 	lock, selected, err := selectLock(path, info.IsDir(), *manager)
 	if err != nil {
 		if info.IsDir() && *manager == "auto" && err.Error() == "no supported lockfile found" && len(runtimeDeclarations.Requirements) > 0 {
-			return runScanAll(path, *format, *output, *report, *strict, false)
+			return runScanAll(path, *format, *output, *report, *strict, false, false, false)
 		}
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 2
@@ -629,13 +647,14 @@ func samePath(a, b string) bool {
 
 func selectLock(input string, directory bool, requested string) (string, string, error) {
 	managerForFile := func(name string) string {
+		if isBundlerLockName(name) {
+			return "bundler"
+		}
 		switch name {
 		case "status":
 			if filepath.Base(filepath.Dir(input)) == "dpkg" && filepath.Base(filepath.Dir(filepath.Dir(input))) == "lib" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(input)))) == "var" {
 				return "dpkg"
 			}
-		case "Gemfile.lock":
-			return "bundler"
 		case "package-lock.json", "npm-shrinkwrap.json":
 			return "npm"
 		case "bun.lock":
@@ -792,6 +811,21 @@ func selectLock(input string, directory bool, requested string) (string, string,
 				}
 			}
 			candidates[manager] = candidate
+		}
+	}
+	if requested == "auto" || requested == "bundler" {
+		locks, err := bundlerLockFiles(input)
+		if err != nil {
+			return "", "", err
+		}
+		if candidates["bundler"] == "" {
+			switch len(locks) {
+			case 0:
+			case 1:
+				candidates["bundler"] = locks[0]
+			default:
+				return "", "", errors.New("multiple Bundler lockfiles found; scan a specific file or use --all")
+			}
 		}
 	}
 	if candidates["nuget"] == "" {

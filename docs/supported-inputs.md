@@ -6,7 +6,7 @@ Repository directories also expose explicit runtime requirements from `.nvmrc`, 
 
 | Ecosystem | Inputs | Notes |
 | --- | --- | --- |
-| Ruby | `Gemfile.lock`; `.gem` archives | GEM, GIT, and PATH sources; archive metadata and SHA-256. |
+| Ruby | `Gemfile.lock`, `Gemfile.<variant>.lock`; `.gem` archives | GEM, GIT, and PATH sources; archive metadata and SHA-256. `--all` reads each lockfile variant as a separate input. |
 | JavaScript | npm lockfiles v1–v4; pnpm v6/v9; Yarn Classic and Berry; Bun text `bun.lock` v0–v2; npm `.tgz` archives | Package locations, dependency edges, and conditions where the format permits. |
 | Deno | `deno.lock` v4/v5, `deno.json` / `deno.jsonc`, local import maps, JS/TS imports | Discovers static imports, re-exports, and literal dynamic imports as entry points. |
 | Python | `uv.lock` v1; `pylock.toml` 1.0; Poetry, Pipenv, PDM, and pinned requirements; `.whl` archives | Keeps markers, extras, groups, and unresolved choices conditional. |
@@ -45,6 +45,7 @@ Repository directories also expose explicit runtime requirements from `.nvmrc`, 
 | Installed Ruby in OCI | Generated gemspecs under conventional Ruby gem homes and `/usr/local/bundle`, including default gems. Identity comes from matching stub, literal name/version, and filename. Runtime dependency calls are linked when a numeric version requirement selects one gem in the same home, or a matching default gem when one verified CRuby runtime is present and the source home has no candidate. Linux native gem platforms are checked against the matching generated `rbconfig.rb`; activation and distribution origin remain unknown. CRuby versions are read from the exported `ruby_version` symbol in `/usr/local/lib/libruby.so.*` ELF libraries. |
 | Java archives in OCI | JAR/WAR files and identifiable nested JARs, with archive hashes and embedded Maven metadata. |
 | Go binaries in OCI | Embedded Go toolchain and module versions from Linux ELF files, tied to the executable's SHA-256 and image layer. The module-to-module dependency graph is not reconstructed. |
+| Go binaries in repositories | Executable ELF or Mach-O files with `--all --recursive --include-binaries`; embedded toolchain and module versions tied to the executable's SHA-256. Test and vendor trees require `--include-test-and-vendor` as well. |
 | Rust binaries in OCI | Format 1 or newer [cargo-auditable](https://github.com/rust-secure-code/cargo-auditable/blob/master/PARSING.md) `.dep-v0` sections in Linux ELF files; the runtime crate graph and executable SHA-256, with build-only crates excluded. |
 | PostgreSQL server in OCI | `/usr/local/bin/postgres` ELF files with agreeing embedded version and build strings; the server application is tied to the executable's SHA-256 and final image layer. Package-managed paths are left to the OS database. |
 | Redis server in OCI | `/usr/local/bin/redis-server` ELF files with agreeing INFO and build version strings plus a server version banner template; the application is tied to the executable's SHA-256 and final image layer. Package-managed paths are left to the OS database. |

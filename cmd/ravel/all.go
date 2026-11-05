@@ -54,7 +54,7 @@ var staticManagers = []string{
 
 // runScanAll scans static manager inputs at the directory root, and nested
 // subprojects when requested. It does not execute package managers.
-func runScanAll(path, format, output, report string, strict, recursive bool) int {
+func runScanAll(path, format, output, report string, strict, recursive, includeTestVendor, includeBinaries bool) int {
 	info, err := os.Stat(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
@@ -75,7 +75,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 	project := filepath.Base(filepath.Clean(path))
 	directories := []string{path}
 	if recursive {
-		directories, err = scanDirectories(path)
+		directories, err = scanDirectories(path, includeTestVendor)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ravel:", err)
 			return 1
@@ -107,7 +107,16 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 			if chosenJS != "" && isJSManager(manager) && manager != chosenJS {
 				continue
 			}
-			lock, _, err := selectLock(directory, true, manager)
+			var locks []string
+			if manager == "bundler" {
+				locks, err = bundlerLockFiles(directory)
+			} else {
+				var lock string
+				lock, _, err = selectLock(directory, true, manager)
+				if err == nil {
+					locks = []string{lock}
+				}
+			}
 			if err != nil {
 				if manager == "pylock" && strings.Contains(err.Error(), "multiple pylock files") || manager == "rpm" && strings.Contains(err.Error(), "multiple RPM databases") || manager == "cabal" && strings.Contains(err.Error(), "multiple Cabal freeze files") || manager == "stack" && strings.Contains(err.Error(), "multiple Stack lockfiles") || manager == "julia" && strings.Contains(err.Error(), "multiple Julia manifests") || manager == "sbt" && strings.Contains(err.Error(), "multiple sbt lockfiles") || manager == "conda-lock" && strings.Contains(err.Error(), "multiple conda-lock files") {
 					fmt.Fprintln(os.Stderr, "ravel:", err)
@@ -115,30 +124,37 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 				}
 				continue
 			}
-			if manager == "cargo" && filepath.Base(lock) == "Cargo.toml" || manager == "gradle" && (filepath.Base(lock) == "build.gradle" || filepath.Base(lock) == "build.gradle.kts") || manager == "swiftpm" && filepath.Base(lock) == "Package.swift" {
-				skipped = append(skipped, model.Issue{Code: "collector_skipped_requires_resolve", Name: manager, Scope: lock})
-				continue
-			}
-			if samePath(output, lock) || report != "" && samePath(report, lock) {
-				fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite an input")
-				return 2
-			}
-			doc, err := collectStatic(manager, lock, filepath.Base(filepath.Clean(directory)))
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "ravel: %s: %v\n", manager, err)
-				return 1
-			}
-			for _, source := range doc.Sources {
-				if manager == "pixi" && filepath.Base(source) == "pyproject.toml" {
-					pixiPyproject = true
+			for _, lock := range locks {
+				if manager == "cargo" && filepath.Base(lock) == "Cargo.toml" || manager == "gradle" && (filepath.Base(lock) == "build.gradle" || filepath.Base(lock) == "build.gradle.kts") || manager == "swiftpm" && filepath.Base(lock) == "Package.swift" {
+					skipped = append(skipped, model.Issue{Code: "collector_skipped_requires_resolve", Name: manager, Scope: lock})
+					continue
 				}
-				if samePath(output, source) || report != "" && samePath(report, source) {
-					fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite an included input")
+				if samePath(output, lock) || report != "" && samePath(report, lock) {
+					fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite an input")
 					return 2
 				}
+				doc, err := collectStatic(manager, lock, filepath.Base(filepath.Clean(directory)))
+				if err != nil {
+					if includeTestVendor && inTestVendorTree(path, lock) {
+						fmt.Fprintf(os.Stderr, "ravel: skipped %s: %v\n", lock, err)
+						skipped = append(skipped, model.Issue{Code: "collector_skipped_invalid_input", Name: manager, Scope: lock})
+						continue
+					}
+					fmt.Fprintf(os.Stderr, "ravel: %s: %v\n", manager, err)
+					return 1
+				}
+				for _, source := range doc.Sources {
+					if manager == "pixi" && filepath.Base(source) == "pyproject.toml" {
+						pixiPyproject = true
+					}
+					if samePath(output, source) || report != "" && samePath(report, source) {
+						fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite an included input")
+						return 2
+					}
+				}
+				inputs = append(inputs, doc)
+				foundManagers[manager] = true
 			}
-			inputs = append(inputs, doc)
-			foundManagers[manager] = true
 		}
 		foundJS := foundManagers["npm"] || foundManagers["pnpm"] || foundManagers["yarn"] || foundManagers["bun"] || foundManagers["deno"]
 		foundPython := foundManagers["uv"] || foundManagers["pylock"] || foundManagers["poetry"] || foundManagers["pipenv"] || foundManagers["pdm"] || foundManagers["requirements"] || pixiPyproject
@@ -155,6 +171,29 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 				if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 					skipped = append(skipped, model.Issue{Code: "collector_skipped_missing_lockfile", Name: manifest.name, Scope: candidate})
 				}
+			}
+		}
+	}
+	if includeBinaries {
+		binaries, err := repositoryGoBinaryCandidates(path, includeTestVendor)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ravel:", err)
+			return 1
+		}
+		for _, binary := range binaries {
+			if samePath(output, binary) || report != "" && samePath(report, binary) {
+				fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite an input")
+				return 2
+			}
+			relative, _ := filepath.Rel(path, binary)
+			doc, recognized, err := oci.CollectGoBinaryFile(binary, project, relative)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "ravel: skipped Go binary %s: %v\n", binary, err)
+				skipped = append(skipped, model.Issue{Code: "collector_skipped_binary", Name: "go-binary", Scope: binary})
+				continue
+			}
+			if recognized {
+				inputs = append(inputs, doc)
 			}
 		}
 	}
@@ -290,7 +329,7 @@ func selectedJSManager(directory string) (string, []model.Issue, error) {
 	return chosen, ignored, nil
 }
 
-func scanDirectories(root string) ([]string, error) {
+func scanDirectories(root string, includeTestVendor bool) ([]string, error) {
 	const maxEntries = 500_000
 	dirs := map[string]bool{root: true}
 	seen := 0
@@ -308,6 +347,9 @@ func scanDirectories(root string) ([]string, error) {
 					if _, err := os.Stat(filepath.Join(filepath.Dir(path), "oci-layout")); err == nil {
 						return filepath.SkipDir
 					}
+				}
+				if includeTestVendor && isTestVendorDirectory(entry.Name()) {
+					return nil
 				}
 				switch entry.Name() {
 				case ".git", ".hg", ".svn", "node_modules", ".pnpm-store", ".yarn", ".gradle", "target", "build", "dist", "Pods", ".venv", "venv", "__pycache__", ".cache", "testdata", "fixtures", "tmp":
@@ -349,7 +391,112 @@ func scanDirectories(root string) ([]string, error) {
 	return result, nil
 }
 
+func isTestVendorDirectory(name string) bool {
+	switch name {
+	case "tmp", "fixtures", "testdata", "vendor":
+		return true
+	}
+	return false
+}
+
+func repositoryGoBinaryCandidates(root string, includeTestVendor bool) ([]string, error) {
+	const maxEntries = 500_000
+	const maxCandidates = 10_000
+	var candidates []string
+	entries := 0
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		entries++
+		if entries > maxEntries {
+			return fmt.Errorf("binary discovery exceeds %d entries", maxEntries)
+		}
+		if entry.IsDir() {
+			if path == root {
+				return nil
+			}
+			if includeTestVendor && isTestVendorDirectory(entry.Name()) {
+				return nil
+			}
+			switch entry.Name() {
+			case ".git", ".hg", ".svn", "node_modules", ".pnpm-store", ".yarn", ".gradle", "target", "build", "dist", "Pods", ".venv", "venv", "__pycache__", ".cache", "testdata", "fixtures", "tmp", "vendor", "obj":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 || info.Size() < 52 || info.Size() > 256<<20 {
+			return nil
+		}
+		if len(candidates) >= maxCandidates {
+			return fmt.Errorf("binary discovery exceeds %d executable candidates", maxCandidates)
+		}
+		candidates = append(candidates, path)
+		return nil
+	})
+	return candidates, err
+}
+
+func inTestVendorTree(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false
+	}
+	for _, part := range strings.Split(relative, string(filepath.Separator)) {
+		if isTestVendorDirectory(part) {
+			return true
+		}
+	}
+	return false
+}
+
+func isBundlerLockName(name string) bool {
+	if name == "Gemfile.lock" {
+		return true
+	}
+	if !strings.HasPrefix(name, "Gemfile.") || !strings.HasSuffix(name, ".lock") {
+		return false
+	}
+	suffix := strings.TrimSuffix(strings.TrimPrefix(name, "Gemfile."), ".lock")
+	if suffix == "" || suffix[0] == '.' || suffix[len(suffix)-1] == '.' {
+		return false
+	}
+	for _, char := range suffix {
+		if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '_' || char == '-' || char == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func bundlerLockFiles(directory string) ([]string, error) {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, err
+	}
+	var locks []string
+	for _, entry := range entries {
+		if !isBundlerLockName(entry.Name()) {
+			continue
+		}
+		path := filepath.Join(directory, entry.Name())
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			locks = append(locks, path)
+		}
+	}
+	sort.Strings(locks)
+	return locks, nil
+}
+
 func recursiveCandidate(name string) bool {
+	if isBundlerLockName(name) {
+		return true
+	}
 	switch name {
 	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "packages.config", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "go.work", "pubspec.lock", "pubspec.yaml", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "mix.lock", "rebar.lock", "shard.lock", "cabal.project.freeze", "Manifest.toml", "JuliaManifest.toml", "renv.lock", "conda-lock.yml", "conda-lock.yaml", "pixi.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout", ".nvmrc", ".node-version", ".python-version", ".ruby-version", ".tool-versions", "rust-toolchain", "rust-toolchain.toml", "global.json":
 		return true

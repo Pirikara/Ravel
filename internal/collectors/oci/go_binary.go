@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,80 @@ type goBinaryState struct {
 
 var errGoBinaryModuleLimit = errors.New("Go binary contains too many module records")
 var errGoBinaryIO = errors.New("could not spool Go binary")
+
+// CollectGoBinaryFile reads embedded Go build information from one local ELF or Mach-O
+// executable without loading the whole file into memory. A non-Go ELF is not
+// recognized and contributes no document.
+func CollectGoBinaryFile(filename, project, relativePath string) (model.Document, bool, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return model.Document{}, false, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return model.Document{}, false, err
+	}
+	if !info.Mode().IsRegular() || info.Size() < 52 || info.Size() > maxGoBinaryDiskBytes {
+		return model.Document{}, false, nil
+	}
+	prefix := make([]byte, 4)
+	if _, err := file.ReadAt(prefix, 0); err != nil || !isELFMagic(prefix) && !isMachOMagic(prefix) {
+		return model.Document{}, false, nil
+	}
+	found, err := hasGoBuildInfoMagic(file, info.Size())
+	if err != nil || !found {
+		return model.Document{}, false, err
+	}
+	if err := guardLocalGoBinaryMetadata(file, prefix, info.Size()); err != nil {
+		return model.Document{}, false, err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return model.Document{}, false, err
+	}
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return model.Document{}, false, err
+	}
+	if relativePath == "" {
+		relativePath = filepath.Base(filename)
+	}
+	return readGoBuildInfo(file, hex.EncodeToString(hasher.Sum(nil)), filename, project, filepath.ToSlash(relativePath))
+}
+
+func isMachOMagic(prefix []byte) bool {
+	return bytes.Equal(prefix, []byte{0xcf, 0xfa, 0xed, 0xfe}) ||
+		bytes.Equal(prefix, []byte{0xfe, 0xed, 0xfa, 0xcf}) ||
+		bytes.Equal(prefix, []byte{0xce, 0xfa, 0xed, 0xfe}) ||
+		bytes.Equal(prefix, []byte{0xfe, 0xed, 0xfa, 0xce})
+}
+
+func guardLocalGoBinaryMetadata(reader io.ReaderAt, prefix []byte, size int64) error {
+	if isELFMagic(prefix) {
+		return guardELFMetadataReader(reader, size)
+	}
+	if !isMachOMagic(prefix) || size < 32 {
+		return errors.New("unsupported executable format")
+	}
+	var order binary.ByteOrder = binary.LittleEndian
+	if prefix[0] == 0xfe {
+		order = binary.BigEndian
+	}
+	headerSize := int64(28)
+	if prefix[0] == 0xcf || prefix[3] == 0xcf {
+		headerSize = 32
+	}
+	header := make([]byte, headerSize)
+	if _, err := reader.ReadAt(header, 0); err != nil {
+		return err
+	}
+	commands := order.Uint32(header[16:20])
+	commandBytes := order.Uint32(header[20:24])
+	if commands > 4096 || commandBytes > 2<<20 || headerSize+int64(commandBytes) > size {
+		return errors.New("Mach-O load commands exceed supported limit")
+	}
+	return nil
+}
 
 // inspectGoBinary reads module identities embedded by the Go linker. It is
 // deliberately restricted to ELF: the OCI scanner currently targets Linux

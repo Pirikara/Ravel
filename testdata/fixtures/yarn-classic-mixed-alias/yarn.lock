@@ -1,0 +1,11 @@
+# yarn lockfile v1
+
+"string-width-cjs@npm:string-width@^4.2.0", string-width@^4.2.0:
+  version "4.2.3"
+  resolved "https://registry.yarnpkg.com/string-width/-/string-width-4.2.3.tgz"
+  dependencies:
+    strip-ansi "^6.0.0"
+
+strip-ansi@^6.0.0:
+  version "6.0.1"
+  resolved "https://registry.yarnpkg.com/strip-ansi/-/strip-ansi-6.0.1.tgz"
