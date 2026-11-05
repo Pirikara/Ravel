@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/export"
 	"github.com/Pirikara/Ravel/internal/merge"
 	"github.com/Pirikara/Ravel/internal/model"
@@ -86,6 +87,46 @@ func TestDeclaredRootIdentityAndExport(t *testing.T) {
 	if merged.Root != nil {
 		t.Fatalf("one input's root identity was attributed to a multi-project scan: %#v", merged.Root)
 	}
+	applications := map[string]model.Component{}
+	for _, component := range merged.Components {
+		if component.Kind == "application" {
+			applications[component.Name] = component
+		}
+	}
+	if len(applications) != len(cases) {
+		t.Fatalf("merged input roots missing: %#v", applications)
+	}
+	for i, tc := range cases {
+		application, found := applications[tc.name]
+		if !found || application.Version != tc.version || len(application.Evidence) != 1 || application.Evidence[0] != inputs[i].Root.Evidence {
+			t.Fatalf("merged root identity or evidence missing for %s: %#v", tc.name, application)
+		}
+		var rootLink, outgoing int
+		for _, edge := range merged.Edges {
+			if edge.From == "root" && edge.To == application.ID {
+				rootLink++
+			}
+			if edge.From == application.ID {
+				outgoing++
+			}
+		}
+		var inputDirect int
+		for _, edge := range inputs[i].Edges {
+			if edge.From == "root" {
+				inputDirect++
+			}
+		}
+		if rootLink != 1 || outgoing != inputDirect {
+			t.Fatalf("merged root edges differ for %s: root=%d outgoing=%d input=%d", tc.name, rootLink, outgoing, inputDirect)
+		}
+	}
+	for _, edge := range merged.Edges {
+		if edge.From == "root" {
+			if _, found := applications[componentName(merged.Components, edge.To)]; !found {
+				t.Fatalf("merged root bypasses an input application: %#v", edge)
+			}
+		}
+	}
 	cyclone, err := export.CycloneDX(merged)
 	if err != nil {
 		t.Fatal(err)
@@ -104,4 +145,31 @@ func TestDeclaredRootIdentityAndExport(t *testing.T) {
 	if cdx.Metadata.Component.Name != "polyglot" || cdx.Metadata.Component.Version != "" {
 		t.Fatalf("merged project inherited an input identity: %#v", cdx.Metadata.Component)
 	}
+	nested, err := merge.Documents("larger-scope", []model.Document{merged, common.NewDocument("other", "other", "synthetic", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nestedApplications, nestedRootEdges int
+	for _, component := range nested.Components {
+		if component.Kind == "application" && applications[component.Name].Name != "" {
+			nestedApplications++
+		}
+	}
+	for _, edge := range nested.Edges {
+		if edge.From == "root" {
+			nestedRootEdges++
+		}
+	}
+	if nestedApplications != len(cases) || nestedRootEdges != len(cases) {
+		t.Fatalf("nested merge lost scoped root applications: applications=%d rootEdges=%d", nestedApplications, nestedRootEdges)
+	}
+}
+
+func componentName(components []model.Component, id string) string {
+	for _, component := range components {
+		if component.ID == id {
+			return component.Name
+		}
+	}
+	return ""
 }

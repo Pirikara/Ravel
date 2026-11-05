@@ -68,6 +68,15 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, issue)
 		}
 		ids := map[string]string{"root": "root"}
+		if input.Root != nil && input.Root.Name != "" {
+			id := "merge:" + common.ID(fmt.Sprintf("%d|%s|root", index, input.Source))
+			ids["root"] = id
+			doc.Components = append(doc.Components, model.Component{
+				ID: id, Kind: "application", Name: input.Root.Name, Version: input.Root.Version,
+				Evidence: []model.Evidence{input.Root.Evidence},
+			})
+			doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "direct", Evidence: input.Root.Evidence})
+		}
 		componentNames := map[string]string{}
 		for _, component := range input.Components {
 			if component.ID == "" || component.ID == "root" {
