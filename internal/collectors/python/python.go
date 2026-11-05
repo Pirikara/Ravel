@@ -137,13 +137,16 @@ func CollectUV(file, project string) (model.Document, error) {
 		root := pkg.Source.Editable == "." || pkg.Source.Virtual == "."
 		ref := "uv:" + common.ID(fmt.Sprintf("%d|%s|%s", i, pkg.Name, pkg.Version))
 		if root {
-			ref = "root"
+			ref = "uv-main:" + common.ID(fmt.Sprintf("%d|%s|%s", i, pkg.Name, pkg.Version))
 		}
 		nodes = append(nodes, node{ref: ref, name: normalized(pkg.Name), version: pkg.Version, marker: pkg.Marker, source: uvSourceKey(pkg.Source), deps: pkg.Dependencies, optional: pkg.Optional, groups: pkg.Groups, dev: pkg.Dev, root: root})
+		ev := common.Evidence(file, "uv-lock", fmt.Sprintf("/package/%d", i), data)
 		if root {
+			doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "application", Name: pkg.Name, Version: pkg.Version, Evidence: []model.Evidence{ev}})
+			doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "project", Evidence: ev})
+			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: ".", Status: "declared", Evidence: ev})
 			continue
 		}
-		ev := common.Evidence(file, "uv-lock", fmt.Sprintf("/package/%d", i), data)
 		component := model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, Evidence: []model.Evidence{ev}}
 		if defaultPyPIIndex(pkg.Source.Registry) {
 			component.PURL = purl(pkg.Name, pkg.Version)

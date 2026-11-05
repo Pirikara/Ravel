@@ -353,7 +353,11 @@ func TestPyPIEnrichAcrossLockfileFormats(t *testing.T) {
 			if err := json.Unmarshal(data, &doc); err != nil {
 				t.Fatal(err)
 			}
-			if len(doc.Components) != 1 || doc.Components[0].Name != "idna" || len(doc.Development) != 1 || doc.Development[0].SafeURL != "https://github.com/kjd/idna" || doc.Development[0].Status != "registry_metadata" || doc.Development[0].Evidence.Collector != "pypi-json-api" || doc.Development[0].Evidence.InputDigest != "sha256:"+hex.EncodeToString(sha[:]) || doc.Development[0].Evidence.InputPath != server.URL+"/pypi/idna/3.10/json" {
+			foundIDNA := false
+			for _, component := range doc.Components {
+				foundIDNA = foundIDNA || component.Name == "idna" && component.Version == "3.10"
+			}
+			if !foundIDNA || len(doc.Development) != 1 || doc.Development[0].SafeURL != "https://github.com/kjd/idna" || doc.Development[0].Status != "registry_metadata" || doc.Development[0].Evidence.Collector != "pypi-json-api" || doc.Development[0].Evidence.InputDigest != "sha256:"+hex.EncodeToString(sha[:]) || doc.Development[0].Evidence.InputPath != server.URL+"/pypi/idna/3.10/json" {
 				t.Fatalf("PyPI development metadata was not attached with evidence: %#v", doc)
 			}
 			if _, err := time.Parse(time.RFC3339, doc.Development[0].Evidence.ObservedAt); err != nil {
