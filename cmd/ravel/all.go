@@ -115,7 +115,7 @@ func runScanAll(path, format, output, report string, strict, recursive bool) int
 				}
 				continue
 			}
-			if manager == "go" && filepath.Base(lock) == "go.mod" || manager == "cargo" && filepath.Base(lock) == "Cargo.toml" || manager == "gradle" && (filepath.Base(lock) == "build.gradle" || filepath.Base(lock) == "build.gradle.kts") || manager == "swiftpm" && filepath.Base(lock) == "Package.swift" {
+			if manager == "cargo" && filepath.Base(lock) == "Cargo.toml" || manager == "gradle" && (filepath.Base(lock) == "build.gradle" || filepath.Base(lock) == "build.gradle.kts") || manager == "swiftpm" && filepath.Base(lock) == "Package.swift" {
 				skipped = append(skipped, model.Issue{Code: "collector_skipped_requires_resolve", Name: manager, Scope: lock})
 				continue
 			}
@@ -404,6 +404,9 @@ func collectStatic(manager, lock, project string) (model.Document, error) {
 	case "pdm":
 		return python.CollectPDM(lock, project)
 	case "go":
+		if filepath.Base(lock) == "go.mod" {
+			return gomod.CollectManifest(lock, project)
+		}
 		return gomod.CollectVendor(lock, project)
 	case "pub":
 		return pub.Collect(lock, project)

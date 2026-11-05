@@ -45,7 +45,7 @@ ravel scan project --all --recursive --output project.cdx.json --report project.
 Replace `REF` with a commit or tag for a repeatable scan. Use
 `git clone --recurse-submodules` when the inputs you need are in submodules.
 `--all --recursive` scans supported static inputs in nested projects; manifests
-that need package-manager resolution are reported as skipped. Direct Git URLs
+without static dependency data are reported as skipped. Direct Git URLs
 and remote repository archives are not scan inputs. Fetch them locally first.
 Ravel does not automatically record the scanned checkout's Git commit ID, so
 keep it alongside the generated result.
@@ -72,7 +72,7 @@ ravel scan path/to/repository --all --recursive \
   --format ravel-json --output repository.ravel.json
 ```
 
-The `runtimes` array records the requested version or range, its meaning (`selection`, `minimum`, `suggested`, or `compatibility`), scope, and source-file evidence. Supported declarations include `.nvmrc`, `.node-version`, `.python-version`, `.ruby-version`, `.tool-versions`, `package.json` `engines.node`, `pyproject.toml` `requires-python`, Go module/workspace directives, Cargo `rust-version`, rustup toolchain files, `.NET` `global.json` SDK selection, `Package.swift` tools version, and Dart/Flutter `pubspec.yaml` constraints. A repository containing only version declarations can also be scanned; its package graph and origin remain `unknown`. If a Go, Cargo, Gradle, or SwiftPM manifest needs package-manager resolution, `--all` can still emit its runtime declarations and records the skipped dependency scan as a coverage issue. Use `--resolve --allow-exec` separately for that graph.
+The `runtimes` array records the requested version or range, its meaning (`selection`, `minimum`, `suggested`, or `compatibility`), scope, and source-file evidence. Supported declarations include `.nvmrc`, `.node-version`, `.python-version`, `.ruby-version`, `.tool-versions`, `package.json` `engines.node`, `pyproject.toml` `requires-python`, Go module/workspace directives, Cargo `rust-version`, rustup toolchain files, `.NET` `global.json` SDK selection, `Package.swift` tools version, and Dart/Flutter `pubspec.yaml` constraints. A repository containing only version declarations can also be scanned; its package graph and origin remain `unknown`. Static `go.mod` scans list declared modules and direct requirements; the selected build list and transitive graph remain unverified. Cargo, Gradle, and SwiftPM manifests without lock data are reported as skipped. Use `--resolve --allow-exec` separately to verify selected Go modules or obtain other package-manager data.
 
 These values describe repository requirements, not the runtime actually installed on a machine or in an image. CycloneDX puts them in root-component `ravel:runtimeRequirement` properties; SPDX puts them in the root package comment. Ravel JSON retains the source evidence.
 

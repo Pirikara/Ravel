@@ -509,9 +509,8 @@ func runScan(args []string) int {
 		doc, err = cargo.CollectResolved(lock, project, *network == "allow")
 	case *resolve && selected == "swiftpm":
 		doc, err = swiftpm.CollectResolved(lock, project, *network == "allow")
-	case selected == "go" && filepath.Base(lock) != "modules.txt":
-		fmt.Fprintln(os.Stderr, "ravel: Go modules without vendor/modules.txt require --resolve --allow-exec")
-		return 2
+	case selected == "go" && filepath.Base(lock) == "go.mod":
+		doc, err = gomod.CollectManifest(lock, project)
 	case selected == "gradle" && (filepath.Base(lock) == "build.gradle" || filepath.Base(lock) == "build.gradle.kts"):
 		fmt.Fprintln(os.Stderr, "ravel: Gradle projects without lockfile require --resolve --allow-exec")
 		return 2
