@@ -75,6 +75,7 @@ The result identifies exact PURL matches and retains the issuer's status and rat
 | What remains uncertain? | A coverage report with specific issues for the scanned scope and information lost in standard-format export. |
 
 Ravel does not turn a lockfile URL into proof of a download. It labels a registry or distribution URL as **declared** unless stronger evidence is available. When the source is unknown, it leaves the claim open.
+Package names and versions can still be reported when a lockfile omits its registry. Ravel leaves the PURL empty in that case rather than claiming the package came from a public default registry.
 
 To reproduce this example, clone the repository and scan its Poetry fixture. It shows a declared registry, a dependency, and a remaining graph limit:
 
