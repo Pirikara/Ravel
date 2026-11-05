@@ -20,6 +20,7 @@ type sourceReviewedCorpus struct {
 		Packages         []struct {
 			Name           string   `json:"name"`
 			Version        string   `json:"version"`
+			SourceFile     string   `json:"sourceFile"`
 			SourceSnippets []string `json:"sourceSnippets"`
 		} `json:"packages"`
 		Edges []struct {
@@ -73,7 +74,7 @@ func TestSourceReviewedFixtureClaims(t *testing.T) {
 			for _, component := range doc.Components {
 				key := component.Name + "@" + component.Version
 				if _, duplicate := components[key]; duplicate {
-				t.Fatalf("ambiguous component identity %q in fixture claims", key)
+					t.Fatalf("ambiguous component identity %q in fixture claims", key)
 				}
 				components[key] = component
 			}
@@ -85,9 +86,21 @@ func TestSourceReviewedFixtureClaims(t *testing.T) {
 				if len(claim.SourceSnippets) == 0 {
 					t.Fatalf("package %q has no source evidence", key)
 				}
+				claimSource := source
+				claimSourceFile := tc.SourceFile
+				if claim.SourceFile != "" {
+					if filepath.IsAbs(claim.SourceFile) || strings.Contains(claim.SourceFile, "..") {
+						t.Fatalf("unsafe package source path %q", claim.SourceFile)
+					}
+					claimSource, err = os.ReadFile(filepath.Join(fixture, claim.SourceFile))
+					if err != nil {
+						t.Fatal(err)
+					}
+					claimSourceFile = claim.SourceFile
+				}
 				for _, snippet := range claim.SourceSnippets {
-					if snippet == "" || !strings.Contains(string(source), snippet) {
-						t.Fatalf("source evidence %q for %q absent from %s", snippet, key, tc.SourceFile)
+					if snippet == "" || !strings.Contains(string(claimSource), snippet) {
+						t.Fatalf("source evidence %q for %q absent from %s", snippet, key, claimSourceFile)
 					}
 				}
 			}

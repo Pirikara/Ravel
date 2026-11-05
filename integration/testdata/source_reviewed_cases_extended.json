@@ -272,6 +272,14 @@
       "completePackages": true,
       "packages": [
         {
+          "name": "example.com/app",
+          "version": "",
+          "sourceFile": "go.mod",
+          "sourceSnippets": [
+            "module example.com/app"
+          ]
+        },
+        {
           "name": "github.com/acme/alpha",
           "version": "v1.2.3",
           "sourceSnippets": [

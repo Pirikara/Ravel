@@ -149,9 +149,13 @@ func TestRuntimeOnlyRepositoryAndStandardExports(t *testing.T) {
 func TestGoManifestWithoutVendorReportsRuntimeAndMissingGraph(t *testing.T) {
 	root := t.TempDir()
 	runtimeTestWrite(t, root, "go.mod", "module example.com/demo\n\ngo 1.25.0\n\nrequire example.com/dependency v1.2.3\n")
+	runtimeTestWrite(t, root, ".tool-versions", "golang 1.25.4\n")
 	doc, message, code := runtimeTestScan(t, root, "--all")
-	if code != 0 || doc.Coverage.Packages != 1 || doc.Coverage.GraphState != "partial" || len(doc.Runtimes) != 1 || doc.Runtimes[0].Requirement != "1.25.0" {
+	if code != 0 || doc.Coverage.Packages != 2 || doc.Coverage.GraphState != "partial" || len(doc.Runtimes) != 2 || doc.Runtimes[0].Requirement != "1.25.4" || doc.Runtimes[0].Relation != "selection" || doc.Runtimes[1].Requirement != "1.25.0" || doc.Runtimes[1].Relation != "minimum" {
 		t.Fatalf("Go manifest scan failed: code=%d message=%s doc=%#v", code, message, doc)
+	}
+	if len(doc.Components) != 2 {
+		t.Fatalf("Go main module missing: %#v", doc.Components)
 	}
 	foundGap := false
 	for _, issue := range doc.Coverage.Issues {
@@ -162,8 +166,45 @@ func TestGoManifestWithoutVendorReportsRuntimeAndMissingGraph(t *testing.T) {
 	if !foundGap {
 		t.Fatalf("missing transitive graph was not reported: %#v", doc.Coverage.Issues)
 	}
-	if single, message, code := runtimeTestScan(t, root); code != 0 || single.Coverage.Packages != 1 {
+	if single, message, code := runtimeTestScan(t, root); code != 0 || single.Coverage.Packages != 2 {
 		t.Fatalf("Go scan did not include declared modules: code=%d message=%s", code, message)
+	}
+	output := filepath.Join(t.TempDir(), "go.cdx.json")
+	if message, err := exec.Command(executable, "scan", root, "--all", "--output", output).CombinedOutput(); err != nil {
+		t.Fatalf("Go CycloneDX scan failed: %v %s", err, message)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bom struct {
+		Metadata struct {
+			Component struct {
+				Properties []struct {
+					Name  string `json:"name"`
+					Value string `json:"value"`
+				} `json:"properties"`
+			} `json:"component"`
+		} `json:"metadata"`
+		Components []struct {
+			Name    string `json:"name"`
+			PURL    string `json:"purl"`
+			Version string `json:"version"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(data, &bom); err != nil {
+		t.Fatal(err)
+	}
+	var mainFound, selectionFound, minimumFound bool
+	for _, component := range bom.Components {
+		mainFound = mainFound || component.Name == "example.com/demo" && component.PURL == "pkg:golang/example.com/demo" && component.Version == ""
+	}
+	for _, property := range bom.Metadata.Component.Properties {
+		selectionFound = selectionFound || property.Name == "ravel:runtimeRequirement" && strings.Contains(property.Value, `"requirement":"1.25.4"`) && strings.Contains(property.Value, `"relation":"selection"`)
+		minimumFound = minimumFound || property.Name == "ravel:runtimeRequirement" && strings.Contains(property.Value, `"requirement":"1.25.0"`) && strings.Contains(property.Value, `"relation":"minimum"`)
+	}
+	if !mainFound || !selectionFound || !minimumFound {
+		t.Fatalf("Go module or runtime declarations missing from CycloneDX: %s", data)
 	}
 }
 

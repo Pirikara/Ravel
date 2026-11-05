@@ -102,6 +102,10 @@ func CollectVendor(file, project string) (model.Document, error) {
 			if err != nil {
 				return model.Document{}, fmt.Errorf("invalid go.mod: %w", err)
 			}
+			mainRef, err := addMainModule(&doc, mod, modPath, modData)
+			if err != nil {
+				return model.Document{}, err
+			}
 			requireExplicit := mod.Go == nil || semver.Compare("v"+mod.Go.Version, "v1.14.0") >= 0
 			for _, req := range mod.Require {
 				header, headerFound := allHeaders[req.Mod.Path+"@"+req.Mod.Version]
@@ -124,7 +128,7 @@ func CollectVendor(file, project string) (model.Document, error) {
 				if req.Indirect {
 					continue
 				}
-				doc.Edges = append(doc.Edges, model.Edge{From: "root", To: refs[req.Mod.Path], Kind: "direct", Evidence: common.Evidence(modPath, "go-manifest", "/require/"+common.ID(req.Mod.Path), modData)})
+				doc.Edges = append(doc.Edges, model.Edge{From: mainRef, To: refs[req.Mod.Path], Kind: "direct", Evidence: common.Evidence(modPath, "go-manifest", "/require/"+common.ID(req.Mod.Path), modData)})
 			}
 		}
 	}
