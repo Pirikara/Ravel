@@ -46,7 +46,18 @@ func NpmPURL(name, version string) string {
 }
 
 func GoModulePURL(path, version string) string {
-	if path == "" || version == "" || path != strings.ToLower(path) {
+	if version == "" {
+		return ""
+	}
+	base := GoMainModulePURL(path)
+	if base == "" {
+		return ""
+	}
+	return base + "@" + url.PathEscape(version)
+}
+
+func GoMainModulePURL(path string) string {
+	if path == "" || path != strings.ToLower(path) {
 		return ""
 	}
 	parts := strings.Split(path, "/")
@@ -56,7 +67,7 @@ func GoModulePURL(path, version string) string {
 	for i, part := range parts {
 		parts[i] = url.PathEscape(part)
 	}
-	return "pkg:golang/" + strings.Join(parts, "/") + "@" + url.PathEscape(version)
+	return "pkg:golang/" + strings.Join(parts, "/")
 }
 
 func DefaultNpmRegistry(raw string) bool {

@@ -13,7 +13,7 @@ Repository directories also expose explicit runtime requirements from `.nvmrc`, 
 | .NET | NuGet `packages.lock.json`, `project.assets.json`, legacy `packages.config`, `.nupkg` archives | Keeps target framework choices; `packages.config` is a flat project list. |
 | Swift | `Package.resolved` v1–v3 | Static pins do not establish package dependency edges. |
 | Java / Scala | Maven `pom.xml` and dependency tree JSON; Gradle lockfiles; sbt `*.sbt.lock` v1; JAR/WAR archives | Includes declared Maven modules and nested JARs when identifiable. sbt configurations and safe default JAR checksums are retained. |
-| Go | `go.mod` declarations or `vendor/modules.txt` with `go.mod` | Static `go.mod` scanning lists declared modules and direct requirements, with selection and transitive graph marked partial. An optional `go list` resolver can verify the selected modules. |
+| Go | `go.mod` declarations or `vendor/modules.txt` with `go.mod` | The main module is an application component, with a versionless Go PURL for a canonical public module path; repository checkouts do not establish its release version. Static `go.mod` scanning lists declared dependency modules and direct requirements, with selection and transitive graph marked partial. An optional `go list` resolver can verify selected dependency modules. |
 | Rust | Cargo.lock v3/v4 | An optional `cargo metadata` resolver supplies a selected host graph. |
 | PHP | `composer.lock` | Source and distribution URLs remain separate. |
 | C/C++ | Conan 1 and 2 `conan.lock` | Conan 1 graph nodes and edges; Conan 2 locked reference candidates without an inferred selected graph. |

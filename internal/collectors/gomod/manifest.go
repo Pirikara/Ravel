@@ -28,6 +28,10 @@ func CollectManifest(file, project string) (model.Document, error) {
 		return model.Document{}, fmt.Errorf("invalid go.mod: %w", err)
 	}
 	doc := common.NewDocument(file, project, "go", data)
+	mainRef, err := addMainModule(&doc, manifest, file, data)
+	if err != nil {
+		return model.Document{}, err
+	}
 	if len(manifest.Require) > 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "transitive_graph_unavailable"})
 	}
@@ -59,7 +63,7 @@ func CollectManifest(file, project string) (model.Document, error) {
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: path, Version: version, PURL: identity, Evidence: []model.Evidence{ev}})
 		addResolvedOrigin(&doc, ref, item, ev)
 		if !req.Indirect {
-			doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "direct", Evidence: ev})
+			doc.Edges = append(doc.Edges, model.Edge{From: mainRef, To: ref, Kind: "direct", Evidence: ev})
 		}
 	}
 	common.Finalize(&doc)

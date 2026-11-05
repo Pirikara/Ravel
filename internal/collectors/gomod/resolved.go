@@ -136,6 +136,10 @@ func CollectResolved(file, project string, networkAllow bool) (model.Document, e
 		return model.Document{}, err
 	}
 	doc := common.NewDocument(file, project, "go", modData)
+	mainRef, err := addMainModule(&doc, manifest, file, modData)
+	if err != nil {
+		return model.Document{}, err
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "transitive_graph_unavailable"})
 	refs := map[string]string{}
 	for _, path := range paths {
@@ -160,7 +164,7 @@ func CollectResolved(file, project string, networkAllow bool) (model.Document, e
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: req.Mod.Path})
 			continue
 		}
-		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "direct", Evidence: common.Evidence(file, "go-manifest", "/require/"+common.ID(req.Mod.Path), modData)})
+		doc.Edges = append(doc.Edges, model.Edge{From: mainRef, To: ref, Kind: "direct", Evidence: common.Evidence(file, "go-manifest", "/require/"+common.ID(req.Mod.Path), modData)})
 	}
 	common.Finalize(&doc)
 	return doc, nil

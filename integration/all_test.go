@@ -94,7 +94,7 @@ func TestScanAllStaticManagers(t *testing.T) {
 	for _, component := range doc.Components {
 		found = found || component.Name == "example.test/go-dep" && component.Version == "v1.2.3"
 	}
-	if !found || doc.Coverage.Packages != 4 || doc.Coverage.GraphState != "partial" {
+	if !found || doc.Coverage.Packages != 5 || doc.Coverage.GraphState != "partial" {
 		t.Fatal("Go manifest modules were not included with partial graph coverage")
 	}
 	cmd = exec.Command(executable, "scan", dir, "--all", "--output", filepath.Join(dir, "go.mod"))
@@ -130,7 +130,7 @@ func TestScanAllStaticManagers(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Coverage.Inputs) != 4 || doc.Coverage.Packages != 5 || doc.Coverage.Edges != 5 {
+	if len(doc.Coverage.Inputs) != 4 || doc.Coverage.Packages != 6 || doc.Coverage.Edges != 6 {
 		t.Fatalf("recursive scan missed a subproject or included generated files: %#v", doc.Coverage)
 	}
 	missingLock := false

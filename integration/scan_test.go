@@ -212,11 +212,11 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"pdm-extras", "pdm", 4, 4, "partial", "complete_for_scope", []string{"app", "plugin", "speedlib"}, "", ""},
 		{"pdm-sources", "pdm", 3, 3, "partial", "complete_for_scope", []string{"git-lib", "archive-lib", "local-lib"}, "", "hidden"},
 		{"pdm-no-manifest", "pdm", 1, 0, "partial", "partial", []string{"standalone"}, "", ""},
-		{"go-vendor-basic", "go", 2, 1, "partial", "partial", []string{"github.com/acme/alpha", "golang.org/x/text"}, "", "stale-version-should-not-be-included"},
-		{"go-vendor-local", "go", 1, 1, "partial", "complete_for_scope", []string{"github.com/acme/alpha"}, "", ""},
-		{"go-vendor-replacement", "go", 1, 1, "partial", "partial", []string{"github.com/acme/alpha"}, "", ""},
-		{"go-vendor-stale", "go", 1, 0, "partial", "partial", []string{"github.com/acme/alpha"}, "", ""},
-		{"go-vendor-missing", "go", 0, 0, "partial", "complete_for_scope", nil, "", ""},
+		{"go-vendor-basic", "go", 3, 2, "partial", "partial", []string{"example.com/app", "github.com/acme/alpha", "golang.org/x/text"}, "", "stale-version-should-not-be-included"},
+		{"go-vendor-local", "go", 2, 2, "partial", "complete_for_scope", []string{"example.com/app", "github.com/acme/alpha"}, "", ""},
+		{"go-vendor-replacement", "go", 2, 2, "partial", "partial", []string{"example.com/app", "github.com/acme/alpha"}, "", ""},
+		{"go-vendor-stale", "go", 2, 1, "partial", "partial", []string{"example.com/app", "github.com/acme/alpha"}, "", ""},
+		{"go-vendor-missing", "go", 1, 1, "partial", "complete_for_scope", []string{"example.com/app"}, "", ""},
 		{"go-vendor-no-mod", "go", 1, 0, "partial", "partial", []string{"github.com/acme/alpha"}, "", ""},
 		{"go-vendor-workspace", "go", 1, 0, "partial", "partial", []string{"github.com/acme/alpha"}, "", ""},
 		{"pub-basic", "pub", 2, 1, "partial", "complete_for_scope", []string{"collection", "meta"}, "", ""},
@@ -353,6 +353,15 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			}
 		}
 		t.Fatalf("missing %s@%s", name, version)
+		return ""
+	}
+	componentPURL := func(id string) string {
+		for _, c := range doc.Components {
+			if c.ID == id {
+				return c.PURL
+			}
+		}
+		t.Fatalf("missing component %s", id)
 		return ""
 	}
 	connected := func(from, to string) bool {
@@ -1728,8 +1737,9 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("PDM root edges invented without pyproject.toml")
 		}
 	case "go-vendor-basic":
+		main := find("example.com/app", "")
 		alpha, text := find("github.com/acme/alpha", "v1.2.3"), find("golang.org/x/text", "v0.14.0")
-		if !connected("root", alpha) || connected("root", text) || len(doc.Edges) != 1 {
+		if !connected("root", main) || !connected(main, alpha) || connected(main, text) || len(doc.Edges) != 2 {
 			t.Fatal("Go direct and indirect requirements were conflated")
 		}
 		for _, issue := range doc.Coverage.Issues {
@@ -1746,15 +1756,17 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			}
 		}
 	case "go-vendor-local":
-		if len(doc.Origins) != 1 || doc.Origins[0].Kind != "local" || doc.Components[0].PURL != "" {
+		alpha := find("github.com/acme/alpha", "v1.2.3")
+		if len(doc.Origins) != 1 || doc.Origins[0].Kind != "local" || doc.Origins[0].Occurrence != alpha || componentPURL(alpha) != "" {
 			t.Fatal("Go local replacement was misidentified")
 		}
 	case "go-vendor-replacement":
-		if len(doc.Origins) != 1 || doc.Origins[0].Kind != "module_replacement" || doc.Origins[0].Target != "example.com/forks/alpha@v1.2.4" || doc.Components[0].PURL != "" {
+		alpha := find("github.com/acme/alpha", "v1.2.3")
+		if len(doc.Origins) != 1 || doc.Origins[0].Kind != "module_replacement" || doc.Origins[0].Target != "example.com/forks/alpha@v1.2.4" || doc.Origins[0].Occurrence != alpha || componentPURL(alpha) != "" {
 			t.Fatal("Go module replacement was misidentified")
 		}
 	case "go-vendor-stale":
-		if len(doc.Edges) != 0 {
+		if len(doc.Edges) != 1 || !connected("root", find("example.com/app", "")) {
 			t.Fatal("stale Go vendor manifest produced root edge")
 		}
 		var mismatch bool
@@ -1767,7 +1779,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("stale Go vendor manifest was not reported")
 		}
 	case "go-vendor-missing":
-		if len(doc.Components) != 0 {
+		if len(doc.Components) != 1 || !connected("root", find("example.com/app", "")) {
 			t.Fatal("missing Go vendor package was invented")
 		}
 		var missing bool
@@ -2098,8 +2110,23 @@ func TestGoVendorGeneratedByGoTool(t *testing.T) {
 	if err := json.Unmarshal(staticData, &static); err != nil {
 		t.Fatal(err)
 	}
-	if len(static.Components) != 1 || static.Components[0].Name != "example.com/dep" || static.Components[0].PURL != "" || static.Components[0].Evidence[0].Method != "manifest-analysis" || len(static.Edges) != 1 || len(static.Origins) != 1 || static.Origins[0].Kind != "local" || static.Coverage.GraphState != "partial" {
+	if len(static.Components) != 2 || len(static.Edges) != 2 || len(static.Origins) != 1 || static.Origins[0].Kind != "local" || static.Coverage.GraphState != "partial" {
 		t.Fatalf("static Go manifest scan was incomplete: %#v", static)
+	}
+	staticNames := map[string]model.Component{}
+	hasGoEdge := func(edges []model.Edge, from, to string) bool {
+		for _, edge := range edges {
+			if edge.From == from && edge.To == to {
+				return true
+			}
+		}
+		return false
+	}
+	for _, component := range static.Components {
+		staticNames[component.Name] = component
+	}
+	if staticNames["example.com/app"].PURL != "pkg:golang/example.com/app" || staticNames["example.com/dep"].PURL != "" || len(staticNames["example.com/dep"].Evidence) != 1 || staticNames["example.com/dep"].Evidence[0].Method != "manifest-analysis" || !hasGoEdge(static.Edges, "root", staticNames["example.com/app"].ID) || !hasGoEdge(static.Edges, staticNames["example.com/app"].ID, staticNames["example.com/dep"].ID) {
+		t.Fatalf("static Go main module graph is wrong: %#v", static)
 	}
 	if output, err := exec.Command(executable, "scan", project, "--manager", "go", "--resolve", "--output", filepath.Join(t.TempDir(), "denied.json")).CombinedOutput(); err == nil || !strings.Contains(string(output), "--allow-exec") {
 		t.Fatalf("Go resolver ran without execution opt-in: %v: %s", err, output)
@@ -2116,8 +2143,15 @@ func TestGoVendorGeneratedByGoTool(t *testing.T) {
 	if err := json.Unmarshal(resolvedData, &resolved); err != nil {
 		t.Fatal(err)
 	}
-	if len(resolved.Components) != 1 || resolved.Components[0].Name != "example.com/dep" || len(resolved.Edges) != 1 || len(resolved.Origins) != 1 || resolved.Origins[0].Kind != "local" || resolved.Components[0].Evidence[0].Method != "resolver-output" {
+	if len(resolved.Components) != 2 || len(resolved.Edges) != 2 || len(resolved.Origins) != 1 || resolved.Origins[0].Kind != "local" {
 		t.Fatalf("offline Go resolver produced wrong graph: %#v", resolved)
+	}
+	resolvedNames := map[string]model.Component{}
+	for _, component := range resolved.Components {
+		resolvedNames[component.Name] = component
+	}
+	if resolvedNames["example.com/app"].PURL != "pkg:golang/example.com/app" || len(resolvedNames["example.com/dep"].Evidence) != 1 || resolvedNames["example.com/dep"].Evidence[0].Method != "resolver-output" || !hasGoEdge(resolved.Edges, "root", resolvedNames["example.com/app"].ID) || !hasGoEdge(resolved.Edges, resolvedNames["example.com/app"].ID, resolvedNames["example.com/dep"].ID) {
+		t.Fatalf("resolved Go main module graph is wrong: %#v", resolved)
 	}
 	manifestAfter, err := os.ReadFile(filepath.Join(project, "go.mod"))
 	if err != nil {
@@ -2169,7 +2203,14 @@ func TestGoVendorGeneratedByGoTool(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Coverage.Manager != "go" || len(doc.Components) != 1 || doc.Components[0].Name != "example.com/dep" || len(doc.Edges) != 1 || doc.Edges[0].From != "root" || doc.Edges[0].To != doc.Components[0].ID || len(doc.Origins) != 1 || doc.Origins[0].Kind != "local" {
+	if doc.Coverage.Manager != "go" || len(doc.Components) != 2 || len(doc.Edges) != 2 || len(doc.Origins) != 1 || doc.Origins[0].Kind != "local" {
 		t.Fatalf("Go-generated vendor was misread: %#v", doc)
+	}
+	vendorNames := map[string]model.Component{}
+	for _, component := range doc.Components {
+		vendorNames[component.Name] = component
+	}
+	if vendorNames["example.com/app"].PURL != "pkg:golang/example.com/app" || !hasGoEdge(doc.Edges, "root", vendorNames["example.com/app"].ID) || !hasGoEdge(doc.Edges, vendorNames["example.com/app"].ID, vendorNames["example.com/dep"].ID) {
+		t.Fatalf("Go-generated vendor main module graph is wrong: %#v", doc)
 	}
 }
