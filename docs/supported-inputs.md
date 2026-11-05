@@ -8,7 +8,7 @@ Repository directories also expose explicit runtime requirements from `.nvmrc`, 
 | --- | --- | --- |
 | Ruby | `Gemfile.lock`, `Gemfile.<variant>.lock`, source `.gemspec`; `.gem` archives | GEM, GIT, and PATH sources; archive metadata and SHA-256. `--all` reads each lockfile variant and source gemspec as a separate input. A source gemspec supplies a literal name and, when statically verifiable, a version from a literal or a required version file; dependency selection remains unresolved. |
 | JavaScript | npm lockfiles v1–v4; pnpm v6/v9; Yarn Classic and Berry; Bun text `bun.lock` v0–v2; npm `.tgz` archives | Package locations, dependency edges, and conditions where the format permits. |
-| Deno | `deno.lock` v3–v5, `deno.json` / `deno.jsonc`, local import maps, JS/TS imports | Discovers static imports, re-exports, and literal dynamic imports as entry points. |
+| Deno | `deno.lock` v3–v5, `deno.json` / `deno.jsonc`, local import maps, JS/TS imports | Discovers static imports, re-exports, and literal dynamic imports as entry points. Remote lock records with unknown reachability are listed in coverage. |
 | Python | `uv.lock` v1; `pylock.toml` 1.0; Poetry, Pipenv, PDM, and pinned requirements; `.whl` archives | Keeps markers, extras, groups, and unresolved choices conditional. An editable or virtual uv root is a local application component with its declared version. |
 | .NET | NuGet `packages.lock.json`, `project.assets.json`, legacy `packages.config`, `.nupkg` archives | Keeps target framework choices; `packages.config` is a flat project list. |
 | Swift | `Package.resolved` v1–v3 | Static pins do not establish package dependency edges. |
