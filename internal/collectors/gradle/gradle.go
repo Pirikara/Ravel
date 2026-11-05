@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 )
@@ -63,6 +65,8 @@ func Collect(file, project string) (model.Document, error) {
 		doc.Components = append(doc.Components, model.Component{
 			ID: ref, Kind: "package", Name: parts[0] + ":" + parts[1], Version: parts[2],
 			Context: "configurations=" + strings.Join(configs, ","), Evidence: []model.Evidence{ev},
+			PURL:      packageurl.NewPackageURL("maven", parts[0], parts[1], parts[2], nil, "").ToString(),
+			PURLBasis: "ecosystem_inferred",
 		})
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: parts[0] + ":" + parts[1]})
 	}

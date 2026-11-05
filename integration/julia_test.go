@@ -31,10 +31,17 @@ func TestJuliaManifestFormats(t *testing.T) {
 		t.Fatalf("Julia v2 coverage: %#v", v2.Coverage)
 	}
 	ids := map[string]string{}
+	wantPURLs := map[string]string{
+		"Alpha@1.2.3": "pkg:julia/Alpha@1.2.3?uuid=11111111-1111-4111-8111-111111111111",
+		"Shared@1.0.0": "pkg:julia/Shared@1.0.0?uuid=22222222-2222-4222-8222-222222222222",
+		"Std@": "pkg:julia/Std?uuid=55555555-5555-4555-8555-555555555555",
+	}
 	for _, pkg := range v2.Components {
-		ids[pkg.ID] = pkg.Name + "@" + pkg.Version
-		if pkg.PURL != "" || len(pkg.Evidence) != 1 || pkg.Evidence[0].InputDigest == "" {
-			t.Fatalf("unverified Julia PURL or evidence: %#v", pkg)
+		key := pkg.Name + "@" + pkg.Version
+		ids[pkg.ID] = key
+		want := wantPURLs[key]
+		if pkg.PURL != want || (want != "" && pkg.PURLBasis != "ecosystem_inferred") || len(pkg.Evidence) != 1 || pkg.Evidence[0].InputDigest == "" {
+			t.Fatalf("Julia PURL or evidence mismatch: %#v", pkg)
 		}
 	}
 	linked := map[string]bool{}

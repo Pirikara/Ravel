@@ -202,7 +202,12 @@
           ]
         }
       ],
-      "edges": []
+      "edges": [],
+      "inferredPURL": [
+        "com.google.guava:guava@33.2.1-jre",
+        "com.google.guava:failureaccess@1.0.2",
+        "org.slf4j:slf4j-api@2.0.13"
+      ]
     },
     {
       "fixture": "sbt-basic",
@@ -264,7 +269,12 @@
           ]
         }
       ],
-      "edges": []
+      "edges": [],
+      "inferredPURL": [
+        "org.slf4j:slf4j-api@2.0.13",
+        "org.junit.jupiter:junit-jupiter@5.10.2",
+        "org.example:property-resolved@3.2.1"
+      ]
     },
     {
       "fixture": "go-vendor-basic",
@@ -525,6 +535,11 @@
           "condition": "",
           "sourceSnippet": "deps = [\"Shared\", \"Std\"]"
         }
+      ],
+      "inferredPURL": [
+        "Alpha@1.0.0",
+        "Shared@2.0.0",
+        "Std@"
       ]
     },
     {

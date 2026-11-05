@@ -85,6 +85,11 @@ func CollectPoetry(file, project string) (model.Document, error) {
 		component := model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, Evidence: []model.Evidence{ev}}
 		if (pkg.Source.Type == "legacy" || pkg.Source.Type == "index") && defaultPyPIIndex(pkg.Source.URL) {
 			component.PURL = purl(pkg.Name, pkg.Version)
+		} else if pkg.Source.Type == "" && pkg.Source.URL == "" && pkg.Source.Reference == "" && pkg.Source.ResolvedReference == "" {
+			// A source-silent lock entry still has a Python package coordinate.
+			// This is not evidence that the artifact came from public PyPI.
+			component.PURL = purl(pkg.Name, pkg.Version)
+			component.PURLBasis = "ecosystem_inferred"
 		}
 		if len(pkg.Files) == 1 {
 			component.Hashes = common.HexSHA256(strings.TrimPrefix(pkg.Files[0].Hash, "sha256:"))

@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 )
@@ -121,7 +123,8 @@ func collectSinglePOM(file, project string) (model.Document, error) {
 		if strings.TrimSpace(dep.Scope) == "import" {
 			continue // imported BOM controls versions; it is not a runtime dependency
 		}
-		if !groupOK || !artifactOK || !versionOK || group == "" || artifact == "" || !mavenExactVersion(version) || strings.ContainsAny(group+artifact, "$<> ") {
+		versionOmitted := strings.TrimSpace(dep.Version) == ""
+		if !groupOK || !artifactOK || group == "" || artifact == "" || (!versionOmitted && (!versionOK || !mavenExactVersion(version))) || strings.ContainsAny(group+artifact, "$<> ") {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: name})
 			continue
 		}
@@ -162,7 +165,23 @@ func collectSinglePOM(file, project string) (model.Document, error) {
 		if condition != "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: name})
 		}
-		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: name, Version: version, Evidence: []model.Evidence{ev}})
+		if versionOmitted {
+			doc.Coverage.Issues = append(doc.Coverage.Issues,
+				model.Issue{Code: "unresolved_dependency", Name: name},
+				model.Issue{Code: "version_unresolved", Name: name})
+		}
+		qualifiers := packageurl.Qualifiers{}
+		if typ != "" && typ != "jar" {
+			qualifiers = append(qualifiers, packageurl.Qualifier{Key: "type", Value: typ})
+		}
+		if classifier != "" {
+			qualifiers = append(qualifiers, packageurl.Qualifier{Key: "classifier", Value: classifier})
+		}
+		doc.Components = append(doc.Components, model.Component{
+			ID: ref, Kind: "package", Name: name, Version: version, Evidence: []model.Evidence{ev},
+			PURL:      packageurl.NewPackageURL("maven", group, artifact, version, qualifiers, "").ToString(),
+			PURLBasis: "ecosystem_inferred",
+		})
 		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "direct", Condition: condition, Evidence: ev})
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: name})
 	}

@@ -330,8 +330,8 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, component := range doc.Components {
-				if (tc.manager == "maven" || tc.manager == "gradle") && component.PURL != "" {
-					t.Fatalf("%s package without observed repository assigned default-repository PURL: %s", tc.manager, component.PURL)
+				if (tc.manager == "maven" || tc.manager == "gradle") && component.PURL != "" && component.PURLBasis != "ecosystem_inferred" {
+					t.Fatalf("%s package without observed repository has unqualified PURL: %s", tc.manager, component.PURL)
 				}
 				if component.PURL == "" {
 					continue
@@ -776,7 +776,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Gradle lockfile inventory was presented as a dependency graph")
 		}
 		for _, c := range doc.Components {
-			if c.ID == guava && (c.PURL != "" || c.Context != "configurations=compileClasspath,runtimeClasspath") {
+			if c.ID == guava && (c.PURL != "pkg:maven/com.google.guava/guava@33.2.1-jre" || c.PURLBasis != "ecosystem_inferred" || c.Context != "configurations=compileClasspath,runtimeClasspath") {
 				t.Fatalf("Gradle coordinates or configurations lost: %#v", c)
 			}
 		}
@@ -1332,6 +1332,11 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			}
 		}
 	case "poetry-groups":
+		for _, component := range doc.Components {
+			if component.PURL != "pkg:pypi/"+component.Name+"@"+component.Version || component.PURLBasis != "ecosystem_inferred" {
+				t.Fatalf("source-silent Poetry package has no inferred PyPI coordinate: %#v", component)
+			}
+		}
 		var parsed struct {
 			Dependencies []struct {
 				Ref       string   `json:"ref"`

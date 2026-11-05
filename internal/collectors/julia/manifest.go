@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode"
 
+	packageurl "github.com/package-url/packageurl-go"
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
@@ -101,6 +102,13 @@ func CollectManifest(filename, project string) (model.Document, error) {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "version_unresolved", Name: name})
 			}
 			component := model.Component{ID: id, Kind: kind, Name: name, Version: version, Context: "uuid=" + strings.ToLower(uuid), Evidence: []model.Evidence{evidence}}
+			if _, local := fields["path"]; !local {
+				if _, vcs := fields["repo-url"]; !vcs {
+					component.PURL = packageurl.NewPackageURL("julia", "", name, version,
+						packageurl.Qualifiers{{Key: "uuid", Value: strings.ToLower(uuid)}}, "").ToString()
+					component.PURLBasis = "ecosystem_inferred"
+				}
+			}
 			if path, ok := fields["path"].(string); ok && path != "" {
 				doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "local", LocalPath: path, Status: "declared", Evidence: evidence})
 			}
