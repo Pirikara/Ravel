@@ -120,6 +120,7 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"bun-v2-git-url", "bun", 1, 1, "complete_for_scope", "complete_for_scope", []string{"gitpkg"}, "", "secret"},
 		{"bun-enrich", "bun", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
 		{"deno-v4", "deno", 2, 2, "partial", "complete_for_scope", []string{"@std/path", "https://cdn.example.test/lib/mod.ts"}, "", ""},
+		{"deno-v3-bbp-stytch", "deno", 8, 8, "partial", "partial", []string{"stytch", "jose", "webidl-conversions"}, "", ""},
 		{"deno-v5", "deno", 3, 3, "partial", "partial", []string{"@std/encoding", "@std/bytes", "chalk"}, "stale", ""},
 		{"deno-generated-2_9", "deno", 1, 1, "partial", "partial", []string{"is-number"}, "", ""},
 		{"deno-peer", "deno", 2, 2, "partial", "partial", []string{"typedoc", "typescript"}, "", ""},
@@ -979,6 +980,18 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 	case "bun-generated-1_3":
 		if len(doc.Components) != 1 || len(doc.Components[0].Hashes) != 1 || doc.Components[0].Hashes[0].Alg != "SHA-512" || len(doc.Origins) != 0 || doc.Components[0].PURL != "" {
 			t.Fatalf("generated Bun lockfile integrity or origin was misread: %#v", doc)
+		}
+	case "deno-v3-bbp-stytch":
+		stytch := find("stytch", "8.4.2")
+		jose := find("jose", "4.15.2")
+		unfetch := find("isomorphic-unfetch", "3.1.0")
+		if !connected("root", stytch) || !connected(stytch, jose) || !connected(stytch, unfetch) {
+			t.Fatal("Deno v3 direct or transitive dependency graph missing")
+		}
+		for _, component := range doc.Components {
+			if component.PURL != "" || len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-512" {
+				t.Fatalf("Deno v3 package was assigned an unsupported registry or lost its hash: %#v", component)
+			}
 		}
 	case "deno-v4":
 		var found bool

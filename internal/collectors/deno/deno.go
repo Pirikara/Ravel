@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/tailscale/hujson"
@@ -16,6 +17,7 @@ import (
 
 type lockfile struct {
 	Version    string                  `json:"version"`
+	Packages   json.RawMessage         `json:"packages"`
 	Specifiers map[string]string       `json:"specifiers"`
 	JSR        map[string]packageEntry `json:"jsr"`
 	NPM        map[string]packageEntry `json:"npm"`
@@ -23,6 +25,17 @@ type lockfile struct {
 	Workspace  struct {
 		Dependencies []string `json:"dependencies"`
 	} `json:"workspace"`
+}
+
+type v3Packages struct {
+	Specifiers map[string]string         `json:"specifiers"`
+	JSR        map[string]v3PackageEntry `json:"jsr"`
+	NPM        map[string]v3PackageEntry `json:"npm"`
+}
+
+type v3PackageEntry struct {
+	Integrity    string            `json:"integrity"`
+	Dependencies map[string]string `json:"dependencies"`
 }
 
 type packageEntry struct {
@@ -61,7 +74,11 @@ func Collect(file, project string) (model.Document, error) {
 	if err := json.Unmarshal(data, &lock); err != nil {
 		return model.Document{}, fmt.Errorf("invalid deno.lock: %w", err)
 	}
-	if lock.Version != "4" && lock.Version != "5" {
+	if lock.Version == "3" {
+		if err := normalizeV3(&lock); err != nil {
+			return model.Document{}, err
+		}
+	} else if lock.Version != "4" && lock.Version != "5" {
 		return model.Document{}, fmt.Errorf("unsupported deno.lock version %q", lock.Version)
 	}
 	doc := common.NewDocument(file, project, "deno", data)
@@ -339,6 +356,47 @@ func Collect(file, project string) (model.Document, error) {
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph"})
 	common.Finalize(&doc)
 	return doc, nil
+}
+
+// Version 3 nests package records and records pinned specifiers with their
+// ecosystem prefix. Normalize that shape so graph traversal is shared with
+// the version 4/5 collector.
+func normalizeV3(lock *lockfile) error {
+	if len(lock.Packages) == 0 {
+		return fmt.Errorf("deno.lock v3 has no packages object")
+	}
+	var packages v3Packages
+	if err := json.Unmarshal(lock.Packages, &packages); err != nil {
+		return fmt.Errorf("invalid deno.lock v3 packages: %w", err)
+	}
+	lock.Specifiers = make(map[string]string, len(packages.Specifiers))
+	for spec, pin := range packages.Specifiers {
+		kind, value, ok := strings.Cut(pin, ":")
+		if !ok || kind != "npm" && kind != "jsr" {
+			return fmt.Errorf("unsupported deno.lock v3 pin %q", pin)
+		}
+		name, version, ok := splitNameVersion(value)
+		if !ok || name == "" {
+			return fmt.Errorf("invalid deno.lock v3 pin %q", pin)
+		}
+		lock.Specifiers[spec] = version
+	}
+	lock.JSR = normalizeV3Entries(packages.JSR)
+	lock.NPM = normalizeV3Entries(packages.NPM)
+	return nil
+}
+
+func normalizeV3Entries(entries map[string]v3PackageEntry) map[string]packageEntry {
+	out := make(map[string]packageEntry, len(entries))
+	for key, entry := range entries {
+		deps := make([]string, 0, len(entry.Dependencies))
+		for _, value := range entry.Dependencies {
+			deps = append(deps, value)
+		}
+		sort.Strings(deps)
+		out[key] = packageEntry{Integrity: entry.Integrity, Dependencies: deps}
+	}
+	return out
 }
 
 func splitNameVersion(s string) (name, version string, ok bool) {
