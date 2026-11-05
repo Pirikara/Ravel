@@ -74,6 +74,7 @@ func collectSinglePOM(file, project string) (model.Document, error) {
 		return model.Document{}, err
 	}
 	doc := common.NewDocument(file, project, "maven", data)
+	doc.Root = pomRootIdentity(file, pom, data)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "transitive_graph_unavailable"})
 	if len(pom.Modules) > 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "multi_module_scope_root", Name: file})
@@ -211,6 +212,37 @@ func readPOM(file string) (pomDocument, []byte, error) {
 		return pomDocument{}, nil, fmt.Errorf("invalid pom.xml: expected project root")
 	}
 	return pom, data, nil
+}
+
+func pomRootIdentity(file string, pom pomDocument, data []byte) *model.ProjectIdentity {
+	properties := pom.Properties
+	if properties == nil {
+		properties = pomProperties{}
+	}
+	group := strings.TrimSpace(pom.GroupID)
+	if group == "" {
+		group = strings.TrimSpace(pom.Parent.GroupID)
+	}
+	version := strings.TrimSpace(pom.Version)
+	if version == "" {
+		version = strings.TrimSpace(pom.Parent.Version)
+	}
+	properties["project.groupId"] = group
+	properties["pom.groupId"] = group
+	properties["project.version"] = version
+	properties["pom.version"] = version
+	group, groupOK := expandPOMValue(group, properties)
+	artifact, artifactOK := expandPOMValue(strings.TrimSpace(pom.ArtifactID), properties)
+	if !groupOK || !artifactOK || group == "" || artifact == "" || strings.ContainsAny(group+artifact, "$<> \t\r\n") {
+		return nil
+	}
+	version, versionOK := expandPOMValue(version, properties)
+	if !versionOK || !mavenExactVersion(version) {
+		version = ""
+	}
+	evidence := common.Evidence(file, "maven-pom", "/", data)
+	evidence.Method = "manifest-declaration"
+	return &model.ProjectIdentity{Name: group + ":" + artifact, Version: version, Evidence: evidence}
 }
 
 func mavenExactVersion(version string) bool {

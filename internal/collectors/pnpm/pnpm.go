@@ -2,9 +2,11 @@ package pnpm
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -63,6 +65,19 @@ type occurrence struct {
 var packageName = regexp.MustCompile(`^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$`)
 var packageVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+\-]*$`)
 
+func sameImporterSpecifiers(locked map[string]imported, declared map[string]string) bool {
+	if len(locked) != len(declared) {
+		return false
+	}
+	for name, specifier := range declared {
+		entry, ok := locked[name]
+		if !ok || entry.Specifier != specifier {
+			return false
+		}
+	}
+	return true
+}
+
 func Collect(file, project string) (model.Document, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -91,6 +106,27 @@ func Collect(file, project string) (model.Document, error) {
 		return model.Document{}, fmt.Errorf("empty pnpm lockfile")
 	}
 	doc := common.NewDocument(file, project, "pnpm", data)
+	var manifest struct {
+		Name                 string            `json:"name"`
+		Version              string            `json:"version"`
+		Dependencies         map[string]string `json:"dependencies"`
+		DevDependencies      map[string]string `json:"devDependencies"`
+		OptionalDependencies map[string]string `json:"optionalDependencies"`
+	}
+	manifestLoaded := false
+	manifestPath := filepath.Join(filepath.Dir(file), "package.json")
+	if manifestData, err := os.ReadFile(manifestPath); err == nil {
+		doc.Sources = append(doc.Sources, manifestPath)
+		if json.Unmarshal(manifestData, &manifest) == nil {
+			manifestLoaded = true
+		} else {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
+		}
+		if manifestLoaded && manifest.Name != "" {
+			doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
+				Evidence: common.Evidence(manifestPath, "pnpm-manifest", "/name", manifestData)}
+		}
+	}
 	if len(documents) > 1 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: "boot dependencies"})
 	}
@@ -138,6 +174,14 @@ func Collect(file, project string) (model.Document, error) {
 					byKey[key] = addPackage(&doc, file, data, documentIndex, key, key, pkg, snapshot{})
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph", Name: "package without snapshot"})
 				}
+			}
+		}
+		if documentIndex == 0 && manifestLoaded {
+			if root, ok := lock.Importers["."]; ok &&
+				(!sameImporterSpecifiers(root.Dependencies, manifest.Dependencies) ||
+					!sameImporterSpecifiers(root.DevDependencies, manifest.DevDependencies) ||
+					!sameImporterSpecifiers(root.OptionalDependencies, manifest.OptionalDependencies)) {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
 			}
 		}
 		resolve := func(name, version string) occurrence {
