@@ -18,6 +18,9 @@ func TestDeclaredRootIdentityAndExport(t *testing.T) {
 	cases := []struct {
 		fixture, manifest, name, version string
 	}{
+		{"npm-v1-stale", "package.json", "ravel-npm-v1-stale", "1.0.0"},
+		{"npm-v2", "package-lock.json", "npm-v2-sample", ""},
+		{"npm-v3", "package-lock.json", "npm-v3-sample", ""},
 		{"yarn-classic-mixed-alias", "package.json", "mixed-alias", "1.0.0"},
 		{"cargo-basic", "Cargo.toml", "demo", "0.1.0"},
 		{"pub-bbp-wallet", "pubspec.yaml", "flutter", "1.0.0"},
@@ -162,6 +165,43 @@ func TestDeclaredRootIdentityAndExport(t *testing.T) {
 	}
 	if nestedApplications != len(cases) || nestedRootEdges != len(cases) {
 		t.Fatalf("nested merge lost scoped root applications: applications=%d rootEdges=%d", nestedApplications, nestedRootEdges)
+	}
+}
+
+func TestNpmManifestRootWinsOverStaleLockIdentity(t *testing.T) {
+	project := t.TempDir()
+	lock, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", "npm-v2", "package-lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "package-lock.json"), lock, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(`{"name":"current-app","version":"2.0.0","dependencies":{"one":"1.2.3"}}`)
+	if err := os.WriteFile(filepath.Join(project, "package.json"), manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "ravel.json")
+	if data, err := exec.Command(executable, "scan", project, "--format", "ravel-json", "--output", output).CombinedOutput(); err != nil {
+		t.Fatalf("scan failed: %v: %s", err, data)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc model.Document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Root == nil || doc.Root.Name != "current-app" || doc.Root.Version != "2.0.0" || filepath.Base(doc.Root.Evidence.InputPath) != "package.json" {
+		t.Fatalf("manifest root identity missing: %#v", doc.Root)
+	}
+	var stale bool
+	for _, issue := range doc.Coverage.Issues {
+		stale = stale || issue.Code == "manifest_freshness_unverified"
+	}
+	if !stale {
+		t.Fatalf("lock and manifest mismatch was not reported: %#v", doc.Coverage.Issues)
 	}
 }
 

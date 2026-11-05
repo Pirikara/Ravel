@@ -49,7 +49,7 @@ func TestMergePolyglotScans(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Project != "polyglot" || doc.Coverage.Manager != "multi" || len(doc.Sources) != 2 || len(doc.Coverage.Inputs) != 2 || doc.Coverage.Packages != 6 || doc.Coverage.Edges != 6 || doc.Coverage.GraphState != "complete_for_scope" || doc.Coverage.OriginState != "partial" {
+	if doc.Project != "polyglot" || doc.Coverage.Manager != "multi" || len(doc.Sources) != 2 || len(doc.Coverage.Inputs) != 2 || doc.Coverage.Packages != 7 || doc.Coverage.Edges != 7 || doc.Coverage.GraphState != "complete_for_scope" || doc.Coverage.OriginState != "partial" {
 		t.Fatalf("unexpected merge coverage: %#v", doc)
 	}
 	ids := map[string]bool{"root": true}
@@ -100,10 +100,10 @@ func TestMergePolyglotScans(t *testing.T) {
 			t.Fatal(err)
 		}
 		validateMergedSBOMSchema(t, format, raw)
-		if format == "cyclonedx-json" && len(raw["components"].([]any)) != 6 {
+		if format == "cyclonedx-json" && len(raw["components"].([]any)) != 7 {
 			t.Fatal("CycloneDX merged package count wrong")
 		}
-		if format == "spdx-json" && len(raw["packages"].([]any)) != 7 {
+		if format == "spdx-json" && len(raw["packages"].([]any)) != 8 {
 			t.Fatal("SPDX merged package count wrong")
 		}
 	}
@@ -137,7 +137,7 @@ func TestMergePolyglotScans(t *testing.T) {
 	if err := json.Unmarshal(nestedBytes, &nestedDoc); err != nil {
 		t.Fatal(err)
 	}
-	if len(nestedDoc.Coverage.Inputs) != 3 || len(nestedDoc.Sources) != 3 || nestedDoc.Coverage.Packages != 7 || nestedDoc.Coverage.GraphState != "partial" {
+	if len(nestedDoc.Coverage.Inputs) != 3 || len(nestedDoc.Sources) != 3 || nestedDoc.Coverage.Packages != 8 || nestedDoc.Coverage.GraphState != "partial" {
 		t.Fatalf("nested merge lost original scopes: %#v", nestedDoc.Coverage)
 	}
 	if output, err := exec.Command(executable, "merge", "--output", filepath.Join(t.TempDir(), "duplicate-scope.json"), mergedPath, inputPaths[0]).CombinedOutput(); err == nil || !strings.Contains(string(output), "duplicate input scope") {

@@ -28,7 +28,7 @@ func scanBBPFixture(t *testing.T, name string, recursive bool) model.Document {
 
 func TestGitHubActionTokenNameDoesNotAbortRepositoryScan(t *testing.T) {
 	doc := scanBBPFixture(t, "github-actions-token-merge", true)
-	if doc.Coverage.Manager != "multi" || len(doc.Components) != 3 {
+	if doc.Coverage.Manager != "multi" || len(doc.Components) != 4 {
 		t.Fatalf("merged package and workflow inputs missing: %#v", doc.Coverage)
 	}
 	var packageFound, actionFound, originFound, developmentFound bool
