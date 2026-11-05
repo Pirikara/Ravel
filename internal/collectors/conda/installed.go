@@ -11,6 +11,7 @@ import (
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
 const MaxInstalledMetadataBytes = 1 << 20
@@ -24,6 +25,9 @@ type installedMetadata struct {
 	Version string   `json:"version"`
 	Build   string   `json:"build"`
 	Subdir  string   `json:"subdir"`
+	URL     string   `json:"url"`
+	Fn      string   `json:"fn"`
+	Channel string   `json:"channel"`
 	Depends []string `json:"depends"`
 }
 
@@ -64,6 +68,25 @@ func CollectInstalledMetadata(data []byte, source, project, filename string) (mo
 	}
 	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: record.Name, Version: record.Version, Context: context, Evidence: []model.Evidence{evidence}})
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
+	if record.URL != "" {
+		base := record.Name + "-" + record.Version + "-" + record.Build
+		for _, suffix := range []string{".conda", ".tar.bz2"} {
+			filename := base + suffix
+			if record.Fn != "" && record.Fn != filename {
+				continue
+			}
+			if clean := safeurl.CleanCondaArtifact(record.URL, filename, record.Subdir); clean != "" {
+				if strings.HasPrefix(record.Channel, "https://") &&
+					strings.TrimRight(safeurl.Clean(record.Channel), "/") != strings.TrimSuffix(clean, "/"+filename) {
+					continue
+				}
+				originEvidence := evidence
+				originEvidence.Pointer = "/url"
+				doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "download_url", SafeURL: clean, Status: "recorded_in_install_metadata", Evidence: originEvidence})
+				break
+			}
+		}
+	}
 	common.Finalize(&doc)
 	return doc, nil
 }

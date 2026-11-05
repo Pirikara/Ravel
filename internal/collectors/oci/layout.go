@@ -951,6 +951,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		condaFound = true
 		doc.Components = append(doc.Components, installed.Components...)
 		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Origins = append(doc.Origins, installed.Origins...)
 	}
 	if condaFound {
 		doc.Coverage.Issues = append(doc.Coverage.Issues,

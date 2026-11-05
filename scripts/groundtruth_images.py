@@ -19,6 +19,8 @@ IMAGES = (
     ("nginx", "nginx:alpine"),
     ("redis", "redis:7-alpine"),
     ("python", "python:3.13-slim"),
+    ("ruby", "ruby:3.3.10-slim"),
+    ("conda", "continuumio/miniconda3:latest"),
 )
 
 
@@ -76,15 +78,40 @@ def references(label, image):
         if not version:
             raise ValueError("python did not report a version")
         result["runtime"] = Counter({("python", version.group(1)): 1})
+    if label == "ruby":
+        installed = in_image(image, "ruby", "-rrubygems", "-rjson", "-e",
+                             "puts JSON.generate(Gem::Specification.map { |s| [s.name, s.version.to_s, s.platform.to_s] })")
+        gems = json.loads(installed)
+        result["gem"] = Counter((name, version) for name, version, _ in gems)
+        version = re.match(r"ruby ([^ ]+)", in_image(image, "ruby", "--version"))
+        if not version:
+            raise ValueError("ruby did not report a version")
+        result["runtime"] = Counter({("ruby", version.group(1)): 1})
+    if label == "conda":
+        installed = json.loads(in_image(image, "conda", "list", "--json"))
+        result["conda"] = Counter((package["name"], package["version"]) for package in installed)
+        result["conda_builds"] = Counter(
+            (package["name"], package["version"], package["build_string"]) for package in installed
+        )
+        explicit = in_image(image, "conda", "list", "--explicit")
+        result["conda_urls"] = Counter(line for line in explicit.splitlines() if line.startswith("https://"))
     return result
 
 
-def ravel_components(binary, image):
+def ravel_document(binary, image):
     with tempfile.TemporaryDirectory(prefix="ravel-image-groundtruth-") as directory:
         output = Path(directory) / "sbom.json"
         run([binary, "scan", image, "--image-source", "docker", "--format", "ravel-json",
              "--output", str(output)])
-        return json.loads(output.read_text())["components"]
+        return json.loads(output.read_text())
+
+
+def ravel_conda_urls(document):
+    conda_ids = {c["id"] for c in document["components"] if any(
+        e.get("collector") == "conda-meta" for e in c.get("evidence", []))}
+    return Counter(origin["safeUrl"] for origin in document["origins"]
+                   if origin["occurrence"] in conda_ids and origin["kind"] == "download_url"
+                   and origin["status"] == "recorded_in_install_metadata")
 
 
 def ravel_inventory(components, scope):
@@ -93,7 +120,9 @@ def ravel_inventory(components, scope):
         "deb": {"dpkg-status"},
         "pypi": {"python-dist-info", "python-egg-info"},
         "vendor": {"pip-vendor"},
-        "runtime": {"redis-runtime-elf", "python-runtime-elf"},
+        "gem": {"ruby-installed-gemspec"},
+        "conda": {"conda-meta"},
+        "runtime": {"redis-runtime-elf", "python-runtime-elf", "ruby-runtime-elf"},
     }[scope]
     selected = [c for c in components if any(e.get("collector") in collectors for e in c.get("evidence", []))]
     if scope == "apk":
@@ -101,6 +130,17 @@ def ravel_inventory(components, scope):
     if scope in ("pypi", "vendor"):
         return Counter((c["name"].casefold(), c["version"]) for c in selected)
     return Counter((c["name"], c["version"]) for c in selected)
+
+
+def ravel_conda_builds(components):
+    selected = [c for c in components if any(e.get("collector") == "conda-meta"
+                for e in c.get("evidence", []))]
+    builds = []
+    for component in selected:
+        fields = dict(field.split("=", 1) for field in component.get("context", "").split(";") if "=" in field)
+        if "build" in fields:
+            builds.append((component["name"], component["version"], fields["build"]))
+    return Counter(builds)
 
 
 def saved_tool_inventory(path, scope, reference):
@@ -116,6 +156,9 @@ def saved_tool_inventory(path, scope, reference):
         available = Counter((c["name"].casefold(), c["version"]) for c in selected)
         # pip list and pip's vendor.txt describe different populations.
         return available & reference
+    if scope in ("gem", "conda"):
+        selected = [c for c in components if c.get("purl", "").startswith("pkg:" + scope + "/")]
+        return Counter((c["name"], c["version"]) for c in selected)
     if scope == "runtime":
         available = Counter((c.get("name", ""), c.get("version", "")) for c in components
                             if c.get("type") not in ("file", "operating-system"))
@@ -145,10 +188,21 @@ def main():
                 if digest != saved[f"{tool}_sbom_sha256"]:
                     raise ValueError(f"saved {label} {tool} SBOM changed")
         gold = references(label, image)
-        components = ravel_components(args.ravel, image)
+        document = ravel_document(args.ravel, image)
+        components = document["components"]
         checks = {}
         for scope, expected in gold.items():
+            if scope == "conda_builds":
+                continue
+            if scope == "conda_urls":
+                checks[scope] = {"ravel": count(expected, ravel_conda_urls(document))}
+                continue
             scores = {"ravel": count(expected, ravel_inventory(components, scope))}
+            if scope == "conda":
+                scores["ravel"]["build_matched"] = sum(
+                    (gold["conda_builds"] & ravel_conda_builds(components)).values()
+                )
+                scores["ravel"]["build_expected"] = sum(gold["conda_builds"].values())
             if scope in ("apk", "deb"):
                 evidence_collectors = {"apk-installed", "apk-installed-adb"} if scope == "apk" else {"dpkg-status"}
                 scores["ravel"]["purl_claims"] = sum(
@@ -159,12 +213,19 @@ def main():
                 for tool in ("syft", "trivy"):
                     scores[tool] = count(expected, saved_tool_inventory(
                         Path(args.saved_dir) / f"{label}-{tool}.cdx.json", scope, expected))
+                    if scope == "conda":
+                        saved_components = json.loads((Path(args.saved_dir) / f"{label}-{tool}.cdx.json").read_text()).get("components", [])
+                        py_names = Counter((c["name"], c["version"]) for c in saved_components
+                                           if c.get("purl", "").startswith("pkg:pypi/"))
+                        scores[tool]["pypi_name_version_overlap"] = sum((expected & py_names).values())
                     if scope in ("apk", "deb"):
                         scores[tool]["purl_claims"] = scores[tool]["emitted"]
             checks[scope] = scores
         results.append({"image": reference, "checks": checks})
     print(json.dumps(results, ensure_ascii=False, indent=2))
-    if any(item["checks"][scope]["ravel"]["missing"] or item["checks"][scope]["ravel"]["extra"]
+    if any(item["checks"][scope]["ravel"]["missing"] or item["checks"][scope]["ravel"]["extra"] or
+           (scope == "conda" and item["checks"][scope]["ravel"]["build_matched"] !=
+            item["checks"][scope]["ravel"]["build_expected"])
            for item in results for scope in item["checks"]):
         raise SystemExit(1)
 
