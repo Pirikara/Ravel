@@ -109,27 +109,34 @@ func Collect(file, project string) (model.Document, error) {
 	root, ok := lock.Packages[""]
 	if !ok {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
-	} else {
-		manifestPath := filepath.Join(filepath.Dir(file), "package.json")
-		if manifestData, err := os.ReadFile(manifestPath); err == nil {
-			doc.Sources = append(doc.Sources, manifestPath)
-			var manifest struct {
-				Name                 string            `json:"name"`
-				Version              string            `json:"version"`
-				Dependencies         map[string]string `json:"dependencies"`
-				DevDependencies      map[string]string `json:"devDependencies"`
-				OptionalDependencies map[string]string `json:"optionalDependencies"`
-				PeerDependencies     map[string]string `json:"peerDependencies"`
-			}
-			if json.Unmarshal(manifestData, &manifest) != nil ||
-				!maps.Equal(manifest.Dependencies, root.Dependencies) ||
-				!maps.Equal(manifest.DevDependencies, root.DevDependencies) ||
-				!maps.Equal(manifest.OptionalDependencies, root.OptionalDependencies) ||
-				!maps.Equal(manifest.PeerDependencies, root.PeerDependencies) ||
-				manifest.Name != "" && root.Name != "" && manifest.Name != root.Name ||
-				manifest.Version != "" && root.Version != "" && manifest.Version != root.Version {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
-			}
+	} else if root.Name != "" {
+		doc.Root = &model.ProjectIdentity{Name: root.Name, Version: root.Version,
+			Evidence: common.Evidence(file, "npm-lock", "/packages", data)}
+	}
+	manifestPath := filepath.Join(filepath.Dir(file), "package.json")
+	if manifestData, err := os.ReadFile(manifestPath); err == nil {
+		doc.Sources = append(doc.Sources, manifestPath)
+		var manifest struct {
+			Name                 string            `json:"name"`
+			Version              string            `json:"version"`
+			Dependencies         map[string]string `json:"dependencies"`
+			DevDependencies      map[string]string `json:"devDependencies"`
+			OptionalDependencies map[string]string `json:"optionalDependencies"`
+			PeerDependencies     map[string]string `json:"peerDependencies"`
+		}
+		manifestErr := json.Unmarshal(manifestData, &manifest)
+		if manifestErr == nil && manifest.Name != "" {
+			doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
+				Evidence: common.Evidence(manifestPath, "npm-manifest", "/name", manifestData)}
+		}
+		if ok && (manifestErr != nil ||
+			!maps.Equal(manifest.Dependencies, root.Dependencies) ||
+			!maps.Equal(manifest.DevDependencies, root.DevDependencies) ||
+			!maps.Equal(manifest.OptionalDependencies, root.OptionalDependencies) ||
+			!maps.Equal(manifest.PeerDependencies, root.PeerDependencies) ||
+			manifest.Name != "" && root.Name != "" && manifest.Name != root.Name ||
+			manifest.Version != "" && root.Version != "" && manifest.Version != root.Version) {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
 		}
 	}
 	if lock.LockfileVersion == 4 {

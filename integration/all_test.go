@@ -40,22 +40,22 @@ func TestScanAllStaticManagers(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Coverage.Manager != "multi" || doc.Coverage.Packages != 3 || doc.Coverage.Edges != 3 || len(doc.Coverage.Inputs) != 2 {
+	if doc.Coverage.Manager != "multi" || doc.Coverage.Packages != 4 || doc.Coverage.Edges != 4 || len(doc.Coverage.Inputs) != 2 {
 		t.Fatalf("unexpected multi-manager coverage: %#v", doc.Coverage)
 	}
-	if len(doc.Sources) != 3 || len(doc.Components) != 3 {
+	if len(doc.Sources) != 3 || len(doc.Components) != 4 {
 		t.Fatalf("source scopes or packages missing: %#v", doc)
 	}
 	names := map[string]bool{}
 	for _, component := range doc.Components {
 		names[component.Name] = true
 	}
-	if !names["is-number"] || !names["requests"] || !names["idna"] {
+	if !names["ravel-npm-generated"] || !names["is-number"] || !names["requests"] || !names["idna"] {
 		t.Fatalf("multi-manager components missing: %#v", names)
 	}
 	spdxPath := filepath.Join(dir, "combined.spdx.json")
 	cmd = exec.Command(executable, "scan", dir, "--all", "--strict", "--format", "spdx-json", "--output", spdxPath)
-	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "3 packages") {
+	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "4 packages") {
 		t.Fatalf("strict scan did not report partial coverage: %v %s", err, out)
 	}
 	for _, result := range []struct{ format, path string }{{"spdx-json", spdxPath}, {"cyclonedx-json", filepath.Join(dir, "combined.cdx.json")}} {
@@ -94,7 +94,7 @@ func TestScanAllStaticManagers(t *testing.T) {
 	for _, component := range doc.Components {
 		found = found || component.Name == "example.test/go-dep" && component.Version == "v1.2.3"
 	}
-	if !found || doc.Coverage.Packages != 5 || doc.Coverage.GraphState != "partial" {
+	if !found || doc.Coverage.Packages != 6 || doc.Coverage.GraphState != "partial" {
 		t.Fatal("Go manifest modules were not included with partial graph coverage")
 	}
 	cmd = exec.Command(executable, "scan", dir, "--all", "--output", filepath.Join(dir, "go.mod"))
@@ -130,7 +130,7 @@ func TestScanAllStaticManagers(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Coverage.Inputs) != 4 || doc.Coverage.Packages != 6 || doc.Coverage.Edges != 6 {
+	if len(doc.Coverage.Inputs) != 4 || doc.Coverage.Packages != 8 || doc.Coverage.Edges != 8 {
 		t.Fatalf("recursive scan missed a subproject or included generated files: %#v", doc.Coverage)
 	}
 	missingLock := false

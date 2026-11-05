@@ -57,6 +57,10 @@ func collectV1(file, project string, data []byte) (model.Document, error) {
 		return model.Document{}, err
 	}
 	doc := common.NewDocument(file, project, "npm", data)
+	if lock.Name != "" {
+		doc.Root = &model.ProjectIdentity{Name: lock.Name, Version: lock.Version,
+			Evidence: common.Evidence(file, "npm-lock-v1", "/name", data)}
+	}
 	entries := map[string]v1Item{}
 	var walk func(map[string]v1Package, string, string, int)
 	walk = func(deps map[string]v1Package, parentLocation, pointer string, depth int) {
@@ -142,6 +146,10 @@ func collectV1(file, project string, data []byte) (model.Document, error) {
 		if err := json.Unmarshal(manifestData, &manifest); err != nil {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
 		} else {
+			if manifest.Name != "" {
+				doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
+					Evidence: common.Evidence(manifestPath, "npm-manifest", "/name", manifestData)}
+			}
 			if lock.Name != "" && manifest.Name != "" && lock.Name != manifest.Name ||
 				lock.Version != "" && manifest.Version != "" && lock.Version != manifest.Version {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
