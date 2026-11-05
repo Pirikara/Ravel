@@ -1,6 +1,7 @@
 package safeurl
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -26,12 +27,68 @@ func Clean(raw string) string {
 	default:
 		return ""
 	}
-	for _, segment := range strings.Split(strings.ToLower(u.Path), "/") {
-		if sensitivePathSegment(segment) {
-			return ""
+	if !publicGitHubArtifact(u) {
+		for _, segment := range strings.Split(strings.ToLower(u.Path), "/") {
+			if sensitivePathSegment(segment) {
+				return ""
+			}
 		}
 	}
 	u.User = nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	u.RawFragment = ""
+	return u.String()
+}
+
+func publicGitHubArtifact(u *url.URL) bool {
+	if u.Scheme != "https" || u.User != nil {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+	validName := func(s string) bool {
+		if s == "" || s == "." || s == ".." {
+			return false
+		}
+		for _, r := range s {
+			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' {
+				continue
+			}
+			return false
+		}
+		return true
+	}
+	if u.Host == "github.com" && len(parts) == 2 && strings.HasSuffix(parts[1], ".git") {
+		return validName(parts[0]) && validName(parts[1])
+	}
+	if u.Host == "api.github.com" && len(parts) == 5 && parts[0] == "repos" && (parts[3] == "zipball" || parts[3] == "tarball") && validName(parts[1]) && validName(parts[2]) && len(parts[4]) == 40 {
+		for _, r := range parts[4] {
+			if r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' {
+				continue
+			}
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// CleanNpmTarball accepts an official registry tarball URL only when its path
+// matches the declared npm package identity. Package names such as js-tokens
+// would otherwise be rejected by the generic secret-path filter.
+func CleanNpmTarball(raw, name, version string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host != "registry.npmjs.org" || u.User != nil || name == "" || version == "" {
+		return ""
+	}
+	basename := name
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		basename = name[i+1:]
+	}
+	if u.Path != fmt.Sprintf("/%s/-/%s-%s.tgz", name, basename, version) {
+		return ""
+	}
 	u.RawQuery = ""
 	u.ForceQuery = false
 	u.Fragment = ""

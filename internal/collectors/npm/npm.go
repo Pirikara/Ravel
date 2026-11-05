@@ -104,7 +104,7 @@ func Collect(file, project string) (model.Document, error) {
 		}
 		entries[location] = &item{location: location, data: meta, ref: ref}
 		doc.Components = append(doc.Components, component)
-		addOrigin(&doc, ref, meta.Resolved, ev)
+		addOrigin(&doc, ref, name, meta.Version, meta.Resolved, ev)
 	}
 	root, ok := lock.Packages[""]
 	if !ok {
@@ -242,7 +242,7 @@ func resolve(entries map[string]*item, location, name string) *item {
 	}
 }
 
-func addOrigin(doc *model.Document, ref, raw string, ev model.Evidence) {
+func addOrigin(doc *model.Document, ref, name, version, raw string, ev model.Evidence) {
 	if raw == "" {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: ref})
 		return
@@ -270,6 +270,9 @@ func addOrigin(doc *model.Document, ref, raw string, ev model.Evidence) {
 		}
 	}
 	clean := safeurl.Clean(raw)
+	if clean == "" {
+		clean = safeurl.CleanNpmTarball(raw, name, version)
+	}
 	if clean == "" {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: ref})
 		return
