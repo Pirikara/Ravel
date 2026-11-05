@@ -170,6 +170,8 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"poetry-no-project", "poetry", 1, 0, "partial", "complete_for_scope", []string{"git-lib"}, "", "secret"},
 		{"poetry-ambiguous", "poetry", 3, 1, "partial", "complete_for_scope", []string{"parent", "foo"}, "", ""},
 		{"yarn-classic-basic", "yarn", 2, 2, "complete_for_scope", "complete_for_scope", []string{"alpha", "beta"}, "stale", "secret"},
+		{"yarn-classic-alias", "yarn", 2, 2, "complete_for_scope", "complete_for_scope", []string{"mermaid", "@mermaid-js/parser"}, "mermaid-v12", ""},
+		{"yarn-classic-mixed-alias", "yarn", 3, 4, "complete_for_scope", "complete_for_scope", []string{"string-width", "string-width-cjs", "strip-ansi"}, "", ""},
 		{"yarn-classic-enrich", "yarn", 1, 1, "complete_for_scope", "complete_for_scope", []string{"is-number"}, "", ""},
 		{"yarn-classic-optional", "yarn", 2, 2, "partial", "partial", []string{"main", "native"}, "", ""},
 		{"yarn-classic-no-manifest", "yarn", 1, 0, "partial", "complete_for_scope", []string{"standalone"}, "", ""},
@@ -373,6 +375,26 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		return false
 	}
 	switch fixture {
+	case "yarn-classic-mixed-alias":
+		actual, alias, child := find("string-width", "4.2.3"), find("string-width-cjs", "4.2.3"), find("strip-ansi", "6.0.1")
+		if !connected("root", actual) || !connected("root", alias) || !connected(actual, child) || !connected(alias, child) {
+			t.Fatal("mixed Yarn alias lost an installed name or dependency edge")
+		}
+		for _, component := range doc.Components {
+			if component.ID == alias && component.Context != "alias-of:string-width" {
+				t.Fatal("Yarn alias occurrence lost its target identity")
+			}
+		}
+	case "yarn-classic-alias":
+		main, parser := find("mermaid", "12.0.0"), find("@mermaid-js/parser", "2.0.0")
+		if !connected("root", main) || !connected(main, parser) || componentPURL(main) != "" || len(doc.Components) != 2 {
+			t.Fatal("Yarn alias lost the installed package or its dependency graph")
+		}
+		for _, component := range doc.Components {
+			if component.ID == main && component.Context != "alias:mermaid-v12" {
+				t.Fatal("Yarn alias name was not retained")
+			}
+		}
 	case "bundler-generated-4":
 		alpha, beta := find("ravel_alpha", "1.0.0"), find("ravel_beta", "2.1.0")
 		if !connected("root", alpha) || !connected("root", beta) || !connected(alpha, beta) {

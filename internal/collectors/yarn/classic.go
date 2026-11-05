@@ -78,15 +78,15 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph", Name: "Yarn workspaces"})
 	}
 	type work struct {
-		index                 int
-		from, kind, condition string
+		index                            int
+		from, kind, condition, requested string
 	}
 	queue := []work{}
 	resolve := func(name, version string) int {
 		index, ok := descriptorIndex[name+"@"+version]
 		if ok && index >= 0 {
 			entry := entries[index]
-			if classicName.MatchString(descriptorName(entry.descriptors[0])) && entry.version != "" {
+			if _, _, valid := classicEntryName(entry); valid && entry.version != "" {
 				return index
 			}
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "invalid Yarn package"})
@@ -105,30 +105,38 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 			for name, version := range group {
 				rootCount++
 				if index := resolve(name, version); index >= 0 {
-					queue = append(queue, work{index: index, from: "root", kind: "direct"})
+					queue = append(queue, work{index: index, from: "root", kind: "direct", requested: name})
 				}
 			}
 		}
 		for name, version := range manifest.OptionalDependencies {
 			rootCount++
 			if index := resolve(name, version); index >= 0 {
-				queue = append(queue, work{index: index, from: "root", kind: "direct", condition: "optional"})
+				queue = append(queue, work{index: index, from: "root", kind: "direct", condition: "optional", requested: name})
 			}
 		}
 		if rootCount == 0 {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
 		}
 	} else {
-		for i := range entries {
-			queue = append(queue, work{index: i})
+		for i, entry := range entries {
+			for _, descriptor := range entry.descriptors {
+				queue = append(queue, work{index: i, requested: descriptorName(descriptor)})
+			}
 		}
 	}
-	seen := map[int]bool{}
+	seen := map[string]bool{}
 	for len(queue) > 0 {
 		item := queue[0]
 		queue = queue[1:]
 		entry := entries[item.index]
-		ref := "yarn:" + common.ID(fmt.Sprintf("%d|%s|%s", item.index, strings.Join(entry.descriptors, ","), entry.version))
+		actualName, alias, valid := classicEntryName(entry)
+		name := classicVariantName(entry, item.requested, actualName)
+		base := fmt.Sprintf("%d|%s|%s", item.index, strings.Join(entry.descriptors, ","), entry.version)
+		if name != actualName {
+			base += "|" + name
+		}
+		ref := "yarn:" + common.ID(base)
 		if item.from != "" {
 			ev := common.Evidence(file, "yarn-classic", fmt.Sprintf("/line/%d", entry.line), data)
 			if item.from == "root" && manifestErr == nil {
@@ -139,19 +147,23 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: "optional dependency"})
 			}
 		}
-		if seen[item.index] {
+		if seen[ref] {
 			continue
 		}
-		seen[item.index] = true
-		name := descriptorName(entry.descriptors[0])
-		if !classicName.MatchString(name) || entry.version == "" {
+		seen[ref] = true
+		if !valid || entry.version == "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "invalid Yarn package", Line: entry.line})
 			continue
 		}
 		ev := common.Evidence(file, "yarn-classic", fmt.Sprintf("/line/%d", entry.line), data)
 		ev.Line = entry.line
 		component := model.Component{ID: ref, Kind: "package", Name: name, Version: entry.version, Hashes: common.Integrity(entry.integrity), Evidence: []model.Evidence{ev}}
-		if common.DefaultNpmRegistry(entry.resolved) {
+		if name != actualName {
+			component.Context = "alias-of:" + actualName
+		} else if alias != "" && !classicHasMultipleNames(entry) {
+			component.Context = "alias:" + alias
+		}
+		if name == actualName && common.DefaultNpmRegistry(entry.resolved) {
 			component.PURL = common.NpmPURL(name, entry.version)
 		}
 		doc.Components = append(doc.Components, component)
@@ -172,12 +184,12 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 		}
 		for name, version := range entry.deps {
 			if index := resolve(name, version); index >= 0 {
-				queue = append(queue, work{index: index, from: ref, kind: "depends_on"})
+				queue = append(queue, work{index: index, from: ref, kind: "depends_on", requested: name})
 			}
 		}
 		for name, version := range entry.optional {
 			if index := resolve(name, version); index >= 0 {
-				queue = append(queue, work{index: index, from: ref, kind: "depends_on", condition: "optional"})
+				queue = append(queue, work{index: index, from: ref, kind: "depends_on", condition: "optional", requested: name})
 			}
 		}
 	}
@@ -306,9 +318,79 @@ func parseField(line string) (string, string) {
 }
 
 func descriptorName(descriptor string) string {
+	if at := strings.Index(descriptor, "@npm:"); at > 0 {
+		return descriptor[:at]
+	}
 	at := strings.LastIndexByte(descriptor, '@')
 	if at <= 0 {
 		return ""
 	}
 	return descriptor[:at]
+}
+
+func classicEntryName(entry classicEntry) (name, alias string, valid bool) {
+	if len(entry.descriptors) == 0 {
+		return "", "", false
+	}
+	name = descriptorName(entry.descriptors[0])
+	if !classicName.MatchString(name) {
+		return "", "", false
+	}
+	actual := ""
+	for _, descriptor := range entry.descriptors {
+		if !classicName.MatchString(descriptorName(descriptor)) {
+			return "", "", false
+		}
+		at := strings.Index(descriptor, "@npm:")
+		if at < 0 {
+			continue
+		}
+		if at == 0 || !classicName.MatchString(descriptor[:at]) {
+			return "", "", false
+		}
+		target := descriptorName(descriptor[at+len("@npm:"):])
+		if !classicName.MatchString(target) || actual != "" && actual != target {
+			return "", "", false
+		}
+		actual = target
+	}
+	if actual != "" && actual != name {
+		return actual, name, true
+	}
+	return name, "", true
+}
+
+func classicHasMultipleNames(entry classicEntry) bool {
+	if len(entry.descriptors) < 2 {
+		return false
+	}
+	first := descriptorName(entry.descriptors[0])
+	for _, descriptor := range entry.descriptors[1:] {
+		if descriptorName(descriptor) != first {
+			return true
+		}
+	}
+	return false
+}
+
+func classicVariantName(entry classicEntry, requested, actual string) string {
+	if !classicHasMultipleNames(entry) {
+		return actual
+	}
+	primary := descriptorName(entry.descriptors[0])
+	for _, descriptor := range entry.descriptors {
+		if descriptorName(descriptor) == actual {
+			primary = actual
+			break
+		}
+	}
+	if requested == primary {
+		return actual
+	}
+	for _, descriptor := range entry.descriptors {
+		if descriptorName(descriptor) == requested {
+			return requested
+		}
+	}
+	return actual
 }

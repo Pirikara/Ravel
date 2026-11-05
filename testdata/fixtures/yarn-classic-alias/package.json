@@ -1,0 +1,6 @@
+{
+  "name": "alias-project",
+  "dependencies": {
+    "mermaid-v12": "npm:mermaid@12.0.0"
+  }
+}
