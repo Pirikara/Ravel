@@ -1,0 +1,8 @@
+{
+  "version": "5",
+  "remote": {
+    "https://cdn.example.test/direct.ts": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "https://cdn.example.test/unlinked.ts": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "https://user:secret@cdn.example.test/private.ts?token=hidden": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+}
