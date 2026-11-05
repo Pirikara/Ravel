@@ -343,8 +343,8 @@ func runScan(args []string) int {
 			return 2
 		}
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "rebar" && *manager != "shards" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "conda-lock" && *manager != "pixi" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
-		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, conan, cocoapods, pipenv, pdm, go, pub, gradle, maven, sbt, mix, rebar, shards, cabal, stack, julia, renv, conda-lock, pixi, dpkg, apk, rpm, oci, java-archive, python-wheel")
+	if *manager != "auto" && *manager != "bundler" && *manager != "gemspec" && *manager != "github-actions" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "rebar" && *manager != "shards" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "conda-lock" && *manager != "pixi" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
+		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, gemspec, github-actions, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, conan, cocoapods, pipenv, pdm, go, pub, gradle, maven, sbt, mix, rebar, shards, cabal, stack, julia, renv, conda-lock, pixi, dpkg, apk, rpm, oci, java-archive, python-wheel")
 		return 2
 	}
 	if *all {
@@ -649,6 +649,12 @@ func selectLock(input string, directory bool, requested string) (string, string,
 	managerForFile := func(name string) string {
 		if isBundlerLockName(name) {
 			return "bundler"
+		}
+		if strings.HasSuffix(name, ".gemspec") {
+			return "gemspec"
+		}
+		if isWorkflowPath(input) {
+			return "github-actions"
 		}
 		switch name {
 		case "status":
@@ -1029,6 +1035,30 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		}
 		if len(locks) == 1 {
 			candidates["conda-lock"] = filepath.Join(input, locks[0])
+		}
+	}
+	if requested == "gemspec" || requested == "auto" && len(candidates) == 0 {
+		files, err := gemspecFiles(input)
+		if err != nil {
+			return "", "", err
+		}
+		if len(files) > 1 {
+			return "", "", errors.New("multiple gemspecs found; scan a specific file or use --all")
+		}
+		if len(files) == 1 {
+			candidates["gemspec"] = files[0]
+		}
+	}
+	if requested == "github-actions" || requested == "auto" && len(candidates) == 0 {
+		files, err := workflowFiles(input)
+		if err != nil {
+			return "", "", err
+		}
+		if len(files) > 1 {
+			return "", "", errors.New("multiple GitHub workflows found; scan a specific file or use --all")
+		}
+		if len(files) == 1 {
+			candidates["github-actions"] = files[0]
 		}
 	}
 	if requested != "auto" {

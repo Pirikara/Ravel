@@ -1,0 +1,11 @@
+name: Test
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/cache/save@v5
+      - uses: ./.github/actions/local
+  reuse:
+    uses: owner/repository/.github/workflows/reuse.yml@v2

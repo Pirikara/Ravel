@@ -76,6 +76,7 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"bundler-generated-4", "bundler", 2, 3, "complete_for_scope", "complete_for_scope", []string{"ravel_alpha", "ravel_beta"}, "", ""},
 		{"bundler-git-scp", "bundler", 1, 1, "complete_for_scope", "complete_for_scope", []string{"gitgem"}, "", ""},
 		{"bundler-ambiguous", "bundler", 3, 1, "partial", "complete_for_scope", []string{"parent", "foo"}, "", ""},
+		{"gemspec-basic", "gemspec", 1, 1, "partial", "complete_for_scope", []string{"example"}, "", ""},
 		{"npm-v2", "npm", 1, 1, "complete_for_scope", "complete_for_scope", []string{"one"}, "", ""},
 		{"npm-v1", "npm", 1, 0, "partial", "partial", []string{"alpha"}, "", ""},
 		{"npm-v1-generated-12", "npm", 3, 3, "complete_for_scope", "complete_for_scope", []string{"is-odd", "is-number"}, "", ""},
@@ -375,6 +376,10 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		return false
 	}
 	switch fixture {
+	case "gemspec-basic":
+		if main := find("example", "1.2.3"); main == "" || !connected("root", main) || len(doc.Sources) != 1 {
+			t.Fatal("source gemspec version or source evidence missing")
+		}
 	case "yarn-classic-mixed-alias":
 		actual, alias, child := find("string-width", "4.2.3"), find("string-width-cjs", "4.2.3"), find("strip-ansi", "6.0.1")
 		if !connected("root", actual) || !connected("root", alias) || !connected(actual, child) || !connected(alias, child) {
