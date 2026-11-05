@@ -90,7 +90,7 @@ func collectV1(file, project string, data []byte) (model.Document, error) {
 			if source == "" && version == "" {
 				source = meta.Version
 			}
-			addOrigin(&doc, ref, source, ev)
+			addOrigin(&doc, ref, name, version, source, ev)
 			entries[location] = v1Item{name: name, version: version, location: location, pointer: packagePointer, ref: ref, data: meta}
 			walk(meta.Dependencies, location, packagePointer+"/dependencies", depth+1)
 		}

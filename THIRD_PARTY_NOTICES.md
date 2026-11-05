@@ -6,6 +6,11 @@ Registry image retrieval uses `github.com/google/go-containerregistry` (Apache-2
 Release archives also include `THIRD_PARTY_LICENSES/`, with the license and
 notice files for every Go module compiled into a release binary.
 
+The source repository also includes selected test fixtures from
+`DeepBitsTechnology/sbom-benchmark` under the MIT license in
+`testdata/groundtruth/deepbits/LICENSE`. They are test data, not part of the
+release binary.
+
 ## github.com/klauspost/compress v1.20.3 (zstd)
 
 Copyright (c) 2012 The Go Authors. All rights reserved.

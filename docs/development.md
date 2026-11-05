@@ -18,4 +18,6 @@ RAVEL_TEST_REAL_MAVEN=1 go test ./integration \
 
 Registry enrichment tests use local TLS servers and saved version responses. New collectors should include representative real-format fixtures and assertions about identity, graph, origin, and output loss.
 
+The [ground-truth checks](groundtruth-benchmark.md) use external package-manager records and selected fixed BBP snapshots to measure name/version and declared-origin agreement within a stated scan scope.
+
 See [third-party notices](../THIRD_PARTY_NOTICES.md) for licenses of the bundled RPM database reader and zstd decoder.
