@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/apk"
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/collectors/composer"
@@ -67,6 +69,9 @@ const (
 	statusPath                         = "var/lib/dpkg/status"
 	apkInstalledPath                   = "lib/apk/db/installed"
 	apkInstalledADBPath                = "lib/apk/db/installed.adb"
+	etcOSReleasePath                   = "etc/os-release"
+	usrOSReleasePath                   = "usr/lib/os-release"
+	maxOSReleaseBytes                  = 64 << 10
 )
 
 var databasePaths = append([]string{statusPath, apkInstalledPath, apkInstalledADBPath}, rpm.DatabasePaths...)
@@ -74,10 +79,12 @@ var rpmWALPaths = []string{
 	"usr/lib/sysimage/rpm/rpmdb.sqlite-wal", "var/lib/rpm/rpmdb.sqlite-wal", "usr/share/rpm/rpmdb.sqlite-wal",
 }
 var trackedDatabasePaths = append(append([]string{}, databasePaths...), rpmWALPaths...)
+var osReleasePaths = []string{etcOSReleasePath, usrOSReleasePath}
 
 var (
-	sha256Digest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	platformName = regexp.MustCompile(`^[a-z0-9]+/[a-z0-9]+(?:/[a-z0-9._-]+)?$`)
+	sha256Digest     = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	platformName     = regexp.MustCompile(`^[a-z0-9]+/[a-z0-9]+(?:/[a-z0-9._-]+)?$`)
+	osReleaseVersion = regexp.MustCompile(`^[0-9][A-Za-z0-9._-]*$`)
 )
 
 type descriptor struct {
@@ -232,6 +239,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		layer string
 	}
 	databases := map[string]databaseState{}
+	osReleases := map[string]osReleaseState{}
 	dpkgNodeLists := map[string]dpkgNodeFileListState{}
 	dpkgNodeListLimited := false
 	pythonMetadata := map[string]databaseState{}
@@ -415,6 +423,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 			if update.present {
 				databases[name] = databaseState{data: update.data, layer: layer.Digest}
+			}
+		}
+		for name, update := range change.osReleases {
+			if update.deleted {
+				delete(osReleases, name)
+			}
+			if update.present {
+				osReleases[name] = osReleaseState{data: update.data, link: update.link, layer: layer.Digest}
 			}
 		}
 		for _, removed := range change.whiteouts {
@@ -900,6 +916,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if err != nil {
 			return model.Document{}, fmt.Errorf("invalid %s database in OCI image: %w", name, err)
+		}
+		if (name == statusPath || name == apkInstalledPath || name == apkInstalledADBPath) && len(database.Components) > 0 {
+			release, ok := finalOSRelease(osReleases)
+			if ok {
+				for i := range database.Components {
+					setOSPackagePURL(&database.Components[i], name, release)
+				}
+			}
 		}
 		doc.Components = append(doc.Components, database.Components...)
 		doc.Edges = append(doc.Edges, database.Edges...)
@@ -1497,8 +1521,108 @@ type databaseChange struct {
 	data    []byte
 }
 
+type osReleaseChange struct {
+	deleted, present bool
+	data             []byte
+	link             string
+}
+
+type osReleaseState struct {
+	data  []byte
+	link  string
+	layer string
+}
+
+type osReleaseIdentity struct {
+	id, version string
+	evidence    model.Evidence
+}
+
+// finalOSRelease uses /etc/os-release in preference to /usr/lib/os-release.
+// A symlink is followed only when its target is the tracked /usr/lib file.
+func finalOSRelease(files map[string]osReleaseState) (osReleaseIdentity, bool) {
+	name := etcOSReleasePath
+	state, found := files[name]
+	if found && state.link != "" {
+		target := state.link
+		if strings.HasPrefix(target, "/") {
+			target = strings.TrimPrefix(target, "/")
+		} else {
+			target = path.Clean(path.Join(path.Dir(name), target))
+		}
+		if target != usrOSReleasePath {
+			return osReleaseIdentity{}, false
+		}
+		name = usrOSReleasePath
+		state, found = files[name]
+	} else if !found {
+		name = usrOSReleasePath
+		state, found = files[name]
+	}
+	if !found || len(state.data) == 0 || len(state.data) > maxOSReleaseBytes {
+		return osReleaseIdentity{}, false
+	}
+	id, version, ok := parseOSRelease(state.data)
+	if !ok {
+		return osReleaseIdentity{}, false
+	}
+	hash := sha256.Sum256(state.data)
+	return osReleaseIdentity{id: id, version: version, evidence: model.Evidence{
+		Collector: "oci-os-release", InputPath: "oci:" + state.layer + "!/" + name,
+		InputDigest: "sha256:" + hex.EncodeToString(hash[:]), Method: "os-release",
+	}}, true
+}
+
+func parseOSRelease(data []byte) (string, string, bool) {
+	values := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, raw, ok := strings.Cut(line, "=")
+		if !ok || key != "ID" && key != "VERSION_ID" {
+			continue
+		}
+		if _, duplicate := values[key]; duplicate {
+			return "", "", false
+		}
+		if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+			raw = raw[1 : len(raw)-1]
+		} else if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
+			raw = raw[1 : len(raw)-1]
+		}
+		values[key] = raw
+	}
+	id, version := values["ID"], values["VERSION_ID"]
+	if (id != "alpine" && id != "debian" && id != "ubuntu") || !osReleaseVersion.MatchString(version) {
+		return "", "", false
+	}
+	return id, version, true
+}
+
+func setOSPackagePURL(component *model.Component, database string, release osReleaseIdentity) {
+	if database == statusPath && release.id != "debian" && release.id != "ubuntu" ||
+		(database == apkInstalledPath || database == apkInstalledADBPath) && release.id != "alpine" ||
+		component.Name == "" || component.Version == "" {
+		return
+	}
+	qualifiers := packageurl.Qualifiers{{Key: "distro", Value: release.id + "-" + release.version}}
+	if component.Platform != "" {
+		qualifiers = append(qualifiers, packageurl.Qualifier{Key: "arch", Value: component.Platform})
+	}
+	typ := "apk"
+	if database == statusPath {
+		typ = "deb"
+	}
+	component.PURL = packageurl.NewPackageURL(typ, release.id, strings.ToLower(component.Name), component.Version, qualifiers, "").ToString()
+	component.PURLBasis = "ecosystem_inferred"
+	component.Evidence = append(component.Evidence, release.evidence)
+}
+
 type layerChange struct {
 	files                    map[string]databaseChange
+	osReleases               map[string]osReleaseChange
 	dpkgNodeLists            map[string]dpkgNodeFileListState
 	dpkgNodeListLimited      bool
 	python                   map[string][]byte
@@ -1571,7 +1695,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, condaMetadata: map[string]condaMetadataState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
+	change := layerChange{files: map[string]databaseChange{}, osReleases: map[string]osReleaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, condaMetadata: map[string]condaMetadataState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
 	seenDatabase := map[string]bool{}
 	seenDPKGLists := map[string]bool{}
 	parentReplaced := map[string]bool{}
@@ -1654,6 +1778,40 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 					change.files[target] = update
 				}
 			}
+			for _, target := range osReleasePaths {
+				if ancestorOfTarget(deletedPath, target) {
+					update := change.osReleases[target]
+					update.deleted = true
+					change.osReleases[target] = update
+				}
+			}
+			continue
+		}
+		trackedRelease := false
+		for _, target := range osReleasePaths {
+			if name == target {
+				trackedRelease = true
+				update := change.osReleases[target]
+				update.present = true
+				update.data, update.link = nil, ""
+				if (header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA) && header.Size <= maxOSReleaseBytes {
+					update.data, err = io.ReadAll(io.LimitReader(reader, maxOSReleaseBytes+1))
+					if err != nil || len(update.data) != int(header.Size) {
+						return layerChange{}, "", errors.New("invalid OCI os-release entry")
+					}
+				} else if header.Typeflag == tar.TypeSymlink {
+					update.link = header.Linkname
+				}
+				change.osReleases[target] = update
+			} else if ancestorOfTarget(name, target) && header.Typeflag != tar.TypeDir {
+				update := change.osReleases[target]
+				update.deleted = true
+				update.present = false
+				update.data, update.link = nil, ""
+				change.osReleases[target] = update
+			}
+		}
+		if trackedRelease {
 			continue
 		}
 		if header.Typeflag != tar.TypeDir && isDPKGInfoListPath(name) {
@@ -2559,6 +2717,17 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(phpFPMBinaryPath); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains PHP FPM executable beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	for _, target := range osReleasePaths {
+		for ancestor := path.Dir(target); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				update := change.osReleases[target]
+				update.deleted = true
+				update.present = false
+				update.data, update.link = nil, ""
+				change.osReleases[target] = update
 			}
 		}
 	}
