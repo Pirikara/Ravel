@@ -43,8 +43,23 @@ func Collect(file, project string) (model.Document, error) {
 	}
 	for target, packages := range lock.Dependencies {
 		ids := map[string]string{}
+		hasProjects := false
 		for name, entry := range packages {
-			if entry.Resolved == "" || strings.EqualFold(entry.Type, "Project") {
+			if strings.EqualFold(entry.Type, "Project") {
+				// A project reference is present in the restored graph, but the
+				// lockfile does not identify a NuGet feed or, usually, a version.
+				// Keep its dependencies without inventing a registry identity.
+				ref := "nuget-project:" + common.ID(target+"|"+strings.ToLower(name))
+				ids[strings.ToLower(name)] = ref
+				ev := common.Evidence(file, "nuget-lock", "/dependencies/"+escapePointer(target)+"/"+escapePointer(name), data)
+				doc.Components = append(doc.Components, model.Component{
+					ID: ref, Kind: "application", Name: name, Version: entry.Resolved,
+					Platform: target, Evidence: []model.Evidence{ev},
+				})
+				hasProjects = true
+				continue
+			}
+			if entry.Resolved == "" {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: name})
 				continue
 			}
@@ -58,6 +73,11 @@ func Collect(file, project string) (model.Document, error) {
 			}
 			doc.Components = append(doc.Components, component)
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: name})
+		}
+		if hasProjects {
+			// The lockfile lists project nodes and their outgoing edges, but
+			// does not say which projects the root references directly.
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies", Name: target, Scope: "project references"})
 		}
 		for name, entry := range packages {
 			from := ids[strings.ToLower(name)]

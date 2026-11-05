@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "App.Core": {
+        "type": "Project",
+        "dependencies": {
+          "App.Data": "[1.0.0, )",
+          "Example.Package": "[2.0.0, 2.0.0]"
+        }
+      },
+      "App.Data": {
+        "type": "Project"
+      },
+      "Example.Package": {
+        "type": "Direct",
+        "resolved": "2.0.0"
+      }
+    }
+  }
+}
