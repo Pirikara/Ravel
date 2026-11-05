@@ -20,7 +20,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: go test ./... -count=1
+      - run: go test -p 2 ./... -count=1
       - run: go vet ./...
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Lint workflows and release script
