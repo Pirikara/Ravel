@@ -23,7 +23,7 @@ type Component struct {
 	Platform string `json:"platform,omitempty"`
 	Context  string `json:"context,omitempty"`
 	PURL     string `json:"purl,omitempty"`
-	// PURLBasis marks an ecosystem coordinate inferred from lockfile syntax
+	// PURLBasis marks an ecosystem coordinate inferred from package metadata
 	// without a confirmed registry. Empty retains the collector's prior policy.
 	PURLBasis string     `json:"purlBasis,omitempty"`
 	Hashes    []Hash     `json:"hashes,omitempty"`
