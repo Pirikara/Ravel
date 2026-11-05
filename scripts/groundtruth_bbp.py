@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import tomllib
+from urllib.parse import unquote
 
 
 CASES = {
@@ -116,7 +117,50 @@ def scan(binary, snapshot):
         return json.loads(output.read_text())
 
 
-def evaluate(binary, audit_dir):
+def compare_existing_cdx(path, manager, gold, root_name):
+    """Score a saved CycloneDX output within the lockfile's package scope."""
+    doc = json.loads(path.read_text())
+    actual = Counter()
+    lock_names = {"package-lock.json", "Cargo.lock", "composer.lock", "packages.lock.json", "Package.resolved"}
+    for component in doc.get("components", []):
+        name = component.get("name", "")
+        if component.get("type") == "file" or name in lock_names:
+            continue
+        version = component.get("version") or ""
+        if version == "UNKNOWN":
+            version = ""
+        if manager == "npm" and component.get("purl", "").startswith("pkg:npm/"):
+            # CycloneDX names can omit the npm scope; PURL retains it.
+            coordinate = unquote(component["purl"][len("pkg:npm/"):])
+            name = coordinate.rsplit("@", 1)[0]
+        if manager == "swift":
+            # Some tools use the GitHub path instead of Package.resolved's identity.
+            name = name.rsplit("/", 1)[-1].casefold()
+        if name == root_name:
+            continue
+        actual[key(name, version, manager)] += 1
+    matched = sum((gold & actual).values())
+    return {
+        "expected_placements": sum(gold.values()),
+        "emitted_placements": sum(actual.values()),
+        "matched_placements": matched,
+        "matched_unique_coordinates": len(set(gold) & set(actual)),
+        "expected_unique_coordinates": len(gold),
+        "emitted_unique_coordinates": len(actual),
+        "missing": [f"{n}@{v}" for n, v in sorted((gold - actual).elements())],
+        "extra": [f"{n}@{v}" for n, v in sorted((actual - gold).elements())],
+    }
+
+
+def project_root_name(manager, snapshot):
+    if manager == "npm":
+        return json.loads((snapshot / "package.json").read_text()).get("name", "")
+    if manager == "cargo":
+        return tomllib.loads((snapshot / "Cargo.toml").read_text())["package"]["name"]
+    return ""
+
+
+def evaluate(binary, audit_dir, compare_existing):
     results = []
     binary_digest = hashlib.sha256(Path(binary).read_bytes()).hexdigest()
     for name, (manager, filename) in CASES.items():
@@ -176,6 +220,12 @@ def evaluate(binary, audit_dir):
             result["origin_matched"] = match_origins
             result["origin_missing"] = [str(x) for x in sorted((gold_origins - actual_origins).elements())]
             result["origin_extra"] = [str(x) for x in sorted((actual_origins - gold_origins).elements())]
+        if compare_existing:
+            root_name = project_root_name(manager, snapshot)
+            result["saved_tool_results"] = {
+                tool: compare_existing_cdx(audit_dir / name / f"{tool}.cdx.json", manager, gold, root_name)
+                for tool in ("syft", "trivy")
+            }
         results.append(result)
     return results
 
@@ -184,8 +234,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ravel", required=True, help="freshly built Ravel binary")
     parser.add_argument("--audit-dir", default="comparison/bbp-audit")
+    parser.add_argument("--compare-existing", action="store_true", help="also score saved Syft and Trivy CycloneDX outputs")
     args = parser.parse_args()
-    results = evaluate(args.ravel, Path(args.audit_dir))
+    results = evaluate(args.ravel, Path(args.audit_dir), args.compare_existing)
     print(json.dumps(results, ensure_ascii=False, indent=2))
     if any(item["missing"] or item["extra"] or item.get("origin_missing") or item.get("origin_extra") for item in results):
         raise SystemExit(1)
