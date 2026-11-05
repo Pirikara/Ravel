@@ -70,6 +70,10 @@ func Collect(file, project string) (model.Document, error) {
 			return model.Document{}, fmt.Errorf("invalid Cargo.toml: %w", err)
 		}
 		rootName, rootVersion = m.Package.Name, m.Package.Version
+		if rootName != "" {
+			doc.Root = &model.ProjectIdentity{Name: rootName, Version: rootVersion,
+				Evidence: common.Evidence(filepath.Join(filepath.Dir(file), "Cargo.toml"), "cargo-manifest", "/package/name", manifestData)}
+		}
 	}
 	if rootName == "" {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})

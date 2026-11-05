@@ -87,6 +87,10 @@ func SPDX23(doc model.Document) ([]byte, error) {
 		DocumentDescribes: []string{"SPDXRef-Root"}, Packages: []spdxPackage{},
 	}
 	root := spdxPackage{ID: "SPDXRef-Root", Name: doc.Project, Purpose: "APPLICATION", DownloadLocation: "NOASSERTION", LicenseConcluded: "NOASSERTION", LicenseDeclared: "NOASSERTION", CopyrightText: "NOASSERTION"}
+	if doc.Root != nil && doc.Root.Name != "" {
+		root.Name = doc.Root.Name
+		root.Version = doc.Root.Version
+	}
 	for _, runtime := range doc.Runtimes {
 		if root.Comment != "" {
 			root.Comment += "; "

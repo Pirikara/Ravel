@@ -77,6 +77,14 @@ type RuntimeRequirement struct {
 	Evidence    Evidence `json:"evidence"`
 }
 
+// ProjectIdentity is the root application declared by a project manifest.
+// It is separate from Project, which names the scan scope or output document.
+type ProjectIdentity struct {
+	Name     string   `json:"name"`
+	Version  string   `json:"version,omitempty"`
+	Evidence Evidence `json:"evidence"`
+}
+
 type Issue struct {
 	Code  string `json:"code"`
 	Name  string `json:"name,omitempty"`
@@ -109,6 +117,7 @@ type Coverage struct {
 type Document struct {
 	SchemaVersion string               `json:"schemaVersion"`
 	Project       string               `json:"project"`
+	Root          *ProjectIdentity     `json:"root,omitempty"`
 	Source        string               `json:"source"`
 	Sources       []string             `json:"sources,omitempty"`
 	Components    []Component          `json:"components"`

@@ -44,6 +44,10 @@ type bom struct {
 
 func CycloneDX(doc model.Document) ([]byte, error) {
 	root := component{Type: "application", BomRef: "root", Name: doc.Project}
+	if doc.Root != nil && doc.Root.Name != "" {
+		root.Name = doc.Root.Name
+		root.Version = doc.Root.Version
+	}
 	for _, runtime := range doc.Runtimes {
 		value, err := json.Marshal(struct {
 			Name        string `json:"name"`
