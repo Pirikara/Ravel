@@ -24,6 +24,8 @@ type classicEntry struct {
 }
 
 type classicManifest struct {
+	Name                 string            `json:"name"`
+	Version              string            `json:"version"`
 	Dependencies         map[string]string `json:"dependencies"`
 	DevDependencies      map[string]string `json:"devDependencies"`
 	OptionalDependencies map[string]string `json:"optionalDependencies"`
@@ -69,6 +71,10 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 		doc.Sources = append(doc.Sources, filepath.Join(filepath.Dir(file), "package.json"))
 		if err := json.Unmarshal(manifestData, &manifest); err != nil {
 			return model.Document{}, fmt.Errorf("invalid package.json: %w", err)
+		}
+		if manifest.Name != "" {
+			doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
+				Evidence: common.Evidence(filepath.Join(filepath.Dir(file), "package.json"), "yarn-manifest", "/name", manifestData)}
 		}
 	}
 	if manifestErr != nil {

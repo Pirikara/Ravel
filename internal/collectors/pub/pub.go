@@ -3,6 +3,7 @@ package pub
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -51,6 +52,23 @@ func Collect(file, project string) (model.Document, error) {
 		return model.Document{}, fmt.Errorf("pubspec.lock has no packages map")
 	}
 	doc := common.NewDocument(file, project, "pub", data)
+	manifestFile := filepath.Join(filepath.Dir(file), "pubspec.yaml")
+	if manifestData, err := os.ReadFile(manifestFile); err == nil {
+		doc.Sources = append(doc.Sources, manifestFile)
+		var manifest struct {
+			Name    string `yaml:"name"`
+			Version string `yaml:"version"`
+		}
+		if err := yaml.Unmarshal(manifestData, &manifest); err != nil {
+			return model.Document{}, fmt.Errorf("invalid pubspec.yaml: %w", err)
+		}
+		if manifest.Name != "" {
+			doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
+				Evidence: common.Evidence(manifestFile, "pub-manifest", "/name", manifestData)}
+		}
+	} else if !os.IsNotExist(err) {
+		return model.Document{}, err
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "transitive_graph_unavailable"}, model.Issue{Code: "manifest_freshness_unverified"})
 	for name, pkg := range lock.Packages {
 		if !packageName.MatchString(name) || pkg.Version == "" {
