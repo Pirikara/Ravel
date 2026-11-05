@@ -121,7 +121,7 @@ func Collect(path, project string) (model.Document, error) {
 				seed := fmt.Sprintf("%s:%d", key, ordinal)
 				idHash := sha256.Sum256([]byte(seed))
 				id := "gem:" + hex.EncodeToString(idHash[:12])
-				purl := "pkg:gem/" + url.PathEscape(name) + "@" + url.PathEscape(version)
+				purl := "pkg:gem/" + url.PathEscape(name) + "@" + common.PURLVersion(version)
 				owner = &entry{component: model.Component{
 					ID: id, Kind: "package", Name: name, Version: version, PURL: purl,
 					Evidence: []model.Evidence{evidence(lineNumber)},
@@ -159,7 +159,7 @@ func Collect(path, project string) (model.Document, error) {
 			if strings.HasSuffix(item.component.Version, "-"+platform) {
 				item.component.Version = strings.TrimSuffix(item.component.Version, "-"+platform)
 				item.component.Platform = platform
-				item.component.PURL = "pkg:gem/" + url.PathEscape(item.component.Name) + "@" + url.PathEscape(item.component.Version) + "?platform=" + url.QueryEscape(platform)
+				item.component.PURL = "pkg:gem/" + url.PathEscape(item.component.Name) + "@" + common.PURLVersion(item.component.Version) + "?platform=" + url.QueryEscape(platform)
 				break
 			}
 		}

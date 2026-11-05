@@ -53,7 +53,12 @@ func GoModulePURL(path, version string) string {
 	if base == "" {
 		return ""
 	}
-	return base + "@" + url.PathEscape(version)
+	return base + "@" + PURLVersion(version)
+}
+
+// PURLVersion escapes version separators that net/url.PathEscape leaves intact.
+func PURLVersion(version string) string {
+	return strings.ReplaceAll(url.PathEscape(version), "+", "%2B")
 }
 
 func GoMainModulePURL(path string) string {
@@ -71,11 +76,13 @@ func GoMainModulePURL(path string) string {
 }
 
 func DefaultNpmRegistry(raw string) bool {
-	if raw == "registry.npmjs.org" {
+	if raw == "registry.npmjs.org" || raw == "registry.yarnpkg.com" {
 		return true
 	}
 	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || !strings.EqualFold(u.Hostname(), "registry.npmjs.org") || u.Port() != "" && u.Port() != "443" {
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") ||
+		(!strings.EqualFold(u.Hostname(), "registry.npmjs.org") && !strings.EqualFold(u.Hostname(), "registry.yarnpkg.com")) ||
+		u.Port() != "" && u.Port() != "443" {
 		return false
 	}
 	return strings.Contains(u.EscapedPath(), "/-/")

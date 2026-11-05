@@ -211,7 +211,7 @@ func cargoPURL(name, version, source string) string {
 	}
 	switch source {
 	case "registry+https://github.com/rust-lang/crates.io-index", "sparse+https://index.crates.io/":
-		return "pkg:cargo/" + url.PathEscape(name) + "@" + url.PathEscape(version)
+		return "pkg:cargo/" + url.PathEscape(name) + "@" + common.PURLVersion(version)
 	default:
 		return ""
 	}

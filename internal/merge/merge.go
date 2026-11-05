@@ -32,7 +32,9 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 		if input.Coverage.Manager == "multi" && len(input.Coverage.Inputs) > 0 {
 			scopes = input.Coverage.Inputs
 		}
+		hasGitHubActions := false
 		for _, item := range scopes {
+			hasGitHubActions = hasGitHubActions || item.Manager == "github-actions"
 			scope := item.Manager + "\x00" + item.Project + "\x00" + item.Source
 			if seenScopes[scope] {
 				return model.Document{}, fmt.Errorf("duplicate input scope: %s (%s)", item.Project, item.Manager)
@@ -66,6 +68,7 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			doc.Coverage.Issues = append(doc.Coverage.Issues, issue)
 		}
 		ids := map[string]string{"root": "root"}
+		componentNames := map[string]string{}
 		for _, component := range input.Components {
 			if component.ID == "" || component.ID == "root" {
 				return model.Document{}, fmt.Errorf("input %d has invalid component ID", index)
@@ -75,6 +78,7 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			}
 			id := "merge:" + common.ID(fmt.Sprintf("%d|%s|%s", index, input.Source, component.ID))
 			ids[component.ID] = id
+			componentNames[component.ID] = component.Name
 			component.ID = id
 			doc.Components = append(doc.Components, component)
 		}
@@ -92,7 +96,8 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			if !ok || id == "root" {
 				return model.Document{}, fmt.Errorf("input %d has dangling origin", index)
 			}
-			if origin.SafeURL != "" && safeurl.Clean(origin.SafeURL) != origin.SafeURL {
+			if origin.SafeURL != "" && safeurl.Clean(origin.SafeURL) != origin.SafeURL &&
+				!(hasGitHubActions && safeurl.IsGitHubActionsRepository(origin.SafeURL, componentNames[origin.Occurrence])) {
 				return model.Document{}, fmt.Errorf("input %d has unsafe origin URL", index)
 			}
 			origin.Occurrence = id
@@ -103,7 +108,8 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			if !ok || id == "root" {
 				return model.Document{}, fmt.Errorf("input %d has dangling development source", index)
 			}
-			if source.SafeURL == "" || safeurl.Clean(source.SafeURL) != source.SafeURL {
+			if source.SafeURL == "" || safeurl.Clean(source.SafeURL) != source.SafeURL &&
+				!(hasGitHubActions && safeurl.IsGitHubActionsRepository(source.SafeURL, componentNames[source.Occurrence])) {
 				return model.Document{}, fmt.Errorf("input %d has unsafe development URL", index)
 			}
 			source.Occurrence = id

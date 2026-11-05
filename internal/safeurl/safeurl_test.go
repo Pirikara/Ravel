@@ -27,3 +27,25 @@ func TestClean(t *testing.T) {
 		}
 	}
 }
+
+func TestGitHubActionsRepositoryURL(t *testing.T) {
+	for _, tc := range []struct {
+		url  string
+		name string
+		want bool
+	}{
+		{"https://github.com/actions/create-github-app-token", "actions/create-github-app-token", true},
+		{"https://github.com/owner/repository", "owner/repository/subpath", true},
+		{"https://github.com/owner/repository", "owner/different", false},
+		{"https://github.com/owner/repository/path", "owner/repository", false},
+		{"https://github.com/owner/repository?token=secret", "owner/repository", false},
+		{"https://user:secret@github.com/owner/repository", "owner/repository", false},
+		{"https://github.com.evil.test/owner/repository", "owner/repository", false},
+		{"https://github.com/owner/%74oken", "owner/token", false},
+		{"https://github.com/owner/..", "owner/..", false},
+	} {
+		if got := safeurl.IsGitHubActionsRepository(tc.url, tc.name); got != tc.want {
+			t.Errorf("IsGitHubActionsRepository(%q, %q) = %v, want %v", tc.url, tc.name, got, tc.want)
+		}
+	}
+}

@@ -103,7 +103,7 @@ func purl(name, version string) string {
 	if name == "" || version == "" {
 		return ""
 	}
-	return "pkg:pypi/" + url.PathEscape(normalized(name)) + "@" + url.PathEscape(version)
+	return "pkg:pypi/" + url.PathEscape(normalized(name)) + "@" + common.PURLVersion(version)
 }
 
 func defaultPyPIIndex(raw string) bool {
