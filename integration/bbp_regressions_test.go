@@ -72,3 +72,34 @@ func TestYarnOfficialRegistryProducesNpmIdentity(t *testing.T) {
 		t.Fatalf("actual Yarn distribution URL was lost: %#v", doc.Origins)
 	}
 }
+
+func TestNuGetLockPreservesProjectReferences(t *testing.T) {
+	doc := scanBBPFixture(t, "nuget-project-references", false)
+	if doc.Coverage.Packages != 3 || doc.Coverage.Edges != 3 || doc.Coverage.GraphState != "partial" {
+		t.Fatalf("NuGet project graph was dropped or overstated: %#v", doc.Coverage)
+	}
+	ids := map[string]string{}
+	for _, c := range doc.Components {
+		ids[c.Name] = c.ID
+		if c.Name == "Example.Package" {
+			if c.PURL != "pkg:nuget/Example.Package@2.0.0" {
+				t.Fatalf("external package identity changed: %#v", c)
+			}
+		} else if c.Kind != "application" || c.PURL != "" || c.Version != "" {
+			t.Fatalf("local project was attributed to NuGet: %#v", c)
+		}
+	}
+	seen := map[[2]string]bool{}
+	for _, e := range doc.Edges {
+		seen[[2]string{e.From, e.To}] = true
+	}
+	for _, edge := range [][2]string{
+		{ids["App.Core"], ids["App.Data"]},
+		{ids["App.Core"], ids["Example.Package"]},
+		{"root", ids["Example.Package"]},
+	} {
+		if !seen[edge] {
+			t.Fatalf("NuGet edge missing: %#v", edge)
+		}
+	}
+}
