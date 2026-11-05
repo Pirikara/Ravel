@@ -50,10 +50,13 @@
       "sourceFile": "uv.lock",
       "completePackages": true,
       "packages": [
+        {"name": "ravel-uv-generated", "version": "0.1.0", "sourceSnippets": ["name = \"ravel-uv-generated\"\nversion = \"0.1.0\""]},
         {"name": "alpha", "version": "1.0.0", "sourceSnippets": ["name = \"alpha\"\nversion = \"1.0.0\""]},
         {"name": "beta", "version": "2.0.0", "sourceSnippets": ["name = \"beta\"\nversion = \"2.0.0\""]}
       ],
       "edges": [
+        {"from": "root", "to": "ravel-uv-generated@0.1.0", "kind": "project", "sourceSnippet": "source = { virtual = \".\" }"},
+        {"from": "ravel-uv-generated@0.1.0", "to": "alpha@1.0.0", "kind": "direct", "sourceSnippet": "{ name = \"alpha\" }"},
         {"from": "alpha@1.0.0", "to": "beta@2.0.0", "kind": "depends_on", "sourceSnippet": "{ name = \"beta\" }"}
       ]
     },

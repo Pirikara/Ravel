@@ -136,17 +136,17 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		{"nuget-generated-10", "nuget", 1, 1, "complete_for_scope", "partial", []string{"Ravel.Beta"}, "", ""},
 		{"nuget-assets-generated-10", "nuget", 1, 1, "complete_for_scope", "partial", []string{"Ravel.Beta"}, "", ""},
 		{"nuget-multi", "nuget", 2, 2, "partial", "partial", []string{"Example.Core"}, "", ""},
-		{"uv-basic", "uv", 2, 2, "complete_for_scope", "complete_for_scope", []string{"Requests", "idna"}, "", "secret"},
-		{"uv-generated-0_11", "uv", 2, 2, "complete_for_scope", "complete_for_scope", []string{"alpha", "beta"}, "", ""},
-		{"uv-pypi-enrich", "uv", 1, 1, "complete_for_scope", "complete_for_scope", []string{"idna"}, "", ""},
-		{"uv-forked", "uv", 4, 4, "partial", "complete_for_scope", []string{"pandas", "numpy"}, "", ""},
-		{"uv-sources", "uv", 3, 3, "complete_for_scope", "complete_for_scope", []string{"git-lib", "archive-lib", "local-lib"}, "", "secret"},
+		{"uv-basic", "uv", 3, 3, "complete_for_scope", "complete_for_scope", []string{"demo", "Requests", "idna"}, "", "secret"},
+		{"uv-generated-0_11", "uv", 3, 3, "complete_for_scope", "complete_for_scope", []string{"ravel-uv-generated", "alpha", "beta"}, "", ""},
+		{"uv-pypi-enrich", "uv", 2, 2, "complete_for_scope", "complete_for_scope", []string{"demo", "idna"}, "", ""},
+		{"uv-forked", "uv", 5, 5, "partial", "complete_for_scope", []string{"demo", "pandas", "numpy"}, "", ""},
+		{"uv-sources", "uv", 4, 4, "complete_for_scope", "complete_for_scope", []string{"demo", "git-lib", "archive-lib", "local-lib"}, "", "secret"},
 		{"pylock-basic", "pylock", 2, 2, "complete_for_scope", "complete_for_scope", []string{"click", "colorama"}, "", "secret"},
 		{"pylock-pypi-enrich", "pylock", 1, 1, "complete_for_scope", "complete_for_scope", []string{"idna"}, "", ""},
 		{"pylock-marker", "pylock", 3, 1, "partial", "complete_for_scope", []string{"spam", "ham"}, "", ""},
 		{"pylock-multiwheel", "pylock", 1, 1, "complete_for_scope", "partial", []string{"platform-lib"}, "", ""},
 		{"bun-workspace", "bun", 2, 1, "partial", "partial", []string{"alpha", "beta"}, "", ""},
-		{"uv-extras", "uv", 3, 3, "partial", "complete_for_scope", []string{"base", "pillow", "pytest"}, "", ""},
+		{"uv-extras", "uv", 4, 4, "partial", "complete_for_scope", []string{"demo", "base", "pillow", "pytest"}, "", ""},
 		{"pylock-vcs", "pylock", 1, 1, "complete_for_scope", "complete_for_scope", []string{"git-package"}, "", "secret"},
 		{"pylock-named", "pylock", 1, 0, "partial", "complete_for_scope", []string{"standalone"}, "", ""},
 		{"requirements-basic", "requirements", 2, 2, "partial", "partial", []string{"requests", "idna"}, "", "hidden"},
@@ -1104,10 +1104,20 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		}
 		a := find(first, map[string]string{"Requests": "2.32.3", "click": "8.1.3"}[first])
 		b := find(second, map[string]string{"idna": "3.10", "colorama": "0.4.6"}[second])
-		if !connected("root", a) || !connected(a, b) {
+		parent := "root"
+		if fixture == "uv-basic" {
+			parent = find("demo", "0.1.0")
+			if !connected("root", parent) {
+				t.Fatal("uv root application missing")
+			}
+		}
+		if !connected(parent, a) || !connected(a, b) {
 			t.Fatal("Python dependency chain was not preserved")
 		}
 		for _, c := range doc.Components {
+			if c.ID == parent && (c.Kind != "application" || c.PURL != "") {
+				t.Fatalf("local uv root was misidentified as a registry package: %#v", c)
+			}
 			if c.ID == a && (c.PURL != "" || len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-256") {
 				t.Fatalf("private Python package assigned default PyPI identity or lost hash: %#v", c)
 			}
@@ -1116,9 +1126,10 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			}
 		}
 	case "uv-generated-0_11":
+		app := find("ravel-uv-generated", "0.1.0")
 		alpha := find("alpha", "1.0.0")
 		beta := find("beta", "2.0.0")
-		if !connected("root", alpha) || !connected(alpha, beta) || len(doc.Origins) != 2 {
+		if !connected("root", app) || !connected(app, alpha) || !connected(alpha, beta) || len(doc.Origins) != 3 {
 			t.Fatal("uv workspace graph or local origins missing")
 		}
 		for _, component := range doc.Components {
@@ -1127,22 +1138,24 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			}
 		}
 	case "uv-forked":
+		app := find("demo", "0.1.0")
 		old := find("pandas", "2.3.3")
 		newer := find("pandas", "3.0.6")
-		if !connected("root", old) || !connected("root", newer) || !connected(old, find("numpy", "1.26.4")) || !connected(newer, find("numpy", "2.4.6")) {
+		if !connected("root", app) || !connected(app, old) || !connected(app, newer) || !connected(old, find("numpy", "1.26.4")) || !connected(newer, find("numpy", "2.4.6")) {
 			t.Fatal("uv forked versions resolved incorrectly")
 		}
 		var parsed struct {
 			Dependencies []struct {
-				Ref string `json:"ref"`
+				Ref       string   `json:"ref"`
+				DependsOn []string `json:"dependsOn"`
 			} `json:"dependencies"`
 		}
 		if err := json.Unmarshal(bomData, &parsed); err != nil {
 			t.Fatal(err)
 		}
 		for _, dep := range parsed.Dependencies {
-			if dep.Ref == "root" {
-				t.Fatal("conditional uv root edges became unconditional")
+			if dep.Ref == "root" && (len(dep.DependsOn) != 1 || dep.DependsOn[0] != app) || dep.Ref == app && len(dep.DependsOn) != 0 {
+				t.Fatal("conditional uv root edges became unconditional or project edge was lost")
 			}
 		}
 	case "uv-sources":
@@ -1185,7 +1198,9 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Bun workspace scope was overstated")
 		}
 	case "uv-extras":
-		if !connected("root", find("base", "1.0.0")) || !connected("root", find("pillow", "11.0.0")) || !connected("root", find("pytest", "8.3.0")) {
+		app := find("demo", "0.1.0")
+		base := find("base", "1.0.0")
+		if !connected("root", app) || !connected(app, base) || !connected(app, find("pillow", "11.0.0")) || !connected(app, find("pytest", "8.3.0")) {
 			t.Fatal("uv extras or groups missing")
 		}
 		var parsed struct {
@@ -1197,7 +1212,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		if err := json.Unmarshal(bomData, &parsed); err != nil {
 			t.Fatal(err)
 		}
-		if len(parsed.Dependencies) != 1 || parsed.Dependencies[0].Ref != "root" || len(parsed.Dependencies[0].DependsOn) != 1 {
+		if len(parsed.Dependencies) != 2 || parsed.Dependencies[0].Ref != "root" || len(parsed.Dependencies[0].DependsOn) != 1 || parsed.Dependencies[0].DependsOn[0] != app || parsed.Dependencies[1].Ref != app || len(parsed.Dependencies[1].DependsOn) != 1 || parsed.Dependencies[1].DependsOn[0] != base {
 			t.Fatal("uv extra/group edges became unconditional")
 		}
 	case "pylock-vcs":
