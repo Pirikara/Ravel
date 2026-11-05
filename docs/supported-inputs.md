@@ -6,14 +6,15 @@ Repository directories also expose explicit runtime requirements from `.nvmrc`, 
 
 | Ecosystem | Inputs | Notes |
 | --- | --- | --- |
-| Ruby | `Gemfile.lock`, `Gemfile.<variant>.lock`; `.gem` archives | GEM, GIT, and PATH sources; archive metadata and SHA-256. `--all` reads each lockfile variant as a separate input. |
+| Ruby | `Gemfile.lock`, `Gemfile.<variant>.lock`, source `.gemspec`; `.gem` archives | GEM, GIT, and PATH sources; archive metadata and SHA-256. `--all` reads each lockfile variant and source gemspec as a separate input. A source gemspec supplies a literal name and, when statically verifiable, a version from a literal or a required version file; dependency selection remains unresolved. |
 | JavaScript | npm lockfiles v1–v4; pnpm v6/v9; Yarn Classic and Berry; Bun text `bun.lock` v0–v2; npm `.tgz` archives | Package locations, dependency edges, and conditions where the format permits. |
 | Deno | `deno.lock` v4/v5, `deno.json` / `deno.jsonc`, local import maps, JS/TS imports | Discovers static imports, re-exports, and literal dynamic imports as entry points. |
 | Python | `uv.lock` v1; `pylock.toml` 1.0; Poetry, Pipenv, PDM, and pinned requirements; `.whl` archives | Keeps markers, extras, groups, and unresolved choices conditional. |
 | .NET | NuGet `packages.lock.json`, `project.assets.json`, legacy `packages.config`, `.nupkg` archives | Keeps target framework choices; `packages.config` is a flat project list. |
 | Swift | `Package.resolved` v1–v3 | Static pins do not establish package dependency edges. |
 | Java / Scala | Maven `pom.xml` and dependency tree JSON; Gradle lockfiles; sbt `*.sbt.lock` v1; JAR/WAR archives | Includes declared Maven modules and nested JARs when identifiable. sbt configurations and safe default JAR checksums are retained. |
-| Go | `go.mod` declarations or `vendor/modules.txt` with `go.mod` | The main module is an application component, with a versionless Go PURL for a canonical public module path; repository checkouts do not establish its release version. Static `go.mod` scanning lists declared dependency modules and direct requirements, with selection and transitive graph marked partial. An optional `go list` resolver can verify selected dependency modules. |
+| Go | `go.mod` declarations or `vendor/modules.txt` with `go.mod`; executable ELF and Mach-O files with `--include-binaries` | The main module is an application component, with a versionless Go PURL for a canonical public module path; repository checkouts do not establish its release version. Static `go.mod` scanning lists declared dependency modules and direct requirements, with selection and transitive graph marked partial. An optional `go list` resolver can verify selected dependency modules. Executable build information supplies embedded module versions, not their module-to-module graph. |
+| GitHub Actions | `.github/workflows/*.yml` and `*.yaml` | Direct `uses` references in steps and reusable jobs, including repository subpaths and declared refs. Local, Docker, or dynamic references are reported as unresolved. |
 | Rust | Cargo.lock v3/v4 | An optional `cargo metadata` resolver supplies a selected host graph. |
 | PHP | `composer.lock` | Source and distribution URLs remain separate. |
 | C/C++ | Conan 1 and 2 `conan.lock` | Conan 1 graph nodes and edges; Conan 2 locked reference candidates without an inferred selected graph. |

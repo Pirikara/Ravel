@@ -65,6 +65,8 @@ For repository comparisons that include checked-in fixtures, temporary test proj
 
 Add `--include-binaries` to inspect executable Go ELF and Mach-O files in the selected repository trees. It reads embedded module and toolchain versions from the binary, keeps the executable's SHA-256, and marks the unrecoverable module-to-module graph and package origin as incomplete. Executables larger than 256 MiB and generated directories such as `build`, `dist`, and `node_modules` are outside this scan. The option streams each executable and does not invoke it.
 
+Recursive scans also read source `.gemspec` files and GitHub Actions workflows under `.github/workflows`. A source gemspec is parsed as Ruby text without execution: literal package names and versions, plus a single literal `VERSION` assignment in a required version file, can be recorded. Other version expressions and gem dependency resolution remain coverage issues. Workflow scans record direct remote `uses` references and report local, Docker, or dynamic references as unresolved. Point at one `.gemspec` or workflow file to scan it alone.
+
 Recursive discovery stops after 500,000 filesystem entries to bound the scan. Scan larger trees in smaller scopes.
 
 ### Repository runtime versions

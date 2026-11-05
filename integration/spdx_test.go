@@ -45,6 +45,9 @@ func TestSPDX23AllFixtures(t *testing.T) {
 		count++
 		t.Run(name, func(t *testing.T) {
 			fixture := filepath.Join("..", "testdata", "fixtures", name)
+			if name == "github-actions-basic" {
+				fixture = filepath.Join(fixture, ".github", "workflows", "ci.yml")
+			}
 			spdxPath := filepath.Join(t.TempDir(), "sbom.spdx.json")
 			ravelPath := filepath.Join(t.TempDir(), "ravel.json")
 			cmd := exec.Command(executable, "scan", fixture, "--format", "spdx-json", "--output", spdxPath)
@@ -157,8 +160,8 @@ func TestSPDX23AllFixtures(t *testing.T) {
 			}
 		})
 	}
-	if count != 226 {
-		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 226", count)
+	if count != 228 {
+		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 228", count)
 	}
 }
 

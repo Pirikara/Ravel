@@ -20,6 +20,7 @@ import (
 	"github.com/Pirikara/Ravel/internal/collectors/condalock"
 	"github.com/Pirikara/Ravel/internal/collectors/deno"
 	"github.com/Pirikara/Ravel/internal/collectors/dpkg"
+	"github.com/Pirikara/Ravel/internal/collectors/githubactions"
 	"github.com/Pirikara/Ravel/internal/collectors/gomod"
 	"github.com/Pirikara/Ravel/internal/collectors/gradle"
 	"github.com/Pirikara/Ravel/internal/collectors/julia"
@@ -47,7 +48,7 @@ import (
 )
 
 var staticManagers = []string{
-	"bundler", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
+	"bundler", "gemspec", "github-actions", "npm", "bun", "deno", "swiftpm", "nuget", "uv", "pylock",
 	"requirements", "pnpm", "poetry", "yarn", "cargo", "composer", "conan", "cocoapods",
 	"pipenv", "pdm", "go", "pub", "gradle", "maven", "sbt", "mix", "rebar", "shards", "cabal", "stack", "julia", "renv", "conda-lock", "pixi", "dpkg", "apk", "rpm", "oci",
 }
@@ -110,6 +111,10 @@ func runScanAll(path, format, output, report string, strict, recursive, includeT
 			var locks []string
 			if manager == "bundler" {
 				locks, err = bundlerLockFiles(directory)
+			} else if manager == "gemspec" {
+				locks, err = gemspecFiles(directory)
+			} else if manager == "github-actions" {
+				locks, err = workflowFiles(directory)
 			} else {
 				var lock string
 				lock, _, err = selectLock(directory, true, manager)
@@ -375,7 +380,7 @@ func scanDirectories(root string, includeTestVendor bool) ([]string, error) {
 		if (name == "installed" || name == "installed.adb") && filepath.Base(filepath.Dir(path)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path)))) == "lib" {
 			dirs[filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path))))] = true
 		}
-		if recursiveCandidate(name) {
+		if recursiveCandidate(name) || isWorkflowPath(path) {
 			dirs[filepath.Dir(path)] = true
 		}
 		return nil
@@ -493,6 +498,52 @@ func bundlerLockFiles(directory string) ([]string, error) {
 	return locks, nil
 }
 
+func gemspecFiles(directory string) ([]string, error) {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".gemspec") {
+			continue
+		}
+		path := filepath.Join(directory, entry.Name())
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			files = append(files, path)
+		}
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func isWorkflowPath(path string) bool {
+	name := filepath.Base(path)
+	parent := filepath.Dir(path)
+	return (strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml")) && filepath.Base(parent) == "workflows" && filepath.Base(filepath.Dir(parent)) == ".github"
+}
+
+func workflowFiles(directory string) ([]string, error) {
+	if filepath.Base(directory) != "workflows" || filepath.Base(filepath.Dir(directory)) != ".github" {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, entry := range entries {
+		path := filepath.Join(directory, entry.Name())
+		if isWorkflowPath(path) {
+			if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+				files = append(files, path)
+			}
+		}
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
 func recursiveCandidate(name string) bool {
 	if isBundlerLockName(name) {
 		return true
@@ -501,13 +552,17 @@ func recursiveCandidate(name string) bool {
 	case "Gemfile.lock", "package-lock.json", "npm-shrinkwrap.json", "bun.lock", "deno.lock", "Package.resolved", "packages.lock.json", "packages.config", "uv.lock", "pnpm-lock.yaml", "poetry.lock", "Pipfile.lock", "pdm.lock", "go.mod", "go.work", "pubspec.lock", "pubspec.yaml", "gradle.lockfile", "buildscript-gradle.lockfile", "build.gradle", "build.gradle.kts", "dependency-tree.json", "pom.xml", "yarn.lock", "Cargo.lock", "Cargo.toml", "composer.lock", "conan.lock", "mix.lock", "rebar.lock", "shard.lock", "cabal.project.freeze", "Manifest.toml", "JuliaManifest.toml", "renv.lock", "conda-lock.yml", "conda-lock.yaml", "pixi.lock", "Podfile.lock", "package.json", "pyproject.toml", "Package.swift", "oci-layout", ".nvmrc", ".node-version", ".python-version", ".ruby-version", ".tool-versions", "rust-toolchain", "rust-toolchain.toml", "global.json":
 		return true
 	}
-	return isPylockName(name) || isJuliaManifestName(name) || isCondaLockName(name) || strings.HasSuffix(name, ".sbt.lock") || strings.HasSuffix(name, ".project.freeze") || strings.HasSuffix(name, ".yaml.lock") || name == "requirements.txt"
+	return isPylockName(name) || isJuliaManifestName(name) || isCondaLockName(name) || strings.HasSuffix(name, ".gemspec") || strings.HasSuffix(name, ".sbt.lock") || strings.HasSuffix(name, ".project.freeze") || strings.HasSuffix(name, ".yaml.lock") || name == "requirements.txt"
 }
 
 func collectStatic(manager, lock, project string) (model.Document, error) {
 	switch manager {
 	case "bundler":
 		return bundler.Collect(lock, project)
+	case "gemspec":
+		return bundler.CollectGemspec(lock, project)
+	case "github-actions":
+		return githubactions.Collect(lock, project)
 	case "npm":
 		return npm.Collect(lock, project)
 	case "bun":
