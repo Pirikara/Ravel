@@ -327,7 +327,7 @@ func TestScanAllSelectsDeclaredJSManager(t *testing.T) {
 		t.Fatal("ignored JavaScript lockfile not reported")
 	}
 	cmd = exec.Command(executable, "scan", dir, "--all", "--output", manifest)
-	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "cannot overwrite a discovered input") {
+	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "cannot overwrite an included input") {
 		t.Fatalf("package manager manifest could be overwritten: %v %s", err, out)
 	}
 	cmd = exec.Command(executable, "scan", dir, "--all", "--output", filepath.Join(dir, "package-lock.json"))

@@ -124,6 +124,11 @@ func collectResolvedMulti(pom, project string, manifest pomDocument, staticDoc m
 		localByPackageRef[treeNodeRef(tree.root)] = ref
 	}
 	doc := common.NewDocument(pom, project, "maven", nil)
+	rootTree := trees["root"]
+	rootEvidence := common.Evidence("mvn dependency:tree root", "maven-tree", "/", rootTree.data)
+	rootEvidence.Method = "resolver-output"
+	doc.Root = &model.ProjectIdentity{Name: rootTree.root.GroupID + ":" + rootTree.root.ArtifactID,
+		Version: rootTree.root.Version, Evidence: rootEvidence}
 	doc.Sources = append(doc.Sources, staticDoc.Sources...)
 	doc.Origins = append(doc.Origins, staticDoc.Origins...)
 	for _, component := range staticDoc.Components {

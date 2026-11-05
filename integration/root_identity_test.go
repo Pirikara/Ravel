@@ -24,6 +24,11 @@ func TestDeclaredRootIdentityAndExport(t *testing.T) {
 		{"yarn-classic-mixed-alias", "package.json", "mixed-alias", "1.0.0"},
 		{"cargo-basic", "Cargo.toml", "demo", "0.1.0"},
 		{"pub-bbp-wallet", "pubspec.yaml", "flutter", "1.0.0"},
+		{"pnpm-v6-peer", "package.json", "ravel-pnpm-v6-peer", "1.0.0"},
+		{"pnpm-generated-10", "package.json", "ravel-pnpm-generated", "1.0.0"},
+		{"bun-generated-1_3", "package.json", "ravel-bun-check", "1.0.0"},
+		{"maven-pom-basic", "pom.xml", "org.example:app", "1.0.0"},
+		{"maven-basic", "dependency-tree.json", "com.example:app", "1.0.0"},
 	}
 	var inputs []model.Document
 	for _, tc := range cases {
@@ -202,6 +207,85 @@ func TestNpmManifestRootWinsOverStaleLockIdentity(t *testing.T) {
 	}
 	if !stale {
 		t.Fatalf("lock and manifest mismatch was not reported: %#v", doc.Coverage.Issues)
+	}
+}
+
+func TestPnpmAndBunManifestRootWithStaleLock(t *testing.T) {
+	for _, tc := range []struct {
+		fixture, lockfile, name string
+		change                  func(string) string
+	}{
+		{"pnpm-v6-peer", "pnpm-lock.yaml", "ravel-pnpm-v6-peer", func(s string) string {
+			return strings.Replace(s, "\"wrapper-a\": \"1.0.0\"", "\"wrapper-a\": \"^1.0.0\"", 1)
+		}},
+		{"bun-generated-1_3", "bun.lock", "ravel-bun-check", func(s string) string {
+			return strings.Replace(s, "\"ravel-bun-check\"", "\"old-lock-name\"", 1)
+		}},
+	} {
+		t.Run(tc.fixture, func(t *testing.T) {
+			project := t.TempDir()
+			fixture := filepath.Join("..", "testdata", "fixtures", tc.fixture)
+			for _, name := range []string{tc.lockfile, "package.json"} {
+				data, err := os.ReadFile(filepath.Join(fixture, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if name == "package.json" && tc.lockfile == "pnpm-lock.yaml" || name == "bun.lock" {
+					changed := tc.change(string(data))
+					if changed == string(data) {
+						t.Fatal("fixture change did not apply")
+					}
+					data = []byte(changed)
+				}
+				if err := os.WriteFile(filepath.Join(project, name), data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			output := filepath.Join(t.TempDir(), "ravel.json")
+			if data, err := exec.Command(executable, "scan", project, "--format", "ravel-json", "--output", output).CombinedOutput(); err != nil {
+				t.Fatalf("scan failed: %v: %s", err, data)
+			}
+			data, err := os.ReadFile(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc model.Document
+			if err := json.Unmarshal(data, &doc); err != nil {
+				t.Fatal(err)
+			}
+			if doc.Root == nil || doc.Root.Name != tc.name || filepath.Base(doc.Root.Evidence.InputPath) != "package.json" {
+				t.Fatalf("manifest root did not win: %#v", doc.Root)
+			}
+			for _, issue := range doc.Coverage.Issues {
+				if issue.Code == "manifest_freshness_unverified" {
+					return
+				}
+			}
+			t.Fatalf("stale lock not reported: %#v", doc.Coverage.Issues)
+		})
+	}
+}
+
+func TestMavenInheritedRootCoordinate(t *testing.T) {
+	project := t.TempDir()
+	pom := `<project><parent><groupId>org.example</groupId><artifactId>parent</artifactId><version>2.3.4</version></parent><artifactId>child</artifactId></project>`
+	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "ravel.json")
+	if data, err := exec.Command(executable, "scan", project, "--format", "ravel-json", "--output", output).CombinedOutput(); err != nil {
+		t.Fatalf("scan failed: %v: %s", err, data)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc model.Document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Root == nil || doc.Root.Name != "org.example:child" || doc.Root.Version != "2.3.4" {
+		t.Fatalf("inherited root coordinate missing: %#v", doc.Root)
 	}
 }
 

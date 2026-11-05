@@ -79,6 +79,9 @@ func CollectResolved(pom, project string, networkAllow bool) (model.Document, er
 		return model.Document{}, err
 	}
 	doc.Source = pom
+	if doc.Root != nil {
+		doc.Root.Evidence.InputPath = "mvn dependency:tree"
+	}
 	issues := doc.Coverage.Issues[:0]
 	for _, issue := range doc.Coverage.Issues {
 		if issue.Code != "manifest_freshness_unverified" {

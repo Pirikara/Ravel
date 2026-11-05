@@ -56,6 +56,9 @@ func readTree(file string) ([]byte, node, error) {
 
 func collectTree(file, project string, data []byte, root node, stopAt func(node) bool) (model.Document, error) {
 	doc := common.NewDocument(file, project, "maven", data)
+	evidence := common.Evidence(file, "maven-tree", "/", data)
+	evidence.Method = "resolver-output"
+	doc.Root = &model.ProjectIdentity{Name: root.GroupID + ":" + root.ArtifactID, Version: root.Version, Evidence: evidence}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
 	byKey := map[string]int{}
 	contexts := map[string]map[string]bool{}

@@ -152,6 +152,9 @@ func TestMavenResolverOptInAndSelection(t *testing.T) {
 	if doc.Source != pom || doc.Coverage.Manager != "maven" || doc.Coverage.Packages != 1 || doc.Coverage.Edges != 1 || doc.Coverage.GraphState != "complete_for_scope" {
 		t.Fatalf("unexpected resolved document: %#v", doc)
 	}
+	if doc.Root == nil || doc.Root.Name != "example:app" || doc.Root.Version != "1" || doc.Root.Evidence.InputPath != "mvn dependency:tree" {
+		t.Fatalf("resolved root identity missing: %#v", doc.Root)
+	}
 	if doc.Components[0].Name != "resolved:dep" || doc.Components[0].Version != "2" || doc.Components[0].PURL != "" || doc.Components[0].Evidence[0].InputPath != "mvn dependency:tree" {
 		t.Fatalf("unexpected resolved package: %#v", doc.Components[0])
 	}
@@ -290,6 +293,9 @@ done
 	}
 	if doc.Coverage.Packages != 5 || doc.Coverage.Edges != 6 || doc.Coverage.GraphState != "complete_for_scope" || len(doc.Origins) != 2 || len(doc.Sources) != 2 {
 		t.Fatalf("reactor coverage incorrect: %#v", doc)
+	}
+	if doc.Root == nil || doc.Root.Name != "org.demo:parent" || doc.Root.Version != "1.0.0" || doc.Root.Evidence.InputPath != "mvn dependency:tree root" {
+		t.Fatalf("reactor root identity missing: %#v", doc.Root)
 	}
 	ids := map[string]string{}
 	alphaByProject := map[string]string{}
