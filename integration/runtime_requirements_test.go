@@ -148,22 +148,22 @@ func TestRuntimeOnlyRepositoryAndStandardExports(t *testing.T) {
 
 func TestGoManifestWithoutVendorReportsRuntimeAndMissingGraph(t *testing.T) {
 	root := t.TempDir()
-	runtimeTestWrite(t, root, "go.mod", "module example.com/demo\n\ngo 1.25.0\n")
+	runtimeTestWrite(t, root, "go.mod", "module example.com/demo\n\ngo 1.25.0\n\nrequire example.com/dependency v1.2.3\n")
 	doc, message, code := runtimeTestScan(t, root, "--all")
-	if code != 0 || doc.Coverage.Packages != 0 || doc.Coverage.GraphState != "partial" || len(doc.Runtimes) != 1 || doc.Runtimes[0].Requirement != "1.25.0" {
-		t.Fatalf("Go runtime-only scan failed: code=%d message=%s doc=%#v", code, message, doc)
+	if code != 0 || doc.Coverage.Packages != 1 || doc.Coverage.GraphState != "partial" || len(doc.Runtimes) != 1 || doc.Runtimes[0].Requirement != "1.25.0" {
+		t.Fatalf("Go manifest scan failed: code=%d message=%s doc=%#v", code, message, doc)
 	}
-	foundSkip := false
+	foundGap := false
 	for _, issue := range doc.Coverage.Issues {
-		if issue.Code == "collector_skipped_requires_resolve" && issue.Name == "go" {
-			foundSkip = true
+		if issue.Code == "transitive_graph_unavailable" {
+			foundGap = true
 		}
 	}
-	if !foundSkip {
-		t.Fatalf("missing package graph was not reported: %#v", doc.Coverage.Issues)
+	if !foundGap {
+		t.Fatalf("missing transitive graph was not reported: %#v", doc.Coverage.Issues)
 	}
-	if _, message, code := runtimeTestScan(t, root); code != 2 || !strings.Contains(message, "--resolve") {
-		t.Fatalf("Go scan did not require resolver opt-in: code=%d message=%s", code, message)
+	if single, message, code := runtimeTestScan(t, root); code != 0 || single.Coverage.Packages != 1 {
+		t.Fatalf("Go scan did not include declared modules: code=%d message=%s", code, message)
 	}
 }
 

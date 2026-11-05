@@ -101,7 +101,7 @@ coverage: graph=partial origin=complete_for_scope
 
 | Source | Examples |
 | --- | --- |
-| Project dependencies | npm, pnpm, Yarn, Bun, Deno, uv, Poetry, PDM, Pipenv, pylock, NuGet, Maven, Gradle, Cargo, Go vendor, SwiftPM, Bundler, Composer, and more. |
+| Project dependencies | npm, pnpm, Yarn, Bun, Deno, uv, Poetry, PDM, Pipenv, pylock, NuGet, Maven, Gradle, Cargo, Go modules, SwiftPM, Bundler, Composer, and more. |
 | Repository runtime declarations | Node, Python, Ruby, Go, Rust, Swift tools, Dart, Flutter, and .NET SDK version requirements from common project files. |
 | Package archives | JAR/WAR, wheel, npm tarball, NuGet package, and Ruby gem. |
 | Installed systems | Debian, Alpine, and RPM package databases; installed Python, Node, Ruby, Composer, Conda, .NET, Java, Go, and Rust metadata in images. |

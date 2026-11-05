@@ -2086,8 +2086,20 @@ func TestGoVendorGeneratedByGoTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(executable, "scan", project, "--manager", "go", "--output", filepath.Join(t.TempDir(), "static.json")).CombinedOutput(); err == nil || !strings.Contains(string(output), "--resolve") {
-		t.Fatalf("Go scan without vendor did not require resolver opt-in: %v: %s", err, output)
+	staticPath := filepath.Join(t.TempDir(), "static.json")
+	if output, err := exec.Command(executable, "scan", project, "--manager", "go", "--format", "ravel-json", "--output", staticPath).CombinedOutput(); err != nil {
+		t.Fatalf("static Go manifest scan failed: %v: %s", err, output)
+	}
+	staticData, err := os.ReadFile(staticPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var static model.Document
+	if err := json.Unmarshal(staticData, &static); err != nil {
+		t.Fatal(err)
+	}
+	if len(static.Components) != 1 || static.Components[0].Name != "example.com/dep" || static.Components[0].PURL != "" || static.Components[0].Evidence[0].Method != "manifest-analysis" || len(static.Edges) != 1 || len(static.Origins) != 1 || static.Origins[0].Kind != "local" || static.Coverage.GraphState != "partial" {
+		t.Fatalf("static Go manifest scan was incomplete: %#v", static)
 	}
 	if output, err := exec.Command(executable, "scan", project, "--manager", "go", "--resolve", "--output", filepath.Join(t.TempDir(), "denied.json")).CombinedOutput(); err == nil || !strings.Contains(string(output), "--allow-exec") {
 		t.Fatalf("Go resolver ran without execution opt-in: %v: %s", err, output)

@@ -79,7 +79,7 @@ func TestScanAllStaticManagers(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "cannot overwrite an included input") {
 		t.Fatalf("scan --all could overwrite an include: %v %s", err, out)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/app\n\ngo 1.22\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/app\n\ngo 1.22\n\nrequire example.test/go-dep v1.2.3\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cmd = exec.Command(executable, "scan", dir, "--all", "--format", "ravel-json")
@@ -91,15 +91,15 @@ func TestScanAllStaticManagers(t *testing.T) {
 		t.Fatal(err)
 	}
 	found := false
-	for _, issue := range doc.Coverage.Issues {
-		found = found || issue.Code == "collector_skipped_requires_resolve" && issue.Name == "go"
+	for _, component := range doc.Components {
+		found = found || component.Name == "example.test/go-dep" && component.Version == "v1.2.3"
 	}
-	if !found || doc.Coverage.GraphState != "partial" {
-		t.Fatal("Go manifest skipped without a coverage issue")
+	if !found || doc.Coverage.Packages != 4 || doc.Coverage.GraphState != "partial" {
+		t.Fatal("Go manifest modules were not included with partial graph coverage")
 	}
 	cmd = exec.Command(executable, "scan", dir, "--all", "--output", filepath.Join(dir, "go.mod"))
-	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "cannot overwrite a discovered input") {
-		t.Fatalf("skipped Go manifest could be overwritten: %v %s", err, out)
+	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "cannot overwrite") {
+		t.Fatalf("Go manifest could be overwritten: %v %s", err, out)
 	}
 	service := filepath.Join(dir, "service")
 	ignored := filepath.Join(dir, "node_modules", "ignored")
@@ -130,7 +130,7 @@ func TestScanAllStaticManagers(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Coverage.Inputs) != 3 || doc.Coverage.Packages != 4 || doc.Coverage.Edges != 4 {
+	if len(doc.Coverage.Inputs) != 4 || doc.Coverage.Packages != 5 || doc.Coverage.Edges != 5 {
 		t.Fatalf("recursive scan missed a subproject or included generated files: %#v", doc.Coverage)
 	}
 	missingLock := false
