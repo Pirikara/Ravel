@@ -23,8 +23,8 @@ type Component struct {
 	Platform string `json:"platform,omitempty"`
 	Context  string `json:"context,omitempty"`
 	PURL     string `json:"purl,omitempty"`
-	// PURLBasis distinguishes an ecosystem coordinate inferred from lockfile
-	// syntax from an identity backed by a declared registry URL.
+	// PURLBasis marks an ecosystem coordinate inferred from lockfile syntax
+	// without a confirmed registry. Empty retains the collector's prior policy.
 	PURLBasis string     `json:"purlBasis,omitempty"`
 	Hashes    []Hash     `json:"hashes,omitempty"`
 	Patches   []Patch    `json:"patches,omitempty"`
