@@ -59,7 +59,9 @@ ravel scan path/to/project --output sbom.cdx.json --report coverage.json
 ravel scan path/to/polyglot-project --all --recursive --output combined.cdx.json
 ```
 
-`--all` combines static inputs in one directory. `--recursive` also scans subprojects while skipping generated directories such as `.git`, `node_modules`, and `vendor`. Archives are not automatically discovered. If multiple JavaScript lockfiles coexist, Ravel uses `package.json`'s `packageManager` field; otherwise select a manager explicitly.
+`--all` combines static inputs in one directory. `--recursive` also scans subprojects while skipping generated directories and test fixtures such as `.git`, `node_modules`, `vendor`, `tmp`, and `fixtures`. Archives are not automatically discovered. If multiple JavaScript lockfiles coexist, Ravel uses `package.json`'s `packageManager` field; otherwise select a manager explicitly.
+
+Recursive discovery stops after 500,000 filesystem entries to bound the scan. Scan larger trees in smaller scopes.
 
 ### Repository runtime versions
 

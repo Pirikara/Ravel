@@ -291,6 +291,7 @@ func selectedJSManager(directory string) (string, []model.Issue, error) {
 }
 
 func scanDirectories(root string) ([]string, error) {
+	const maxEntries = 500_000
 	dirs := map[string]bool{root: true}
 	seen := 0
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
@@ -298,8 +299,8 @@ func scanDirectories(root string) ([]string, error) {
 			return walkErr
 		}
 		seen++
-		if seen > 100000 {
-			return fmt.Errorf("recursive scan exceeds 100000 entries")
+		if seen > maxEntries {
+			return fmt.Errorf("recursive scan exceeds %d entries", maxEntries)
 		}
 		if entry.IsDir() {
 			if path != root {
@@ -309,7 +310,7 @@ func scanDirectories(root string) ([]string, error) {
 					}
 				}
 				switch entry.Name() {
-				case ".git", ".hg", ".svn", "node_modules", ".pnpm-store", ".yarn", ".gradle", "target", "build", "dist", "Pods", ".venv", "venv", "__pycache__", ".cache", "testdata":
+				case ".git", ".hg", ".svn", "node_modules", ".pnpm-store", ".yarn", ".gradle", "target", "build", "dist", "Pods", ".venv", "venv", "__pycache__", ".cache", "testdata", "fixtures", "tmp":
 					return filepath.SkipDir
 				case "vendor":
 					if _, err := os.Stat(filepath.Join(path, "modules.txt")); err == nil {
