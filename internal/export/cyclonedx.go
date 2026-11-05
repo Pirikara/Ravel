@@ -138,7 +138,7 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 	}
 	edges := map[string][]string{}
 	for _, e := range doc.Edges {
-		if e.Condition != "" {
+		if e.Condition != "" || e.Kind == "observed" {
 			continue
 		}
 		edges[e.From] = append(edges[e.From], e.To)

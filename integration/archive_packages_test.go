@@ -53,6 +53,39 @@ func TestPackageArchiveScanAndDiscovery(t *testing.T) {
 		if len(doc.Origins) != 1 || doc.Origins[0].Kind != "local" || doc.Edges[0].Kind != "observed" || doc.Coverage.GraphState != "partial" || doc.Coverage.OriginState != "partial" {
 			t.Fatalf("archive claims unsupported facts: %#v", doc)
 		}
+		cdx, err := exec.Command(executable, "scan", test.path, "--format", "cyclonedx-json").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var bom struct {
+			Dependencies []struct {
+				Ref       string   `json:"ref"`
+				DependsOn []string `json:"dependsOn"`
+			} `json:"dependencies"`
+		}
+		if err := json.Unmarshal(cdx, &bom); err != nil {
+			t.Fatal(err)
+		}
+		for _, edge := range bom.Dependencies {
+			if edge.Ref == "root" && len(edge.DependsOn) > 0 {
+				t.Fatalf("observed archive became a CycloneDX dependency: %#v", edge)
+			}
+		}
+		spdx, err := exec.Command(executable, "scan", test.path, "--format", "spdx-json").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var spdxDoc struct {
+			Relationships []struct {
+				Type string `json:"relationshipType"`
+			} `json:"relationships"`
+		}
+		if err := json.Unmarshal(spdx, &spdxDoc); err != nil {
+			t.Fatal(err)
+		}
+		if len(spdxDoc.Relationships) != 1 || spdxDoc.Relationships[0].Type != "CONTAINS" {
+			t.Fatalf("archive presence became an SPDX dependency: %#v", spdxDoc.Relationships)
+		}
 	}
 	if out, err := exec.Command(executable, "scan", root, "--all", "--recursive", "--include-archives", "--format", "ravel-json").CombinedOutput(); err == nil || !strings.Contains(string(out), "no statically scannable inputs") {
 		t.Fatalf("default fixture exclusion failed: %v %s", err, out)
