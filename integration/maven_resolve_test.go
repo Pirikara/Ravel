@@ -52,6 +52,48 @@ func mavenScan(t *testing.T, path string, args ...string) ([]byte, int) {
 	return nil, 0
 }
 
+func TestMavenVersionlessDeclaration(t *testing.T) {
+	project := t.TempDir()
+	pom := `<project><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>app</artifactId><version>1</version><dependencies>
+<dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter-engine</artifactId><scope>test</scope></dependency>
+<dependency><groupId>example</groupId><artifactId>unresolved-property</artifactId><version>${missing}</version></dependency>
+</dependencies></project>`
+	if err := os.WriteFile(filepath.Join(project, "pom.xml"), []byte(pom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := filepath.Join(t.TempDir(), "bom.json")
+	output, code := mavenScan(t, project, "--format", "ravel-json", "--output", result)
+	if code != 0 {
+		t.Fatalf("Maven static scan failed: %s", output)
+	}
+	output, err := os.ReadFile(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc model.Document
+	if err := json.Unmarshal(output, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Components) != 1 || len(doc.Edges) != 1 {
+		t.Fatalf("versionless declaration missing or unresolved property included: %#v", doc)
+	}
+	component := doc.Components[0]
+	if component.Name != "org.junit.jupiter:junit-jupiter-engine" || component.Version != "" || component.PURL != "pkg:maven/org.junit.jupiter/junit-jupiter-engine" || component.PURLBasis != "ecosystem_inferred" || doc.Edges[0].Condition != "scope=test" {
+		t.Fatalf("versionless declaration lost coordinate or condition: %#v", doc)
+	}
+	var unresolved, versionUnresolved bool
+	for _, issue := range doc.Coverage.Issues {
+		if issue.Name != component.Name {
+			continue
+		}
+		unresolved = unresolved || issue.Code == "unresolved_dependency"
+		versionUnresolved = versionUnresolved || issue.Code == "version_unresolved"
+	}
+	if !unresolved || !versionUnresolved {
+		t.Fatalf("versionless declaration was not marked unresolved: %#v", doc.Coverage.Issues)
+	}
+}
+
 func TestMavenResolverOptInAndSelection(t *testing.T) {
 	project := t.TempDir()
 	pom := filepath.Join(project, "pom.xml")
@@ -76,7 +118,7 @@ func TestMavenResolverOptInAndSelection(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Coverage.Packages != 1 || doc.Coverage.GraphState != "partial" || doc.Components[0].Name != "declared:dep" || doc.Components[0].PURL != "" || doc.Edges[0].Condition != "scope=test && optional=true" {
+	if doc.Coverage.Packages != 1 || doc.Coverage.GraphState != "partial" || doc.Components[0].Name != "declared:dep" || doc.Components[0].PURL != "pkg:maven/declared/dep@1" || doc.Components[0].PURLBasis != "ecosystem_inferred" || doc.Edges[0].Condition != "scope=test && optional=true" {
 		t.Fatalf("static POM overstated resolution or lost conditions: %#v", doc)
 	}
 	for _, component := range doc.Components {
@@ -103,6 +145,7 @@ func TestMavenResolverOptInAndSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	doc = model.Document{}
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
