@@ -353,6 +353,20 @@ func Collect(file, project string) (model.Document, error) {
 			break
 		}
 	}
+	// A Deno lockfile can retain remote modules after imports are removed.
+	// Its remote map records hashes, but no edges between those modules. Report
+	// each unlinked record without claiming it belongs to the current graph.
+	for rawURL := range lock.Remote {
+		if visited["remote:"+rawURL] {
+			continue
+		}
+		clean := safeurl.Clean(rawURL)
+		if clean == "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source"})
+			continue
+		}
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "lock_remote_reachability_unknown", Name: clean})
+	}
 	// An arbitrary runtime entry point or computed import can still be absent.
 	// The lock can also retain stale entries, so no complete reachability claim is made.
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph"})
