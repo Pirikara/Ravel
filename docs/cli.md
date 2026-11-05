@@ -61,6 +61,8 @@ ravel scan path/to/polyglot-project --all --recursive --output combined.cdx.json
 
 `--all` combines static inputs in one directory. `--recursive` also scans subprojects while skipping generated directories and test fixtures such as `.git`, `node_modules`, `vendor`, `tmp`, and `fixtures`. Archives are not automatically discovered. If multiple JavaScript lockfiles coexist, Ravel uses `package.json`'s `packageManager` field; otherwise select a manager explicitly.
 
+Add `--include-archives` to `--all --recursive` to inspect checked-in Debian `.deb`/`.udeb`/`.ddeb`, RPM `.rpm`, JAR/WAR, wheel, npm `.tgz`, NuGet `.nupkg`, and Ruby `.gem` files in the selected trees. Use `--include-test-and-vendor` too when test fixtures or vendored archives are relevant. Invalid archives and `.tgz` files without identifiable npm package metadata are reported as skipped coverage issues. Each archive is an observed artifact; its presence does not establish that it is installed or required by the project. Archive discovery stops after 10,000 candidates. Container image tar files are scanned by direct path instead.
+
 For repository comparisons that include checked-in fixtures, temporary test projects, or vendored source trees, add `--include-test-and-vendor` to `--all --recursive`. It descends into `tmp`, `fixtures`, `testdata`, and `vendor`; installed package stores such as `node_modules` remain excluded. Invalid lockfiles found in these extra trees are listed as `collector_skipped_invalid_input` coverage issues, and `--strict` fails. The default scan keeps its smaller source scope. Bundler variants such as `Gemfile.next.lock` are distinct inputs with `--all`; point at one file for a single variant.
 
 Add `--include-binaries` to inspect executable Go ELF and Mach-O files in the selected repository trees. It reads embedded module and toolchain versions from the binary, keeps the executable's SHA-256, and marks the unrecoverable module-to-module graph and package origin as incomplete. Executables larger than 256 MiB and generated directories such as `build`, `dist`, and `node_modules` are outside this scan. The option streams each executable and does not invoke it.
@@ -88,12 +90,14 @@ These values describe repository requirements, not the runtime actually installe
 ravel scan path/to/app.jar --output app.cdx.json
 ravel scan path/to/package.whl --output wheel.cdx.json
 ravel scan path/to/package.nupkg --output nuget.cdx.json
+ravel scan path/to/package.deb --output debian-package.cdx.json
+ravel scan path/to/package.rpm --output rpm-package.cdx.json
 ravel scan path/to/debian-rootfs --manager dpkg --output debian.cdx.json
 ravel scan path/to/alpine-rootfs --manager apk --output alpine.cdx.json
 ravel scan path/to/fedora-rootfs --manager rpm --output fedora.cdx.json
 ```
 
-`.war`, `.gem`, and npm `.tgz` archives are also accepted. An archive proves the bytes Ravel read; it does not by itself prove which registry supplied them.
+`.war`, `.gem`, npm `.tgz`, Debian `.udeb`/`.ddeb`, and other supported archives are also accepted. Debian and RPM package names, versions, and architectures come from package metadata, not filenames. An archive proves the bytes Ravel read; it does not by itself prove which registry supplied them.
 
 ### A container image
 

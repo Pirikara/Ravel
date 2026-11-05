@@ -169,7 +169,11 @@ func SPDX23(doc model.Document) ([]byte, error) {
 		if !okFrom || !okTo {
 			return nil, fmt.Errorf("dependency references unknown component: %q -> %q", e.From, e.To)
 		}
-		rel := spdxRelationship{From: from, Type: "DEPENDS_ON", To: to}
+		relType := "DEPENDS_ON"
+		if e.Kind == "observed" {
+			relType = "CONTAINS"
+		}
+		rel := spdxRelationship{From: from, Type: relType, To: to}
 		if !seen[rel] {
 			out.Relationships = append(out.Relationships, rel)
 			seen[rel] = true
