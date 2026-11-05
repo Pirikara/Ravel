@@ -23,6 +23,7 @@ import (
 	"github.com/Pirikara/Ravel/internal/collectors/githubactions"
 	"github.com/Pirikara/Ravel/internal/collectors/gomod"
 	"github.com/Pirikara/Ravel/internal/collectors/gradle"
+	"github.com/Pirikara/Ravel/internal/collectors/javaarchive"
 	"github.com/Pirikara/Ravel/internal/collectors/julia"
 	"github.com/Pirikara/Ravel/internal/collectors/maven"
 	"github.com/Pirikara/Ravel/internal/collectors/mix"
@@ -55,7 +56,7 @@ var staticManagers = []string{
 
 // runScanAll scans static manager inputs at the directory root, and nested
 // subprojects when requested. It does not execute package managers.
-func runScanAll(path, format, output, report string, strict, recursive, includeTestVendor, includeBinaries bool) int {
+func runScanAll(path, format, output, report string, strict, recursive, includeTestVendor, includeBinaries, includeArchives bool) int {
 	info, err := os.Stat(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
@@ -200,6 +201,47 @@ func runScanAll(path, format, output, report string, strict, recursive, includeT
 			if recognized {
 				inputs = append(inputs, doc)
 			}
+		}
+	}
+	if includeArchives {
+		archives, err := repositoryArchiveCandidates(path, includeTestVendor)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ravel:", err)
+			return 1
+		}
+		for _, archive := range archives {
+			if samePath(output, archive.path) || report != "" && samePath(report, archive.path) {
+				fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite an input")
+				return 2
+			}
+			var doc model.Document
+			var collectErr error
+			switch archive.manager {
+			case "deb-archive":
+				doc, collectErr = dpkg.CollectArchive(archive.path, project)
+			case "rpm-archive":
+				doc, collectErr = rpm.CollectArchive(archive.path, project)
+			case "java-archive":
+				doc, collectErr = javaarchive.Collect(archive.path, project)
+			case "ruby-gem":
+				doc, collectErr = bundler.CollectArchive(archive.path, project)
+			case "python-wheel":
+				doc, collectErr = python.CollectWheel(archive.path, project)
+			case "npm-archive":
+				doc, collectErr = npm.CollectArchive(archive.path, project)
+			case "nuget-archive":
+				doc, collectErr = nuget.CollectArchive(archive.path, project)
+			}
+			if collectErr != nil {
+				fmt.Fprintf(os.Stderr, "ravel: skipped archive %s: %v\n", archive.path, collectErr)
+				skipped = append(skipped, model.Issue{Code: "collector_skipped_invalid_input", Name: archive.manager, Scope: archive.path})
+				continue
+			}
+			if archive.manager == "npm-archive" && (len(doc.Components) != 1 || doc.Components[0].Kind != "package") {
+				skipped = append(skipped, model.Issue{Code: "collector_skipped_unidentified_archive", Name: archive.manager, Scope: archive.path})
+				continue
+			}
+			inputs = append(inputs, doc)
 		}
 	}
 	if len(inputs) == 0 && len(runtimeDeclarations.Requirements) == 0 {
@@ -441,6 +483,71 @@ func repositoryGoBinaryCandidates(root string, includeTestVendor bool) ([]string
 			return fmt.Errorf("binary discovery exceeds %d executable candidates", maxCandidates)
 		}
 		candidates = append(candidates, path)
+		return nil
+	})
+	return candidates, err
+}
+
+type archiveCandidate struct{ path, manager string }
+
+func repositoryArchiveCandidates(root string, includeTestVendor bool) ([]archiveCandidate, error) {
+	const maxEntries = 500_000
+	const maxCandidates = 10_000
+	var candidates []archiveCandidate
+	entries := 0
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		entries++
+		if entries > maxEntries {
+			return fmt.Errorf("archive discovery exceeds %d entries", maxEntries)
+		}
+		if entry.IsDir() {
+			if path == root {
+				return nil
+			}
+			if includeTestVendor && isTestVendorDirectory(entry.Name()) {
+				return nil
+			}
+			switch entry.Name() {
+			case ".git", ".hg", ".svn", "node_modules", ".pnpm-store", ".yarn", ".gradle", "target", "build", "dist", "Pods", ".venv", "venv", "__pycache__", ".cache", "testdata", "fixtures", "tmp", "vendor", "obj":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		manager := ""
+		lower := strings.ToLower(entry.Name())
+		switch {
+		case strings.HasSuffix(lower, ".deb"), strings.HasSuffix(lower, ".udeb"), strings.HasSuffix(lower, ".ddeb"):
+			manager = "deb-archive"
+		case strings.HasSuffix(lower, ".rpm"):
+			manager = "rpm-archive"
+		case strings.HasSuffix(lower, ".jar"), strings.HasSuffix(lower, ".war"):
+			manager = "java-archive"
+		case strings.HasSuffix(lower, ".gem"):
+			manager = "ruby-gem"
+		case strings.HasSuffix(lower, ".whl"):
+			manager = "python-wheel"
+		case strings.HasSuffix(lower, ".nupkg"):
+			manager = "nuget-archive"
+		case strings.HasSuffix(lower, ".tgz"):
+			manager = "npm-archive"
+		}
+		if manager == "" {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		if len(candidates) >= maxCandidates {
+			return fmt.Errorf("archive discovery exceeds %d candidates", maxCandidates)
+		}
+		candidates = append(candidates, archiveCandidate{path: path, manager: manager})
 		return nil
 	})
 	return candidates, err

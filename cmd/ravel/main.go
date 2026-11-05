@@ -14,6 +14,7 @@ import (
 
 	"github.com/Pirikara/Ravel/internal/collectors/bundler"
 	"github.com/Pirikara/Ravel/internal/collectors/cargo"
+	"github.com/Pirikara/Ravel/internal/collectors/dpkg"
 	"github.com/Pirikara/Ravel/internal/collectors/gomod"
 	"github.com/Pirikara/Ravel/internal/collectors/gradle"
 	"github.com/Pirikara/Ravel/internal/collectors/javaarchive"
@@ -78,7 +79,7 @@ func buildVersion() string {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: ravel version")
-	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
+	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries] [--include-archives]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
 	fmt.Fprintln(os.Stderr, "       ravel explain PACKAGE --input ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel diff BEFORE.ravel.json AFTER.ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel merge [--name PROJECT] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] INPUT.ravel.json...")
@@ -311,6 +312,7 @@ func runScan(args []string) int {
 	recursive := fs.Bool("recursive", false, "include nested projects with --all")
 	includeTestVendor := fs.Bool("include-test-and-vendor", false, "include tmp, fixtures, testdata, and vendor with --all --recursive")
 	includeBinaries := fs.Bool("include-binaries", false, "include local Go ELF and Mach-O executables with --all --recursive")
+	includeArchives := fs.Bool("include-archives", false, "include supported package archives with --all --recursive")
 	strict := fs.Bool("strict", false, "fail on partial coverage")
 	resolve := fs.Bool("resolve", false, "resolve dependencies with a package manager command")
 	allowExec := fs.Bool("allow-exec", false, "allow a package manager command")
@@ -343,8 +345,8 @@ func runScan(args []string) int {
 			return 2
 		}
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "gemspec" && *manager != "github-actions" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "rebar" && *manager != "shards" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "conda-lock" && *manager != "pixi" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
-		fmt.Fprintln(os.Stderr, "ravel: supported managers: bundler, gemspec, github-actions, ruby-gem, npm, bun, deno, swiftpm, nuget, nuget-archive, npm-archive, uv, pylock, requirements, pnpm, poetry, yarn, cargo, composer, conan, cocoapods, pipenv, pdm, go, pub, gradle, maven, sbt, mix, rebar, shards, cabal, stack, julia, renv, conda-lock, pixi, dpkg, apk, rpm, oci, java-archive, python-wheel")
+	if *manager != "auto" && *manager != "bundler" && *manager != "gemspec" && *manager != "github-actions" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "deb-archive" && *manager != "rpm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "rebar" && *manager != "shards" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "conda-lock" && *manager != "pixi" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
+		fmt.Fprintln(os.Stderr, "ravel: unsupported manager")
 		return 2
 	}
 	if *all {
@@ -356,11 +358,15 @@ func runScan(args []string) int {
 			fmt.Fprintln(os.Stderr, "ravel: --include-binaries requires --all --recursive")
 			return 2
 		}
+		if *includeArchives && !*recursive {
+			fmt.Fprintln(os.Stderr, "ravel: --include-archives requires --all --recursive")
+			return 2
+		}
 		if *manager != "auto" || *resolve || *allowExec || *configuration != "runtimeClasspath" || *platform != "" || *imageSource != "registry" || *network == "allow" {
 			fmt.Fprintln(os.Stderr, "ravel: --all is static and cannot be combined with --manager, --resolve, --allow-exec, --configuration, --platform, --image-source, or --network allow")
 			return 2
 		}
-		return runScanAll(path, *format, *output, *report, *strict, *recursive, *includeTestVendor, *includeBinaries)
+		return runScanAll(path, *format, *output, *report, *strict, *recursive, *includeTestVendor, *includeBinaries, *includeArchives)
 	}
 	if *includeTestVendor {
 		fmt.Fprintln(os.Stderr, "ravel: --include-test-and-vendor requires --all --recursive")
@@ -368,6 +374,10 @@ func runScan(args []string) int {
 	}
 	if *includeBinaries {
 		fmt.Fprintln(os.Stderr, "ravel: --include-binaries requires --all --recursive")
+		return 2
+	}
+	if *includeArchives {
+		fmt.Fprintln(os.Stderr, "ravel: --include-archives requires --all --recursive")
 		return 2
 	}
 	if *recursive {
@@ -426,7 +436,7 @@ func runScan(args []string) int {
 	lock, selected, err := selectLock(path, info.IsDir(), *manager)
 	if err != nil {
 		if info.IsDir() && *manager == "auto" && err.Error() == "no supported lockfile found" && len(runtimeDeclarations.Requirements) > 0 {
-			return runScanAll(path, *format, *output, *report, *strict, false, false, false)
+			return runScanAll(path, *format, *output, *report, *strict, false, false, false, false)
 		}
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 2
@@ -540,6 +550,10 @@ func runScan(args []string) int {
 		return 2
 	case selected == "java-archive":
 		doc, err = javaarchive.Collect(lock, project)
+	case selected == "deb-archive":
+		doc, err = dpkg.CollectArchive(lock, project)
+	case selected == "rpm-archive":
+		doc, err = rpm.CollectArchive(lock, project)
 	case selected == "ruby-gem":
 		doc, err = bundler.CollectArchive(lock, project)
 	case selected == "python-wheel":
@@ -746,6 +760,12 @@ func selectLock(input string, directory bool, requested string) (string, string,
 		}
 		if strings.HasSuffix(strings.ToLower(name), ".jar") || strings.HasSuffix(strings.ToLower(name), ".war") {
 			return "java-archive"
+		}
+		if strings.HasSuffix(strings.ToLower(name), ".deb") || strings.HasSuffix(strings.ToLower(name), ".udeb") || strings.HasSuffix(strings.ToLower(name), ".ddeb") {
+			return "deb-archive"
+		}
+		if strings.HasSuffix(strings.ToLower(name), ".rpm") {
+			return "rpm-archive"
 		}
 		if strings.HasSuffix(strings.ToLower(name), ".nupkg") {
 			return "nuget-archive"

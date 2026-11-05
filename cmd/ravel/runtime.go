@@ -9,7 +9,7 @@ import (
 
 func repositoryManager(manager string) bool {
 	switch manager {
-	case "oci", "java-archive", "ruby-gem", "python-wheel", "npm-archive", "nuget-archive", "dpkg", "apk", "rpm":
+	case "oci", "java-archive", "ruby-gem", "python-wheel", "npm-archive", "nuget-archive", "deb-archive", "rpm-archive", "dpkg", "apk", "rpm":
 		return false
 	}
 	return true
