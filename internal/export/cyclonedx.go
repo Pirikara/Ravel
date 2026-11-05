@@ -77,6 +77,9 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 			kind = "application"
 		}
 		item := component{Type: kind, BomRef: c.ID, Name: c.Name, Version: c.Version, PURL: c.PURL, Hashes: c.Hashes}
+		if c.PURLBasis != "" {
+			item.Properties = append(item.Properties, property{Name: "ravel:purlBasis", Value: c.PURLBasis})
+		}
 		if len(c.Patches) > 0 {
 			// The lockfile integrity is for the unmodified tarball, not the
 			// package tree after the project patch has been applied.

@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 )
@@ -73,7 +75,7 @@ func CollectAssets(file, project string) (model.Document, error) {
 			}
 			ref := "nuget:" + common.ID(target+"|"+strings.ToLower(key))
 			ev := common.Evidence(file, "nuget-assets", "/targets/"+escapePointer(target)+"/"+escapePointer(key), data)
-			component := model.Component{ID: ref, Kind: "package", Name: name, Version: version, Platform: target, Evidence: []model.Evidence{ev}}
+			component := model.Component{ID: ref, Kind: "package", Name: name, Version: version, Platform: target, PURL: packageurl.NewPackageURL("nuget", "", name, version, nil, "").ToString(), PURLBasis: "ecosystem_inferred", Evidence: []model.Evidence{ev}}
 			if lib, ok := assets.Libraries[key]; ok {
 				hash := lib.SHA512
 				if hash != "" && !strings.HasPrefix(hash, "sha512-") {

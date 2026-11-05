@@ -208,6 +208,9 @@ func addPackage(doc *model.Document, file string, data []byte, documentIndex int
 	component := model.Component{ID: ref, Kind: "package", Name: name, Version: version, Platform: platform, Hashes: common.Integrity(pkg.Resolution.Integrity), Evidence: []model.Evidence{ev}}
 	if common.DefaultNpmRegistry(pkg.Resolution.Tarball) {
 		component.PURL = common.NpmPURL(name, version)
+	} else if pkg.Resolution.Tarball == "" {
+		component.PURL = common.NpmPURL(name, version)
+		component.PURLBasis = "ecosystem_inferred"
 	}
 	doc.Components = append(doc.Components, component)
 	condition := ""

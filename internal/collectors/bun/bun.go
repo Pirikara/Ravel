@@ -122,6 +122,9 @@ func Collect(file, project string) (model.Document, error) {
 		component := model.Component{ID: ref, Kind: "package", Name: name, Version: version, Evidence: []model.Evidence{ev}, Hashes: common.Integrity(integrity)}
 		if version != "" && common.DefaultNpmRegistry(source) {
 			component.PURL = common.NpmPURL(name, version)
+		} else if version != "" && source == "" {
+			component.PURL = common.NpmPURL(name, version)
+			component.PURLBasis = "ecosystem_inferred"
 		}
 		if meta.OS != "" || meta.CPU != "" {
 			component.Platform = strings.Trim(strings.Join([]string{meta.OS, meta.CPU}, "/"), "/")

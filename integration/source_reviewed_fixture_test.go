@@ -30,7 +30,8 @@ type sourceReviewedCorpus struct {
 			Condition     string `json:"condition"`
 			SourceSnippet string `json:"sourceSnippet"`
 		} `json:"edges"`
-		UnknownPURL []string `json:"unknownPURL"`
+		UnknownPURL  []string `json:"unknownPURL"`
+		InferredPURL []string `json:"inferredPURL"`
 	} `json:"cases"`
 }
 
@@ -137,6 +138,17 @@ func TestSourceReviewedFixtureClaims(t *testing.T) {
 				component, found := components[key]
 				if !found || component.PURL != "" {
 					t.Fatalf("unverified origin invented for %q: %#v", key, component)
+				}
+			}
+			for _, key := range tc.InferredPURL {
+				component, found := components[key]
+				if !found || component.PURL == "" || component.PURLBasis != "ecosystem_inferred" {
+					t.Fatalf("inferred ecosystem identity missing for %q: %#v", key, component)
+				}
+				for _, origin := range doc.Origins {
+					if origin.Occurrence == component.ID && origin.Kind == "registry_identity" {
+						t.Fatalf("inferred package identity claimed a registry origin for %q", key)
+					}
 				}
 			}
 			if tc.GraphState != "" && doc.Coverage.GraphState != tc.GraphState {

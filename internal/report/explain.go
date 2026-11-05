@@ -64,6 +64,9 @@ func Text(doc model.Document, explanation Explanation) string {
 	}
 	if component.PURL != "" {
 		lines = append(lines, "purl: "+component.PURL)
+		if component.PURLBasis != "" {
+			lines = append(lines, "purl basis: "+component.PURLBasis)
+		}
 	}
 	for _, patch := range component.Patches {
 		lines = append(lines, fmt.Sprintf("patch: %s [%s]", patch.Path, patch.Status))

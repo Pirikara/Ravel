@@ -118,6 +118,12 @@ func SPDX23(doc model.Document) ([]byte, error) {
 		if c.Context != "" {
 			item.Comment = "Ravel context: " + c.Context
 		}
+		if c.PURLBasis != "" {
+			if item.Comment != "" {
+				item.Comment += "; "
+			}
+			item.Comment += "Ravel PURL basis: " + c.PURLBasis + " (registry origin unverified)"
+		}
 		if len(c.Patches) > 0 {
 			for _, hash := range c.Hashes {
 				if item.Comment != "" {
