@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from urllib.parse import unquote
 
 
 IMAGES = (
@@ -21,6 +22,8 @@ IMAGES = (
     ("python", "python:3.13-slim"),
     ("ruby", "ruby:3.3.10-slim"),
     ("conda", "continuumio/miniconda3:latest"),
+    ("node", "node:24-bookworm-slim"),
+    ("phpmyadmin", "phpmyadmin:latest"),
 )
 
 
@@ -95,6 +98,37 @@ def references(label, image):
         )
         explicit = in_image(image, "conda", "list", "--explicit")
         result["conda_urls"] = Counter(line for line in explicit.splitlines() if line.startswith("https://"))
+    if label == "node":
+        tree = json.loads(in_image(image, "npm", "ls", "--global", "--all", "--json"))
+        def installed_coordinates(node):
+            for name, package in node.get("dependencies", {}).items():
+                if "version" in package:
+                    yield name, package["version"]
+                yield from installed_coordinates(package)
+        # npm ls repeats a physical package when multiple dependencies reach it.
+        result["npm"] = Counter(set(installed_coordinates(tree)))
+        paths = in_image(image, "npm", "ls", "--global", "--all", "--parseable")
+        result["npm_paths"] = Counter(
+            line.lstrip("/") for line in paths.splitlines()
+            if line.startswith("/usr/local/lib/node_modules/")
+        )
+        result["runtime"] = Counter({("node", in_image(image, "node", "--version").removeprefix("v")): 1})
+    if label == "phpmyadmin":
+        records = json.loads(in_image(
+            image, "php", "-r",
+            'require "/var/www/html/vendor/autoload.php"; echo json_encode(Composer\\InstalledVersions::getAllRawData(), JSON_UNESCAPED_SLASHES);',
+        ))
+        # Composer can register the same installed.php twice. Virtual provides
+        # have no pretty_version, and the root application is not a dependency.
+        result["composer"] = Counter({
+            (name, package["pretty_version"])
+            for record in records for name, package in record["versions"].items()
+            if "pretty_version" in package and name != record["root"]["name"]
+        })
+        version = re.match(r"PHP ([^ ]+)", in_image(image, "php", "--version"))
+        if not version:
+            raise ValueError("PHP did not report a version")
+        result["runtime"] = Counter({("php-cli", version.group(1)): 1})
     return result
 
 
@@ -122,9 +156,16 @@ def ravel_inventory(components, scope):
         "vendor": {"pip-vendor"},
         "gem": {"ruby-installed-gemspec"},
         "conda": {"conda-meta"},
-        "runtime": {"redis-runtime-elf", "python-runtime-elf", "ruby-runtime-elf"},
+        "npm": {"node-package-json"},
+        "npm_paths": {"node-package-json"},
+        "composer": {"composer-installed"},
+        "runtime": {"redis-runtime-elf", "python-runtime-elf", "ruby-runtime-elf", "node-runtime-elf", "php-cli-elf"},
     }[scope]
     selected = [c for c in components if any(e.get("collector") in collectors for e in c.get("evidence", []))]
+    if scope in ("npm", "npm_paths"):
+        selected = [c for c in selected if c.get("context", "").startswith("location=usr/local/lib/node_modules/")]
+        if scope == "npm_paths":
+            return Counter(c["context"].split("location=", 1)[1].split(";", 1)[0] for c in selected)
     if scope == "apk":
         return Counter(c["name"] + "-" + c["version"] for c in selected)
     if scope in ("pypi", "vendor"):
@@ -158,6 +199,14 @@ def saved_tool_inventory(path, scope, reference):
         return available & reference
     if scope in ("gem", "conda"):
         selected = [c for c in components if c.get("purl", "").startswith("pkg:" + scope + "/")]
+        return Counter((c["name"], c["version"]) for c in selected)
+    if scope == "npm":
+        selected = [c for c in components if c.get("purl", "").startswith("pkg:npm/")]
+        # Some CycloneDX writers put the npm scope only in the PURL.
+        return Counter({(unquote(c["purl"][8:].split("?", 1)[0].rsplit("@", 1)[0]), c["version"])
+                        for c in selected})
+    if scope == "composer":
+        selected = [c for c in components if c.get("purl", "").startswith("pkg:composer/")]
         return Counter((c["name"], c["version"]) for c in selected)
     if scope == "runtime":
         available = Counter((c.get("name", ""), c.get("version", "")) for c in components
@@ -209,7 +258,7 @@ def main():
                     bool(c.get("purl")) for c in components
                     if any(e.get("collector") in evidence_collectors for e in c.get("evidence", []))
                 )
-            if args.compare_saved:
+            if args.compare_saved and scope != "npm_paths":
                 for tool in ("syft", "trivy"):
                     scores[tool] = count(expected, saved_tool_inventory(
                         Path(args.saved_dir) / f"{label}-{tool}.cdx.json", scope, expected))
