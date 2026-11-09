@@ -16,7 +16,7 @@ require (
 	github.com/ulikunitz/xz v0.5.17
 	golang.org/x/mod v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.61.1
 )
 
 require (
