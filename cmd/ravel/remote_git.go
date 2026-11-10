@@ -125,7 +125,7 @@ func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 	if options.Manager != "auto" {
 		args = append(args, "--manager", options.Manager)
 	}
-	if code := runScan(args); code != 0 {
+	if code := runScanWithProgress(args, false); code != 0 {
 		return code
 	}
 	doc, err := readRavelDocument(intermediate)

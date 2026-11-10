@@ -56,7 +56,7 @@ var staticManagers = []string{
 
 // runScanAll scans static manager inputs at the directory root, and nested
 // subprojects when requested. It does not execute package managers.
-func runScanAll(path, format, output, report string, strict, recursive, includeTestVendor, includeBinaries, includeArchives bool) int {
+func runScanAll(path, format, output, report string, strict, recursive, includeTestVendor, includeBinaries, includeArchives, progress bool) int {
 	info, err := os.Stat(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
@@ -324,7 +324,9 @@ func runScanAll(path, format, output, report string, strict, recursive, includeT
 			return 1
 		}
 	}
-	fmt.Fprintf(os.Stderr, "ravel: %d inputs, %d packages, %d runtime requirements, graph=%s, origin=%s\n", len(inputs), doc.Coverage.Packages, len(doc.Runtimes), doc.Coverage.GraphState, doc.Coverage.OriginState)
+	if progress {
+		fmt.Fprintf(os.Stderr, "ravel: %d inputs, %d packages, %d runtime requirements, graph=%s, origin=%s\n", len(inputs), doc.Coverage.Packages, len(doc.Runtimes), doc.Coverage.GraphState, doc.Coverage.OriginState)
+	}
 	if strict && len(doc.Coverage.Issues) > 0 {
 		return 3
 	}

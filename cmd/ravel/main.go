@@ -300,6 +300,10 @@ func runExplain(args []string) int {
 }
 
 func runScan(args []string) int {
+	return runScanWithProgress(args, true)
+}
+
+func runScanWithProgress(args []string, progress bool) int {
 	path := "."
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		path = args[0]
@@ -378,7 +382,7 @@ func runScan(args []string) int {
 			fmt.Fprintln(os.Stderr, "ravel: --all is static and cannot be combined with --manager, --resolve, --allow-exec, --configuration, --platform, --image-source, or --network allow")
 			return 2
 		}
-		return runScanAll(path, *format, *output, *report, *strict, *recursive, *includeTestVendor, *includeBinaries, *includeArchives)
+		return runScanAll(path, *format, *output, *report, *strict, *recursive, *includeTestVendor, *includeBinaries, *includeArchives, progress)
 	}
 	if *includeTestVendor {
 		fmt.Fprintln(os.Stderr, "ravel: --include-test-and-vendor requires --all --recursive")
@@ -448,7 +452,7 @@ func runScan(args []string) int {
 	lock, selected, err := selectLock(path, info.IsDir(), *manager)
 	if err != nil {
 		if info.IsDir() && *manager == "auto" && err.Error() == "no supported lockfile found" && len(runtimeDeclarations.Requirements) > 0 {
-			return runScanAll(path, *format, *output, *report, *strict, false, false, false, false)
+			return runScanAll(path, *format, *output, *report, *strict, false, false, false, false, progress)
 		}
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 2
@@ -603,10 +607,14 @@ func runScan(args []string) int {
 	if repositoryManager(selected) {
 		attachLocalGit(&doc, path)
 	}
-	return writeScanResult(doc, *format, *output, *report, *strict)
+	return writeScanResultWithProgress(doc, *format, *output, *report, *strict, progress)
 }
 
 func writeScanResult(doc model.Document, format, output, reportPath string, strict bool) int {
+	return writeScanResultWithProgress(doc, format, output, reportPath, strict, true)
+}
+
+func writeScanResultWithProgress(doc model.Document, format, output, reportPath string, strict, progress bool) int {
 	var data []byte
 	var err error
 	switch format {
@@ -639,7 +647,9 @@ func writeScanResult(doc model.Document, format, output, reportPath string, stri
 			return 1
 		}
 	}
-	fmt.Fprintf(os.Stderr, "ravel: %d packages, %d edges, %d runtime requirements, graph=%s, origin=%s\n", doc.Coverage.Packages, doc.Coverage.Edges, len(doc.Runtimes), doc.Coverage.GraphState, doc.Coverage.OriginState)
+	if progress {
+		fmt.Fprintf(os.Stderr, "ravel: %d packages, %d edges, %d runtime requirements, graph=%s, origin=%s\n", doc.Coverage.Packages, doc.Coverage.Edges, len(doc.Runtimes), doc.Coverage.GraphState, doc.Coverage.OriginState)
+	}
 	if strict && len(doc.Coverage.Issues) > 0 {
 		return 3
 	}
