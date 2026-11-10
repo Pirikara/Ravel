@@ -109,7 +109,29 @@ func TestRemoteGitScanAtRevision(t *testing.T) {
 	for _, ref := range []string{"refs/heads/main", "refs/tags/v1", commit} {
 		t.Run(ref, func(t *testing.T) {
 			output := filepath.Join(t.TempDir(), "result.json")
-			if code := runScan([]string{remote, "--git-ref", ref, "--all", "--recursive", "--format", "ravel-json", "--output", output}); code != 0 {
+			progressPath := filepath.Join(t.TempDir(), "progress.txt")
+			progressFile, err := os.Create(progressPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			originalStderr := os.Stderr
+			var code int
+			func() {
+				os.Stderr = progressFile
+				defer func() { os.Stderr = originalStderr }()
+				code = runScan([]string{remote, "--git-ref", ref, "--all", "--recursive", "--format", "ravel-json", "--output", output})
+			}()
+			if err := progressFile.Close(); err != nil {
+				t.Fatal(err)
+			}
+			progress, err := os.ReadFile(progressPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Count(string(progress), "graph=") != 1 {
+				t.Fatalf("remote scan emitted duplicate progress: %s", progress)
+			}
+			if code != 0 {
 				t.Fatalf("remote scan exit=%d", code)
 			}
 			data, err := os.ReadFile(output)
