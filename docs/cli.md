@@ -45,6 +45,9 @@ ravel scan https://github.com/OWNER/PROJECT.git \
 ravel scan ssh://git@github.com/OWNER/PRIVATE.git \
   --git-ref refs/heads/main --network allow --all --recursive \
   --output private.cdx.json
+ravel scan https://github.com/OWNER/PROJECT.git \
+  --git-ref refs/heads/main --network allow --all --recursive \
+  --git-submodules --format ravel-json --output with-submodules.ravel.json
 ```
 
 Short branch or tag names are accepted when unambiguous; use `refs/heads/NAME`
@@ -59,10 +62,18 @@ Interactive Git prompts are disabled. `file://` URLs work without network access
 Ravel fetches one shallow revision into a temporary checkout and removes it
 after the scan. Each Git command has a three-minute timeout; the checkout is
 limited to 512 MiB and 100,000 filesystem entries. Remote scans are static:
-package-manager execution and `--resolve` are unavailable. Submodules are not
-fetched; a `.gitmodules` file produces a coverage issue. An escaping symlink
-causes the scan to fail. Use a local checkout when these limits or submodule
-policy do not fit. `--all --recursive` scans supported static inputs in nested
+package-manager execution and `--resolve` are unavailable. Submodules are
+skipped by default and a `.gitmodules` file produces a coverage issue.
+`--git-submodules` requires `--all --recursive` and fetches up to 32 first-level
+submodules at the exact commits recorded by the parent. Their URLs must use the
+same transport, host, and SSH username as the parent; relative URLs are resolved
+against the parent repository. Local file submodules must stay in the parent
+repository's directory. Git's tree listing is capped at 32 MiB for this check;
+the checkout's 512 MiB and 100,000-entry limits include all fetched children.
+Nested submodules remain skipped and produce a coverage
+issue. Each fetched submodule gets its own Git provenance entry and stable source
+paths. An escaping symlink causes the scan to fail. Use a local checkout when
+these limits or URL rules do not fit. `--all --recursive` scans supported static inputs in nested
 projects; manifests without static dependency data are reported as skipped.
 
 Ravel JSON records the resolved commit, requested URL/ref, and a clean worktree
