@@ -38,7 +38,7 @@ func TestOCIDotnetRIDSpecificAssemblyEvidence(t *testing.T) {
 			t.Fatalf("RID-specific .NET scan failed: code=%d output=%s coverage=%#v", code, output, doc.Coverage)
 		}
 		component := dotnetComponent(t, doc, "Acme.RidRuntime")
-		if component.Version != "2.3.4" || len(component.Evidence) != 3 || component.PURL != "" {
+		if component.Version != "2.3.4" || len(component.Evidence) != 3 || component.PURL != "pkg:nuget/Acme.RidRuntime@2.3.4" || component.PURLBasis != "ecosystem_inferred" {
 			t.Fatalf("RID-specific package identity or evidence incorrect: %#v", component)
 		}
 		if app := dotnetComponent(t, doc, "app"); len(app.Evidence) != 2 || app.Evidence[1].Method != "managed-pe-runtime-asset-candidate" {

@@ -61,8 +61,11 @@ func TestOCIDotnetManagedAssemblyEvidence(t *testing.T) {
 			data                []byte
 		}{{"Acme.Runtime", "Acme.Runtime.dll", packageDLL}, {"app", "app.dll", appDLL}} {
 			component := dotnetComponent(t, doc, tc.component)
-			if len(component.Evidence) != 2 || component.Evidence[0].Collector != "nuget-deps" || component.Evidence[1].Collector != "dotnet-managed-assembly" || component.PURL != "" {
+			if len(component.Evidence) != 2 || component.Evidence[0].Collector != "nuget-deps" || component.Evidence[1].Collector != "dotnet-managed-assembly" {
 				t.Fatalf(".NET assembly candidate evidence incorrect: %#v", component)
+			}
+			if tc.component == "Acme.Runtime" && (component.PURL != "pkg:nuget/Acme.Runtime@1.2.3" || component.PURLBasis != "ecosystem_inferred") || tc.component == "app" && component.PURL != "" {
+				t.Fatalf(".NET assembly package identity incorrect: %#v", component)
 			}
 			hash := sha256.Sum256(tc.data)
 			evidence := component.Evidence[1]

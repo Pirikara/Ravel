@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import tarfile
 import tempfile
 from urllib.parse import unquote
 
@@ -24,7 +25,14 @@ IMAGES = (
     ("conda", "continuumio/miniconda3:latest"),
     ("node", "node:24-bookworm-slim"),
     ("phpmyadmin", "phpmyadmin:latest"),
+    ("dotnetmonitor", "mcr.microsoft.com/dotnet/monitor:10.0"),
 )
+
+DOTNET_APP_MANIFESTS = {
+    "app/dotnet-monitor.deps.json": "app",
+    "app/extensions/AzureBlobStorage/dotnet-monitor-egress-azureblobstorage.deps.json": "app/extensions/AzureBlobStorage",
+    "app/extensions/S3Storage/dotnet-monitor-egress-s3storage.deps.json": "app/extensions/S3Storage",
+}
 
 
 def run(command):
@@ -35,6 +43,36 @@ def run(command):
 def in_image(image, entrypoint, *args):
     return run(["docker", "run", "--rm", "--network", "none", "--memory", "512m", "--cpus", "2",
                 "--entrypoint", entrypoint, image, *args])
+
+
+def dotnet_app_snapshot(image):
+    """Read a distroless image's app files without loading its tar into memory."""
+    container = run(["docker", "create", "--network", "none", image])
+    try:
+        process = subprocess.Popen(["docker", "cp", container + ":/app", "-"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        files, manifests = set(), {}
+        try:
+            with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+                for member in archive:
+                    if not member.isfile():
+                        continue
+                    files.add(member.name)
+                    if member.name in DOTNET_APP_MANIFESTS:
+                        manifests[member.name] = json.load(archive.extractfile(member))
+            process.stdout.close()
+            error = process.stderr.read().decode(errors="replace")
+            if process.wait(timeout=180) != 0:
+                raise RuntimeError("docker cp failed: " + error)
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
+        if set(manifests) != set(DOTNET_APP_MANIFESTS):
+            raise ValueError("dotnet-monitor image is missing an expected app deps manifest")
+        return files, manifests
+    finally:
+        run(["docker", "rm", "-f", container])
 
 
 def count(gold, actual):
@@ -129,6 +167,31 @@ def references(label, image):
         if not version:
             raise ValueError("PHP did not report a version")
         result["runtime"] = Counter({("php-cli", version.group(1)): 1})
+    if label == "dotnetmonitor":
+        files, manifests = dotnet_app_snapshot(image)
+        packages, assets_verified = [], 0
+        for manifest_path, base in DOTNET_APP_MANIFESTS.items():
+            manifest = manifests[manifest_path]
+            selected = manifest["targets"][manifest["runtimeTarget"]["name"]]
+            for identity, entry in selected.items():
+                if manifest["libraries"][identity]["type"] != "package":
+                    continue
+                name, version = identity.rsplit("/", 1)
+                for field in ("runtime", "resources", "native", "runtimeTargets"):
+                    for asset in entry.get(field, {}):
+                        asset_path = Path(asset)
+                        if asset_path.name == "_._":
+                            continue
+                        candidates = {f"{base}/{asset_path.name}", f"{base}/{asset}"}
+                        if field == "resources":
+                            candidates.add(f"{base}/{asset_path.parent.name}/{asset_path.name}")
+                        if not candidates & files:
+                            raise ValueError(f"runtime asset missing for {identity}: {asset}")
+                        assets_verified += 1
+                packages.append((manifest_path, name.casefold(), version))
+        result["nuget"] = Counter(packages)
+        result["nuget_distinct"] = Counter({(name, version) for _, name, version in packages})
+        result["nuget_assets_verified"] = assets_verified
     return result
 
 
@@ -159,6 +222,8 @@ def ravel_inventory(components, scope):
         "npm": {"node-package-json"},
         "npm_paths": {"node-package-json"},
         "composer": {"composer-installed"},
+        "nuget": {"nuget-deps"},
+        "nuget_distinct": {"nuget-deps"},
         "runtime": {"redis-runtime-elf", "python-runtime-elf", "ruby-runtime-elf", "node-runtime-elf", "php-cli-elf"},
     }[scope]
     selected = [c for c in components if any(e.get("collector") in collectors for e in c.get("evidence", []))]
@@ -166,6 +231,13 @@ def ravel_inventory(components, scope):
         selected = [c for c in selected if c.get("context", "").startswith("location=usr/local/lib/node_modules/")]
         if scope == "npm_paths":
             return Counter(c["context"].split("location=", 1)[1].split(";", 1)[0] for c in selected)
+    if scope in ("nuget", "nuget_distinct"):
+        selected = [c for c in selected if c["kind"] == "package" and
+                    any(c.get("context", "").startswith("manifest=" + path + ";") for path in DOTNET_APP_MANIFESTS)]
+        if scope == "nuget":
+            return Counter((c["context"].split(";", 1)[0].removeprefix("manifest="),
+                            c["name"].casefold(), c["version"]) for c in selected)
+        return Counter({(c["name"].casefold(), c["version"]) for c in selected})
     if scope == "apk":
         return Counter(c["name"] + "-" + c["version"] for c in selected)
     if scope in ("pypi", "vendor"):
@@ -208,6 +280,9 @@ def saved_tool_inventory(path, scope, reference):
     if scope == "composer":
         selected = [c for c in components if c.get("purl", "").startswith("pkg:composer/")]
         return Counter((c["name"], c["version"]) for c in selected)
+    if scope == "nuget_distinct":
+        selected = [c for c in components if c.get("purl", "").startswith("pkg:nuget/")]
+        return Counter({(c["name"].casefold(), c["version"]) for c in selected})
     if scope == "runtime":
         available = Counter((c.get("name", ""), c.get("version", "")) for c in components
                             if c.get("type") not in ("file", "operating-system"))
@@ -241,7 +316,7 @@ def main():
         components = document["components"]
         checks = {}
         for scope, expected in gold.items():
-            if scope == "conda_builds":
+            if scope in ("conda_builds", "nuget_assets_verified"):
                 continue
             if scope == "conda_urls":
                 checks[scope] = {"ravel": count(expected, ravel_conda_urls(document))}
@@ -252,13 +327,23 @@ def main():
                     (gold["conda_builds"] & ravel_conda_builds(components)).values()
                 )
                 scores["ravel"]["build_expected"] = sum(gold["conda_builds"].values())
+            if scope == "nuget":
+                scores["ravel"]["runtime_assets_verified"] = gold["nuget_assets_verified"]
+                scores["ravel"]["purl_claims"] = sum(
+                    c.get("purlBasis") == "ecosystem_inferred" and
+                    c.get("purl", "").startswith("pkg:nuget/") and
+                    unquote(c["purl"][10:].rsplit("@", 1)[0]).casefold() == c["name"].casefold() and
+                    c["purl"].rsplit("@", 1)[-1] == c["version"]
+                    for c in components if c["kind"] == "package" and
+                    any(c.get("context", "").startswith("manifest=" + path + ";") for path in DOTNET_APP_MANIFESTS)
+                )
             if scope in ("apk", "deb"):
                 evidence_collectors = {"apk-installed", "apk-installed-adb"} if scope == "apk" else {"dpkg-status"}
                 scores["ravel"]["purl_claims"] = sum(
                     bool(c.get("purl")) for c in components
                     if any(e.get("collector") in evidence_collectors for e in c.get("evidence", []))
                 )
-            if args.compare_saved and scope != "npm_paths":
+            if args.compare_saved and scope not in ("npm_paths", "nuget"):
                 for tool in ("syft", "trivy"):
                     scores[tool] = count(expected, saved_tool_inventory(
                         Path(args.saved_dir) / f"{label}-{tool}.cdx.json", scope, expected))
@@ -274,7 +359,9 @@ def main():
     print(json.dumps(results, ensure_ascii=False, indent=2))
     if any(item["checks"][scope]["ravel"]["missing"] or item["checks"][scope]["ravel"]["extra"] or
            (scope == "conda" and item["checks"][scope]["ravel"]["build_matched"] !=
-            item["checks"][scope]["ravel"]["build_expected"])
+            item["checks"][scope]["ravel"]["build_expected"]) or
+           (scope == "nuget" and item["checks"][scope]["ravel"]["purl_claims"] !=
+            item["checks"][scope]["ravel"]["expected"])
            for item in results for scope in item["checks"]):
         raise SystemExit(1)
 
