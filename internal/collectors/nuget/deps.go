@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 )
@@ -164,6 +166,11 @@ func CollectInstalledDeps(data []byte, source, project, manifestPath string) (mo
 		itemEvidence.Pointer = "/targets/" + escapePointer(target) + "/" + escapePointer(key)
 		component := model.Component{ID: ref, Kind: kind, Name: name, Version: version, Platform: target, Context: "manifest=" + manifestPath, Evidence: []model.Evidence{itemEvidence}}
 		if kind == "package" {
+			if library.Type == "package" {
+				// The deps type identifies NuGet, but it does not identify a feed.
+				component.PURL = packageurl.NewPackageURL("nuget", "", name, version, nil, "").ToString()
+				component.PURLBasis = "ecosystem_inferred"
+			}
 			if library.SHA512 != "" {
 				component.Hashes = common.Integrity(library.SHA512)
 				if len(component.Hashes) == 0 {

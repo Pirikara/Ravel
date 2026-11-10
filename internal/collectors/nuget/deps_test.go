@@ -33,6 +33,9 @@ func TestDepsRuntimeTargetSelection(t *testing.T) {
 		if component.Name == "Build.Only" {
 			t.Fatal("compile-only target entered runtime SBOM")
 		}
+		if component.Name == "Runtime.Pack" && component.PURL != "" {
+			t.Fatalf("runtimepack should not claim a NuGet identity: %#v", component)
+		}
 	}
 	root := false
 	dependency := false

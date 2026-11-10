@@ -29,8 +29,11 @@ func TestOCIDotnetDepsGeneratedRuntimeGraph(t *testing.T) {
 	byName := map[string]string{}
 	for _, component := range doc.Components {
 		byName[component.ID] = component.Name
-		if component.Context != "manifest="+manifestPath+";image=linux/amd64" || component.Platform != ".NETCoreApp,Version=v10.0" || component.Evidence[0].Collector != "nuget-deps" || !strings.Contains(component.Evidence[0].InputPath, "!/"+manifestPath) || component.PURL != "" {
+		if component.Context != "manifest="+manifestPath+";image=linux/amd64" || component.Platform != ".NETCoreApp,Version=v10.0" || component.Evidence[0].Collector != "nuget-deps" || !strings.Contains(component.Evidence[0].InputPath, "!/"+manifestPath) {
 			t.Fatalf(".NET manifest identity or evidence incorrect: %#v", component)
+		}
+		if component.Kind == "package" && (component.PURL == "" || component.PURLBasis != "ecosystem_inferred") || component.Kind == "application" && component.PURL != "" {
+			t.Fatalf(".NET package PURL inference incorrect: %#v", component)
 		}
 		if strings.HasPrefix(component.Name, "Microsoft.Extensions.") && (component.Kind != "package" || len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-512") {
 			t.Fatalf("NuGet package hash or kind incorrect: %#v", component)
