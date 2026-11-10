@@ -100,6 +100,26 @@ func SPDX23(doc model.Document) ([]byte, error) {
 			root.Comment += " (policy " + runtime.Policy + ")"
 		}
 	}
+	for _, provenance := range doc.Git {
+		if root.Comment != "" {
+			root.Comment += "; "
+		}
+		root.Comment += "Ravel Git commit: " + provenance.Commit
+		if provenance.Dirty {
+			root.Comment += " (dirty worktree)"
+		} else {
+			root.Comment += " (clean worktree)"
+		}
+		if provenance.Scope != "" {
+			root.Comment += " scope=" + strconv.Quote(provenance.Scope)
+		}
+		if provenance.RequestedURL != "" {
+			root.Comment += " requested=" + strconv.Quote(provenance.RequestedURL)
+		}
+		if provenance.RequestedRef != "" {
+			root.Comment += " ref=" + strconv.Quote(provenance.RequestedRef)
+		}
+	}
 	out.Packages = append(out.Packages, root)
 	ids := map[string]string{"root": root.ID}
 	for _, c := range doc.Components {

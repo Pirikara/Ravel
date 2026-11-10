@@ -2,7 +2,7 @@
 
 The examples below assume `ravel` is on your `PATH`; see [installation](install.md).
 
-`scan` accepts a supported file, project directory, or container image reference. CycloneDX JSON goes to
+`scan` accepts a supported file, project directory, Git repository URL, or container image reference. CycloneDX JSON goes to
 stdout unless `--output` is set; progress and errors go to stderr. Run `ravel`
 without arguments for command syntax.
 
@@ -33,22 +33,38 @@ ravel scan ./project/poetry.lock --output poetry.cdx.json --report poetry.covera
 ravel scan ./project --output project.cdx.json --report project.coverage.json
 ```
 
-For a remote Git repository, clone or check out the revision you want, then
-scan that local checkout:
+For a remote Git repository, specify a branch, tag, or full commit explicitly:
 
 ```sh
-git clone https://github.com/OWNER/PROJECT.git project
-git -C project checkout REF
-ravel scan project --all --recursive --output project.cdx.json --report project.coverage.json
+ravel scan https://github.com/OWNER/PROJECT.git \
+  --git-ref refs/heads/main --network allow --all --recursive \
+  --output project.cdx.json --report project.coverage.json
+ravel scan https://github.com/OWNER/PROJECT.git \
+  --git-ref 0123456789abcdef0123456789abcdef01234567 --network allow \
+  --all --recursive --format ravel-json --output project.ravel.json
 ```
 
-Replace `REF` with a commit or tag for a repeatable scan. Use
-`git clone --recurse-submodules` when the inputs you need are in submodules.
-`--all --recursive` scans supported static inputs in nested projects; manifests
-without static dependency data are reported as skipped. Direct Git URLs
-and remote repository archives are not scan inputs. Fetch them locally first.
-Ravel does not automatically record the scanned checkout's Git commit ID, so
-keep it alongside the generated result.
+Short branch or tag names are accepted when unambiguous; use `refs/heads/NAME`
+or `refs/tags/NAME` to choose explicitly. HTTPS scans require `--network allow`.
+Git's configured credential helper can authenticate private repositories; the
+URL cannot contain credentials, a query, or a fragment, and interactive Git
+prompts are disabled. `file://` URLs also work without network access.
+Ravel fetches one shallow revision into a temporary checkout and removes it
+after the scan. Each Git command has a three-minute timeout; the checkout is
+limited to 512 MiB and 100,000 filesystem entries. Remote scans are static:
+package-manager execution and `--resolve` are unavailable. Submodules are not
+fetched; a `.gitmodules` file produces a coverage issue. An escaping symlink
+causes the scan to fail. Use a local checkout when these limits or submodule
+policy do not fit. `--all --recursive` scans supported static inputs in nested
+projects; manifests without static dependency data are reported as skipped.
+
+Ravel JSON records the resolved commit, requested URL/ref, and a clean worktree
+state. Its source and evidence paths use the stable URL and commit instead of
+the temporary directory. Local checkout scans record the current commit,
+whether the worktree is dirty, and the scanned path within that worktree;
+single-file and nested-repository scans use their own Git root. Exported source
+trees have no Git claim. CycloneDX carries `ravel:gitProvenance` on the root
+component, and SPDX adds the commit and worktree state to its root comment.
 
 ## Scan workflows
 

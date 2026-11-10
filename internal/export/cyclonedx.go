@@ -60,6 +60,13 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 		}
 		root.Properties = append(root.Properties, property{Name: "ravel:runtimeRequirement", Value: string(value)})
 	}
+	for _, provenance := range doc.Git {
+		value, err := json.Marshal(provenance)
+		if err != nil {
+			return nil, err
+		}
+		root.Properties = append(root.Properties, property{Name: "ravel:gitProvenance", Value: string(value)})
+	}
 	out := bom{
 		BomFormat: "CycloneDX", SpecVersion: "1.7", Version: 1,
 		Metadata:   map[string]any{"component": root},

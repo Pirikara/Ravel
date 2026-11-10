@@ -85,6 +85,16 @@ type ProjectIdentity struct {
 	Evidence Evidence `json:"evidence"`
 }
 
+// GitProvenance describes the checked-out revision around a repository scan.
+// RequestedURL is the input location for a remote scan, not a package origin.
+type GitProvenance struct {
+	Commit       string `json:"commit"`
+	Dirty        bool   `json:"dirty"`
+	Scope        string `json:"scope,omitempty"`
+	RequestedURL string `json:"requestedUrl,omitempty"`
+	RequestedRef string `json:"requestedRef,omitempty"`
+}
+
 type Issue struct {
 	Code  string `json:"code"`
 	Name  string `json:"name,omitempty"`
@@ -125,5 +135,6 @@ type Document struct {
 	Origins       []Origin             `json:"origins"`
 	Development   []Development        `json:"development"`
 	Runtimes      []RuntimeRequirement `json:"runtimes,omitempty"`
+	Git           []GitProvenance      `json:"git,omitempty"`
 	Coverage      Coverage             `json:"coverage"`
 }
