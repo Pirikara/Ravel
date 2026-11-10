@@ -81,7 +81,7 @@ func buildVersion() string {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: ravel version")
-	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG|GIT_URL [--git-ref REF --network allow] [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries] [--include-archives]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
+	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG|GIT_URL [--git-ref REF --network allow] [--git-submodules] [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries] [--include-archives]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
 	fmt.Fprintln(os.Stderr, "       ravel explain PACKAGE --input ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel graph --input ravel.json [--format html|dot|text] [--output FILE] [--focus PACKAGE] [--direction dependencies|dependents] [--depth N]")
 	fmt.Fprintln(os.Stderr, "       ravel diff BEFORE.ravel.json AFTER.ravel.json [--format text|json]")
@@ -328,6 +328,7 @@ func runScanWithProgress(args []string, progress bool) int {
 	platform := fs.String("platform", "", "OCI image platform: os/architecture[/variant]")
 	imageSource := fs.String("image-source", "registry", "image reference source: registry or docker")
 	gitRef := fs.String("git-ref", "", "Git branch, tag, qualified ref, or full commit for a remote URL")
+	gitSubmodules := fs.Bool("git-submodules", false, "fetch pinned first-level submodules in a remote Git scan")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -346,9 +347,10 @@ func runScanWithProgress(args []string, progress bool) int {
 		fmt.Fprintln(os.Stderr, "ravel: --image-source must be registry or docker")
 		return 2
 	}
-	if *gitRef != "" || strings.HasPrefix(strings.ToLower(path), "https://") || strings.HasPrefix(strings.ToLower(path), "file://") || strings.HasPrefix(strings.ToLower(path), "ssh://") {
+	if *gitRef != "" || *gitSubmodules || strings.HasPrefix(strings.ToLower(path), "https://") || strings.HasPrefix(strings.ToLower(path), "file://") || strings.HasPrefix(strings.ToLower(path), "ssh://") {
 		return runScanRemoteGit(path, remoteGitOptions{
 			Ref: *gitRef, Network: *network, Manager: *manager, All: *all, Recursive: *recursive,
+			Submodules:        *gitSubmodules,
 			IncludeTestVendor: *includeTestVendor, IncludeBinaries: *includeBinaries, IncludeArchives: *includeArchives,
 			Resolve: *resolve, AllowExec: *allowExec, Configuration: *configuration, Platform: *platform,
 			ImageSource: *imageSource, Format: *format, Output: *output, Report: *report, Strict: *strict,

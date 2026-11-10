@@ -29,12 +29,17 @@ var sshHostName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$`)
 var sshRepositoryPath = regexp.MustCompile(`^/[A-Za-z0-9._~+@/-]{1,999}$`)
 
 type boundedGitOutput struct {
-	data bytes.Buffer
+	data  bytes.Buffer
+	limit int
 }
 
 func (output *boundedGitOutput) Write(part []byte) (int, error) {
-	if output.data.Len()+len(part) > 1<<20 {
-		return 0, errors.New("Git output exceeds 1 MiB")
+	limit := output.limit
+	if limit == 0 {
+		limit = 1 << 20
+	}
+	if output.data.Len()+len(part) > limit {
+		return 0, errors.New("Git output exceeds limit")
 	}
 	return output.data.Write(part)
 }
@@ -43,7 +48,7 @@ type remoteGitOptions struct {
 	Ref, Network, Manager, Configuration, Platform, ImageSource string
 	Format, Output, Report                                      string
 	All, Recursive, IncludeTestVendor, IncludeBinaries          bool
-	IncludeArchives, Resolve, AllowExec, Strict                 bool
+	IncludeArchives, Resolve, AllowExec, Strict, Submodules     bool
 }
 
 func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
@@ -67,6 +72,10 @@ func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 	if !validManager || options.All && options.Manager != "auto" || options.Recursive && !options.All ||
 		(options.IncludeTestVendor || options.IncludeBinaries || options.IncludeArchives) && (!options.All || !options.Recursive) {
 		fmt.Fprintln(os.Stderr, "ravel: invalid remote Git scan manager or discovery options")
+		return 2
+	}
+	if options.Submodules && (!options.All || !options.Recursive) {
+		fmt.Fprintln(os.Stderr, "ravel: --git-submodules requires --all --recursive")
 		return 2
 	}
 	root, err := os.MkdirTemp("", "ravel-git-")
@@ -110,6 +119,14 @@ func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 1
 	}
+	submodules := []gitSubmodule{}
+	if options.Submodules {
+		submodules, err = fetchGitSubmodules(root, checkout, repository)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ravel:", err)
+			return 1
+		}
+	}
 	intermediate := filepath.Join(root, "scan.ravel.json")
 	args := []string{checkout, "--format", "ravel-json", "--output", intermediate}
 	if options.All {
@@ -140,11 +157,23 @@ func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 	}
 	stable := "git+" + rawURL + "@" + commit
 	doc.Project = strings.TrimSuffix(filepath.Base(repository.Path), ".git")
+	for _, submodule := range submodules {
+		rewriteGitPaths(&doc, filepath.Join(checkout, filepath.FromSlash(submodule.Path)), "git+"+submodule.URL+"@"+submodule.Commit)
+	}
 	rewriteGitPaths(&doc, checkout, stable)
 	doc.Git = []model.GitProvenance{{Commit: commit, Dirty: false, Scope: ".", RequestedURL: rawURL, RequestedRef: options.Ref}}
-	if _, err := os.Stat(filepath.Join(checkout, ".gitmodules")); err == nil {
-		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "git_submodules_not_scanned"})
-		doc.Coverage.GraphState = "partial"
+	for _, submodule := range submodules {
+		doc.Git = append(doc.Git, model.GitProvenance{Commit: submodule.Commit, Dirty: false, Scope: submodule.Path, RequestedURL: submodule.URL, RequestedRef: submodule.Commit})
+		if _, err := os.Stat(filepath.Join(checkout, filepath.FromSlash(submodule.Path), ".gitmodules")); err == nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "git_nested_submodules_not_scanned", Scope: submodule.Path})
+			doc.Coverage.GraphState = "partial"
+		}
+	}
+	if !options.Submodules {
+		if _, err := os.Stat(filepath.Join(checkout, ".gitmodules")); err == nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "git_submodules_not_scanned"})
+			doc.Coverage.GraphState = "partial"
+		}
 	}
 	return writeScanResult(doc, options.Format, options.Output, options.Report, options.Strict)
 }
@@ -220,6 +249,10 @@ func remoteGitRef(root, checkout, scheme, ref string) (string, error) {
 }
 
 func remoteGitCommand(root, checkout, scheme string, safeCheckout bool, args ...string) (string, error) {
+	return remoteGitCommandWithLimit(root, checkout, scheme, safeCheckout, 1<<20, args...)
+}
+
+func remoteGitCommandWithLimit(root, checkout, scheme string, safeCheckout bool, outputLimit int, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	gitArgs := append([]string{"-c", "protocol.allow=never", "-c", "protocol." + scheme + ".allow=always", "-C", checkout}, args...)
@@ -231,7 +264,7 @@ func remoteGitCommand(root, checkout, scheme string, safeCheckout bool, args ...
 	if safeCheckout || scheme != "https" {
 		cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
 	}
-	var output boundedGitOutput
+	output := boundedGitOutput{limit: outputLimit}
 	cmd.Stdout = &output
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {

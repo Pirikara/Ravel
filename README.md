@@ -51,6 +51,8 @@ ravel scan ssh://git@github.com/OWNER/PROJECT.git --git-ref refs/heads/main \
 
 The result records the resolved commit. Local checkout scans record their current commit and whether the worktree is dirty. A container image reference such as `image:tag` is pulled from its registry, or from the local Docker daemon with `--image-source docker`. See the [CLI guide](docs/cli.md) for limits and examples.
 
+Use `--git-submodules` with `--all --recursive` to include first-level submodules pinned by the parent repository. Ravel records each submodule's commit and URL separately.
+
 To inspect the evidence behind a finding, save Ravel's native format:
 
 ```sh

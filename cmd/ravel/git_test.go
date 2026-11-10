@@ -286,3 +286,145 @@ func TestRemoteGitRejectsEscapingSymlink(t *testing.T) {
 		t.Fatalf("escaping symlink left an output: %v", err)
 	}
 }
+
+func TestRemoteGitPinnedFirstLevelSubmodule(t *testing.T) {
+	child := t.TempDir()
+	testGit(t, child, "init", "--quiet")
+	if err := os.WriteFile(filepath.Join(child, "go.mod"), []byte("module example.com/child\n\ngo 1.22\n\nrequire example.com/child-dep v1.0.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testGit(t, child, "add", "go.mod")
+	testGit(t, child, "-c", "user.name=Ravel Test", "-c", "user.email=ravel@example.invalid", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "child")
+	childCommit := testGit(t, child, "rev-parse", "HEAD")
+	remotes := t.TempDir()
+	childBare := filepath.Join(remotes, "child.git")
+	if output, err := exec.Command("git", "clone", "--quiet", "--bare", child, childBare).CombinedOutput(); err != nil {
+		t.Fatalf("create child bare repository: %v: %s", err, output)
+	}
+	parent, _ := testGitRepository(t)
+	modules := "[submodule \"deps/child\"]\n    path = deps/child\n    url = ../child.git\n"
+	if err := os.WriteFile(filepath.Join(parent, ".gitmodules"), []byte(modules), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testGit(t, parent, "update-index", "--add", "--cacheinfo", "160000,"+childCommit+",deps/child")
+	testGit(t, parent, "add", ".gitmodules")
+	testGit(t, parent, "-c", "user.name=Ravel Test", "-c", "user.email=ravel@example.invalid", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "pin child")
+	parentBare := filepath.Join(remotes, "parent.git")
+	if output, err := exec.Command("git", "clone", "--quiet", "--bare", parent, parentBare).CombinedOutput(); err != nil {
+		t.Fatalf("create parent bare repository: %v: %s", err, output)
+	}
+	remote := "file://" + filepath.ToSlash(parentBare)
+	output := filepath.Join(t.TempDir(), "result.json")
+	if code := runScan([]string{remote, "--git-ref", testGit(t, parent, "rev-parse", "HEAD"), "--all", "--recursive", "--git-submodules", "--format", "ravel-json", "--output", output}); code != 0 {
+		t.Fatalf("submodule scan exit=%d", code)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc model.Document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Git) != 2 || doc.Git[1].Commit != childCommit || doc.Git[1].Scope != "deps/child" || doc.Git[1].RequestedURL != "file://"+filepath.ToSlash(childBare) {
+		t.Fatalf("submodule provenance missing: %#v", doc.Git)
+	}
+	stableChild := "git+file://" + filepath.ToSlash(childBare) + "@" + childCommit
+	if !strings.Contains(string(data), stableChild+"/go.mod") || strings.Contains(string(data), "ravel-git-") {
+		t.Fatalf("submodule evidence path missing or temporary path leaked")
+	}
+	for _, issue := range doc.Coverage.Issues {
+		if issue.Code == "git_submodules_not_scanned" {
+			t.Fatal("fetched submodule reported as skipped")
+		}
+	}
+	cycloneOutput := filepath.Join(t.TempDir(), "submodules.cdx.json")
+	if code := runScan([]string{remote, "--git-ref", testGit(t, parent, "rev-parse", "HEAD"), "--all", "--recursive", "--git-submodules", "--output", cycloneOutput}); code != 0 {
+		t.Fatalf("CycloneDX submodule scan exit=%d", code)
+	}
+	cycloneBytes, err := os.ReadFile(cycloneOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(cycloneBytes), "ravel:gitProvenance") != 2 {
+		t.Fatal("CycloneDX did not preserve parent and submodule Git provenance")
+	}
+	skippedOutput := filepath.Join(t.TempDir(), "without-submodules.json")
+	if code := runScan([]string{remote, "--git-ref", testGit(t, parent, "rev-parse", "HEAD"), "--all", "--recursive", "--format", "ravel-json", "--output", skippedOutput}); code != 0 {
+		t.Fatalf("default submodule scan exit=%d", code)
+	}
+	skippedBytes, err := os.ReadFile(skippedOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var skipped model.Document
+	if err := json.Unmarshal(skippedBytes, &skipped); err != nil {
+		t.Fatal(err)
+	}
+	foundSkippedIssue := false
+	for _, issue := range skipped.Coverage.Issues {
+		foundSkippedIssue = foundSkippedIssue || issue.Code == "git_submodules_not_scanned"
+	}
+	if len(skipped.Git) != 1 || !foundSkippedIssue || strings.Contains(string(skippedBytes), "example.com/child-dep") {
+		t.Fatalf("default scan unexpectedly included submodule: Git=%#v issues=%#v", skipped.Git, skipped.Coverage.Issues)
+	}
+	if code := runScan([]string{remote, "--git-ref", "HEAD", "--all", "--git-submodules", "--output", filepath.Join(t.TempDir(), "invalid.json")}); code != 2 {
+		t.Fatalf("submodule flag without --recursive exit=%d", code)
+	}
+	testGit(t, parent, "update-index", "--add", "--cacheinfo", "160000,"+childCommit+",deps/unlisted")
+	testGit(t, parent, "-c", "user.name=Ravel Test", "-c", "user.email=ravel@example.invalid", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "unlisted gitlink")
+	unlistedBare := filepath.Join(remotes, "parent-unlisted.git")
+	if output, err := exec.Command("git", "clone", "--quiet", "--bare", parent, unlistedBare).CombinedOutput(); err != nil {
+		t.Fatalf("create unlisted parent repository: %v: %s", err, output)
+	}
+	unlistedOutput := filepath.Join(t.TempDir(), "must-not-exist.json")
+	if code := runScan([]string{"file://" + filepath.ToSlash(unlistedBare), "--git-ref", testGit(t, parent, "rev-parse", "HEAD"), "--all", "--recursive", "--git-submodules", "--format", "ravel-json", "--output", unlistedOutput}); code != 1 {
+		t.Fatalf("unlisted gitlink exit=%d", code)
+	}
+	if _, err := os.Stat(unlistedOutput); !os.IsNotExist(err) {
+		t.Fatalf("unlisted gitlink left a partial output: %v", err)
+	}
+}
+
+func TestSubmoduleURLAndPathBoundaries(t *testing.T) {
+	parent, err := validateGitURL("https://github.com/owner/parent.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolveSubmoduleURL(parent, "../child.git")
+	if err != nil || resolved != "https://github.com/owner/child.git" {
+		t.Fatalf("relative submodule URL: %q, %v", resolved, err)
+	}
+	sshParent, err := validateGitURL("ssh://git@github.com/owner/parent.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshResolved, err := resolveSubmoduleURL(sshParent, "../child.git")
+	if err != nil || sshResolved != "ssh://git@github.com/owner/child.git" {
+		t.Fatalf("relative SSH submodule URL: %q, %v", sshResolved, err)
+	}
+	if _, err := resolveSubmoduleURL(sshParent, "ssh://other@github.com/owner/child.git"); err == nil {
+		t.Fatal("submodule with a different SSH username was accepted")
+	}
+	for _, raw := range []string{"https://elsewhere.invalid/child.git", "ssh://git@github.com/owner/child.git", "file:///tmp/child.git", "https://github.com/owner/child.git?token=x"} {
+		if _, err := resolveSubmoduleURL(parent, raw); err == nil {
+			t.Fatalf("unsafe submodule URL accepted: %s", raw)
+		}
+	}
+	for _, value := range []string{"../escape", "/absolute", "deps/../escape", ".git/config", "deps\nchild"} {
+		if safeSubmodulePath(value) {
+			t.Fatalf("unsafe submodule path accepted: %q", value)
+		}
+	}
+	fileRoot := t.TempDir()
+	fileParent, err := validateGitURL("file://" + filepath.ToSlash(filepath.Join(fileRoot, "parent.git")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(fileRoot, "child.git")); err == nil {
+		if _, err := resolveSubmoduleURL(fileParent, "../child.git"); err == nil {
+			t.Fatal("file submodule symlink escaping the parent directory was accepted")
+		}
+	}
+}
