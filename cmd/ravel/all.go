@@ -292,6 +292,7 @@ func runScanAll(path, format, output, report string, strict, recursive, includeT
 			doc.Sources = append(doc.Sources, source)
 		}
 	}
+	attachLocalGit(&doc, path)
 	var data []byte
 	switch format {
 	case "cyclonedx-json":

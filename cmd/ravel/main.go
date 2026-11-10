@@ -79,7 +79,7 @@ func buildVersion() string {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: ravel version")
-	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries] [--include-archives]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
+	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG|GIT_URL [--git-ref REF --network allow] [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries] [--include-archives]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
 	fmt.Fprintln(os.Stderr, "       ravel explain PACKAGE --input ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel diff BEFORE.ravel.json AFTER.ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel merge [--name PROJECT] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] INPUT.ravel.json...")
@@ -320,6 +320,7 @@ func runScan(args []string) int {
 	configuration := fs.String("configuration", "runtimeClasspath", "Gradle configuration to resolve")
 	platform := fs.String("platform", "", "OCI image platform: os/architecture[/variant]")
 	imageSource := fs.String("image-source", "registry", "image reference source: registry or docker")
+	gitRef := fs.String("git-ref", "", "Git branch, tag, qualified ref, or full commit for a remote URL")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -337,6 +338,14 @@ func runScan(args []string) int {
 	if *imageSource != "registry" && *imageSource != "docker" {
 		fmt.Fprintln(os.Stderr, "ravel: --image-source must be registry or docker")
 		return 2
+	}
+	if *gitRef != "" || strings.HasPrefix(strings.ToLower(path), "https://") || strings.HasPrefix(strings.ToLower(path), "file://") {
+		return runScanRemoteGit(path, remoteGitOptions{
+			Ref: *gitRef, Network: *network, Manager: *manager, All: *all, Recursive: *recursive,
+			IncludeTestVendor: *includeTestVendor, IncludeBinaries: *includeBinaries, IncludeArchives: *includeArchives,
+			Resolve: *resolve, AllowExec: *allowExec, Configuration: *configuration, Platform: *platform,
+			ImageSource: *imageSource, Format: *format, Output: *output, Report: *report, Strict: *strict,
+		})
 	}
 	remotePath := strings.ToLower(path)
 	for _, prefix := range []string{"http://", "https://", "git://", "ssh://", "docker://", "oci://", "git@"} {
@@ -587,6 +596,9 @@ func runScan(args []string) int {
 			fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite an included input")
 			return 2
 		}
+	}
+	if repositoryManager(selected) {
+		attachLocalGit(&doc, path)
 	}
 	return writeScanResult(doc, *format, *output, *report, *strict)
 }

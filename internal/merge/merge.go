@@ -52,6 +52,7 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 				doc.Sources = append(doc.Sources, source)
 			}
 		}
+		doc.Git = append(doc.Git, input.Git...)
 		if input.Coverage.GraphState != "complete_for_scope" {
 			allGraphComplete = false
 		}

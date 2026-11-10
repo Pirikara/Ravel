@@ -4,6 +4,8 @@ The table describes inputs Ravel reads today. A listed format does not imply com
 
 Repository directories also expose explicit runtime requirements from `.nvmrc`, `.node-version`, `.python-version`, `.ruby-version`, `.tool-versions`, `package.json` `engines.node`, `pyproject.toml` `requires-python` and Poetry's Python requirement, `go.mod` / `go.work` `go` and `toolchain`, Cargo `rust-version`, `rust-toolchain` / `rust-toolchain.toml`, `.NET` `global.json` SDK version, `Package.swift` tools version, and `pubspec.yaml` Dart/Flutter SDK constraints. These are declarations, not verified installed runtime versions.
 
+An HTTPS Git URL with `--git-ref REF --network allow` is fetched at one explicit revision into a bounded temporary checkout and scanned as a repository directory. A local `file://` Git URL works without network access. Local Git checkouts record their current commit and dirty state; exported trees have no Git claim. Remote scans do not fetch submodules or run package-manager resolvers.
+
 | Ecosystem | Inputs | Notes |
 | --- | --- | --- |
 | Ruby | `Gemfile.lock`, `Gemfile.<variant>.lock`, source `.gemspec`; `.gem` archives | GEM, GIT, and PATH sources; archive metadata and SHA-256. `--all` reads each lockfile variant and source gemspec as a separate input. A source gemspec supplies a literal name and, when statically verifiable, a version from a literal or a required version file; dependency selection remains unresolved. |

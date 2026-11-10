@@ -39,14 +39,15 @@ Run `ravel version` to identify the build you are using.
 
 Use `ravel update --check` to check for a new version, or `ravel update` to install it. A directly installed macOS or Linux release binary can update itself, and a Homebrew installation upgrades through Homebrew. Go and container installations receive the appropriate update command.
 
-`scan` reads a local file or directory. For a repository hosted elsewhere, clone it first and scan the checkout:
+`scan` reads a local file or directory, or fetches a Git repository at an explicit revision:
 
 ```sh
-git clone https://github.com/OWNER/PROJECT.git project
-ravel scan project --all --recursive --output project.cdx.json --report project.coverage.json
+ravel scan https://github.com/OWNER/PROJECT.git --git-ref refs/heads/main \
+  --network allow --all --recursive \
+  --output project.cdx.json --report project.coverage.json
 ```
 
-Ravel does not fetch a Git repository when passed a URL; clone it first. A container image reference such as `image:tag` is pulled from its registry, or from the local Docker daemon with `--image-source docker`. See the [CLI guide](docs/cli.md) for examples.
+The result records the resolved commit. Local checkout scans record their current commit and whether the worktree is dirty. A container image reference such as `image:tag` is pulled from its registry, or from the local Docker daemon with `--image-source docker`. See the [CLI guide](docs/cli.md) for limits and examples.
 
 To inspect the evidence behind a finding, save Ravel's native format:
 
