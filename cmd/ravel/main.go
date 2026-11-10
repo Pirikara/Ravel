@@ -346,7 +346,7 @@ func runScanWithProgress(args []string, progress bool) int {
 		fmt.Fprintln(os.Stderr, "ravel: --image-source must be registry or docker")
 		return 2
 	}
-	if *gitRef != "" || strings.HasPrefix(strings.ToLower(path), "https://") || strings.HasPrefix(strings.ToLower(path), "file://") {
+	if *gitRef != "" || strings.HasPrefix(strings.ToLower(path), "https://") || strings.HasPrefix(strings.ToLower(path), "file://") || strings.HasPrefix(strings.ToLower(path), "ssh://") {
 		return runScanRemoteGit(path, remoteGitOptions{
 			Ref: *gitRef, Network: *network, Manager: *manager, All: *all, Recursive: *recursive,
 			IncludeTestVendor: *includeTestVendor, IncludeBinaries: *includeBinaries, IncludeArchives: *includeArchives,

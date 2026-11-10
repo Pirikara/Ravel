@@ -45,6 +45,8 @@ Use `ravel update --check` to check for a new version, or `ravel update` to inst
 ravel scan https://github.com/OWNER/PROJECT.git --git-ref refs/heads/main \
   --network allow --all --recursive \
   --output project.cdx.json --report project.coverage.json
+ravel scan ssh://git@github.com/OWNER/PROJECT.git --git-ref refs/heads/main \
+  --network allow --all --recursive --output private-project.cdx.json
 ```
 
 The result records the resolved commit. Local checkout scans record their current commit and whether the worktree is dirty. A container image reference such as `image:tag` is pulled from its registry, or from the local Docker daemon with `--image-source docker`. See the [CLI guide](docs/cli.md) for limits and examples.
