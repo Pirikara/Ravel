@@ -51,6 +51,8 @@ func main() {
 		code = runScan(os.Args[2:])
 	case "explain":
 		code = runExplain(os.Args[2:])
+	case "graph":
+		code = runGraph(os.Args[2:])
 	case "diff":
 		code = runDiff(os.Args[2:])
 	case "merge":
@@ -81,6 +83,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage: ravel version")
 	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG|GIT_URL [--git-ref REF --network allow] [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries] [--include-archives]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
 	fmt.Fprintln(os.Stderr, "       ravel explain PACKAGE --input ravel.json [--format text|json]")
+	fmt.Fprintln(os.Stderr, "       ravel graph --input ravel.json [--format html|dot|text] [--output FILE] [--focus PACKAGE] [--direction dependencies|dependents] [--depth N]")
 	fmt.Fprintln(os.Stderr, "       ravel diff BEFORE.ravel.json AFTER.ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel merge [--name PROJECT] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] INPUT.ravel.json...")
 	fmt.Fprintln(os.Stderr, "       ravel enrich INPUT.ravel.json --network allow [--ecosystem rubygems|npm|pypi] [--registry HTTPS_URL] [--max-requests N] [--format ravel-json|cyclonedx-json|spdx-json] [--output FILE] [--report FILE] [--strict]")

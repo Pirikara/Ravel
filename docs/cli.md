@@ -133,12 +133,14 @@ An image reference uses the registry by default, with Docker credential configur
 ```sh
 ravel scan path/to/project --format ravel-json --output project.ravel.json
 ravel explain 'package-name' --input project.ravel.json
+ravel graph --input project.ravel.json --format html --output project.graph.html
+ravel graph --input project.ravel.json --format dot --focus package-name --depth 2 --output focused.dot
 ravel diff before.ravel.json after.ravel.json --format json
 ravel merge --name my-app --format cyclonedx-json \
   --output combined.cdx.json npm.ravel.json cargo.ravel.json
 ```
 
-`explain` accepts a package name, PURL, or component ID. If multiple occurrences share a name, use the component ID. `merge` takes at least two Ravel JSON inputs, preserves distinct occurrences, and rejects duplicate input scopes.
+`explain` accepts a package name, PURL, or component ID. If multiple occurrences share a name, use the component ID. `graph` reads the same Ravel JSON and produces a self-contained HTML graph, Graphviz DOT, or text. Its arrows run from the depender to its dependency; conditional relationships are dashed and retain their conditions and edge kinds. The HTML lists package identities and recorded origins, marks unlinked components, and shows graph coverage. It works offline and does not resolve additional dependencies. Use `--focus` with a unique name, PURL, component ID, or `root`; `--direction dependents` follows incoming relationships, and `--depth N` limits hops (`0` shows only the focus). A full graph is limited to 1,000 nodes and 5,000 edges; HTML is limited to 300 nodes and 1,500 edges. Use a focused graph or DOT for larger scans. `merge` takes at least two Ravel JSON inputs, preserves distinct occurrences, and rejects duplicate input scopes.
 
 ### OpenVEX correlation
 
@@ -157,7 +159,7 @@ ravel vex --input project.ravel.json --vex supplier.openvex.json \
 | --- | --- | --- |
 | `cyclonedx-json` (default) | A standard CycloneDX 1.7 SBOM | Packages and unconditional dependencies; some provenance details as supported by the format. |
 | `spdx-json` | A standard SPDX 2.3 SBOM | Packages, PURLs when established, and unconditional dependencies. |
-| `ravel-json` | Investigation, `explain`, `diff`, `merge`, and `enrich` | Evidence, conditional edges, origin and development records, and scan coverage. |
+| `ravel-json` | Investigation, `explain`, `graph`, `diff`, `merge`, and `enrich` | Evidence, conditional edges, origin and development records, and scan coverage. |
 | `--report FILE` | Checking the result of any output format | Scan issues and `outputLosses` for the chosen format. |
 
 `graphState` and `originState` describe the scanned scope:
