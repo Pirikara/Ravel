@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +24,9 @@ const maxRemoteGitBytes int64 = 512 << 20
 const maxRemoteGitEntries = 100000
 
 var gitRefName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
+var sshUserName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
+var sshHostName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$`)
+var sshRepositoryPath = regexp.MustCompile(`^/[A-Za-z0-9._~+@/-]{1,999}$`)
 
 type boundedGitOutput struct {
 	data bytes.Buffer
@@ -44,11 +49,11 @@ type remoteGitOptions struct {
 func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 	repository, err := validateGitURL(rawURL)
 	if err != nil || !validGitRef(options.Ref) {
-		fmt.Fprintln(os.Stderr, "ravel: remote Git scans require a safe HTTPS or file URL and an explicit --git-ref")
+		fmt.Fprintln(os.Stderr, "ravel: remote Git scans require a safe HTTPS, SSH, or file URL and an explicit --git-ref")
 		return 2
 	}
-	if repository.Scheme == "https" && options.Network != "allow" {
-		fmt.Fprintln(os.Stderr, "ravel: HTTPS Git scans require --network allow")
+	if repository.Scheme != "file" && options.Network != "allow" {
+		fmt.Fprintln(os.Stderr, "ravel: HTTPS and SSH Git scans require --network allow")
 		return 2
 	}
 	if options.Resolve || options.AllowExec || options.Configuration != "runtimeClasspath" || options.Platform != "" || options.ImageSource != "registry" || options.Report == "-" || options.Report != "" && samePath(options.Report, options.Output) || options.Format != "cyclonedx-json" && options.Format != "spdx-json" && options.Format != "ravel-json" {
@@ -75,29 +80,29 @@ func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 1
 	}
-	if _, err := remoteGitCommand(root, checkout, false, "init", "--quiet"); err == nil {
-		_, err = remoteGitCommand(root, checkout, false, "remote", "add", "origin", rawURL)
+	if _, err := remoteGitCommand(root, checkout, repository.Scheme, false, "init", "--quiet"); err == nil {
+		_, err = remoteGitCommand(root, checkout, repository.Scheme, false, "remote", "add", "origin", rawURL)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ravel: could not initialize temporary Git checkout")
 		return 1
 	}
-	qualified, err := remoteGitRef(root, checkout, options.Ref)
+	qualified, err := remoteGitRef(root, checkout, repository.Scheme, options.Ref)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 1
 	}
-	if _, err := remoteGitCommand(root, checkout, false, "fetch", "--depth", "1", "--no-tags", "origin", qualified); err != nil {
+	if _, err := remoteGitCommand(root, checkout, repository.Scheme, false, "fetch", "--depth", "1", "--no-tags", "origin", qualified); err != nil {
 		fmt.Fprintln(os.Stderr, "ravel: Git fetch failed or exceeded its time or size limit")
 		return 1
 	}
-	commit, err := remoteGitCommand(root, checkout, false, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
+	commit, err := remoteGitCommand(root, checkout, repository.Scheme, false, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
 	commit = strings.TrimSpace(commit)
 	if err != nil || !gitCommitID.MatchString(commit) {
 		fmt.Fprintln(os.Stderr, "ravel: fetched Git ref does not resolve to a commit")
 		return 1
 	}
-	if _, err := remoteGitCommand(root, checkout, true, "-c", "core.hooksPath="+os.DevNull, "checkout", "--detach", "--force", commit); err != nil {
+	if _, err := remoteGitCommand(root, checkout, repository.Scheme, true, "-c", "core.hooksPath="+os.DevNull, "checkout", "--detach", "--force", commit); err != nil {
 		fmt.Fprintln(os.Stderr, "ravel: Git checkout failed or exceeded its time or size limit")
 		return 1
 	}
@@ -149,16 +154,41 @@ func validateGitURL(raw string) (*url.URL, error) {
 		return nil, errors.New("unsafe Git URL")
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || u.Path == "" {
+	if err != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || u.Path == "" {
 		return nil, errors.New("unsafe Git URL")
 	}
-	if u.Scheme == "https" && u.Hostname() != "" {
+	if u.Scheme == "https" && u.User == nil && u.Hostname() != "" {
 		return u, nil
 	}
-	if u.Scheme == "file" && (u.Host == "" || u.Host == "localhost") && filepath.IsAbs(u.Path) {
+	if u.Scheme == "file" && u.User == nil && (u.Host == "" || u.Host == "localhost") && filepath.IsAbs(u.Path) {
+		return u, nil
+	}
+	if u.Scheme == "ssh" && validSSHGitURL(u) {
 		return u, nil
 	}
 	return nil, errors.New("unsupported Git URL")
+}
+
+func validSSHGitURL(u *url.URL) bool {
+	if !sshRepositoryPath.MatchString(u.Path) || u.Hostname() == "" {
+		return false
+	}
+	if u.User != nil {
+		if _, password := u.User.Password(); password || !sshUserName.MatchString(u.User.Username()) {
+			return false
+		}
+	}
+	host := u.Hostname()
+	if net.ParseIP(host) == nil && !sshHostName.MatchString(host) {
+		return false
+	}
+	if port := u.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return false
+		}
+	}
+	return true
 }
 
 func validGitRef(ref string) bool {
@@ -168,11 +198,11 @@ func validGitRef(ref string) bool {
 	return gitRefName.MatchString(ref) && !strings.Contains(ref, "..") && !strings.Contains(ref, "//") && !strings.HasSuffix(ref, "/") && !strings.HasSuffix(ref, ".") && !strings.HasSuffix(ref, ".lock") && !strings.Contains(ref, "/.")
 }
 
-func remoteGitRef(root, checkout, ref string) (string, error) {
+func remoteGitRef(root, checkout, scheme, ref string) (string, error) {
 	if gitCommitID.MatchString(ref) || strings.HasPrefix(ref, "refs/heads/") || strings.HasPrefix(ref, "refs/tags/") {
 		return ref, nil
 	}
-	out, err := remoteGitCommand(root, checkout, false, "ls-remote", "--refs", "--heads", "--tags", "origin", "refs/heads/"+ref, "refs/tags/"+ref)
+	out, err := remoteGitCommand(root, checkout, scheme, false, "ls-remote", "--refs", "--heads", "--tags", "origin", "refs/heads/"+ref, "refs/tags/"+ref)
 	if err != nil {
 		return "", errors.New("Git ref lookup failed")
 	}
@@ -189,12 +219,16 @@ func remoteGitRef(root, checkout, ref string) (string, error) {
 	return matches[0], nil
 }
 
-func remoteGitCommand(root, checkout string, safeCheckout bool, args ...string) (string, error) {
+func remoteGitCommand(root, checkout, scheme string, safeCheckout bool, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", checkout}, args...)...)
+	gitArgs := append([]string{"-c", "protocol.allow=never", "-c", "protocol." + scheme + ".allow=always", "-C", checkout}, args...)
+	cmd := exec.CommandContext(ctx, "git", gitArgs...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
-	if safeCheckout {
+	if scheme == "ssh" {
+		cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND=ssh -oBatchMode=yes -oStrictHostKeyChecking=yes -oConnectTimeout=15", "GIT_SSH_VARIANT=ssh")
+	}
+	if safeCheckout || scheme != "https" {
 		cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
 	}
 	var output boundedGitOutput

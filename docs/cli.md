@@ -42,13 +42,20 @@ ravel scan https://github.com/OWNER/PROJECT.git \
 ravel scan https://github.com/OWNER/PROJECT.git \
   --git-ref 0123456789abcdef0123456789abcdef01234567 --network allow \
   --all --recursive --format ravel-json --output project.ravel.json
+ravel scan ssh://git@github.com/OWNER/PRIVATE.git \
+  --git-ref refs/heads/main --network allow --all --recursive \
+  --output private.cdx.json
 ```
 
 Short branch or tag names are accepted when unambiguous; use `refs/heads/NAME`
-or `refs/tags/NAME` to choose explicitly. HTTPS scans require `--network allow`.
-Git's configured credential helper can authenticate private repositories; the
-URL cannot contain credentials, a query, or a fragment, and interactive Git
-prompts are disabled. `file://` URLs also work without network access.
+or `refs/tags/NAME` to choose explicitly. HTTPS and `ssh://` scans require
+`--network allow`. HTTPS uses Git's configured credential helper; SSH uses an
+already configured key or agent and requires the host key to be in SSH's
+`known_hosts`. SSH runs in batch mode with strict host-key checking and a
+15-second connection timeout. SSH URL usernames are allowed, but passwords,
+queries, fragments, and shell metacharacters in the repository path are not.
+The scp-like `git@host:owner/repo.git` form is not accepted; use `ssh://`.
+Interactive Git prompts are disabled. `file://` URLs work without network access.
 Ravel fetches one shallow revision into a temporary checkout and removes it
 after the scan. Each Git command has a three-minute timeout; the checkout is
 limited to 512 MiB and 100,000 filesystem entries. Remote scans are static:

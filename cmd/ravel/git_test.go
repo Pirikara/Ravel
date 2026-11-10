@@ -179,7 +179,10 @@ func TestRewriteGitPathsUsesRemoteProject(t *testing.T) {
 }
 
 func TestRemoteGitInputAndSizeLimits(t *testing.T) {
-	for _, raw := range []string{"http://example.com/repo.git", "https://user:secret@example.com/repo.git", "https://example.com/repo.git?token=x", "https://example.com/repo.git#main"} {
+	for _, raw := range []string{
+		"http://example.com/repo.git", "https://user:secret@example.com/repo.git", "https://example.com/repo.git?token=x", "https://example.com/repo.git#main",
+		"ssh://git:secret@example.com/repo.git", "ssh://-oProxyCommand=sh/repo.git", "ssh://git@example.com:99999/repo.git", "ssh://git@example.com/repo;touch-pwned.git",
+	} {
 		if _, err := validateGitURL(raw); err == nil {
 			t.Fatalf("unsafe remote URL accepted: %s", raw)
 		}
@@ -194,6 +197,57 @@ func TestRemoteGitInputAndSizeLimits(t *testing.T) {
 	}
 	if err := checkRemoteGitSize(root); err == nil {
 		t.Fatal("oversized checkout was accepted")
+	}
+}
+
+func TestRemoteGitSSHWithConfiguredAuthentication(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SSH transport fixture requires a shell")
+	}
+	source, commit := testGitRepository(t)
+	testGit(t, source, "branch", "-M", "main")
+	bare := filepath.Join(t.TempDir(), "repository.git")
+	cmd := exec.Command("git", "clone", "--quiet", "--bare", source, bare)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("create bare remote: %v: %s", err, output)
+	}
+	bin := t.TempDir()
+	sshLog := filepath.Join(t.TempDir(), "ssh-args")
+	ssh := filepath.Join(bin, "ssh")
+	script := "#!/bin/sh\nfor arg do last=\"$arg\"; done\nprintf '%s\\n' \"$@\" >> \"$RAVEL_SSH_LOG\"\nexec /bin/sh -c \"$last\"\n"
+	if err := os.WriteFile(ssh, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("RAVEL_SSH_LOG", sshLog)
+	t.Setenv("GIT_SSH_COMMAND", "false") // Ravel must enforce its own noninteractive SSH options.
+	remote := "ssh://git@example.invalid" + filepath.ToSlash(bare)
+	output := filepath.Join(t.TempDir(), "result.json")
+	if code := runScan([]string{remote, "--git-ref", "main", "--network", "allow", "--all", "--format", "ravel-json", "--output", output}); code != 0 {
+		t.Fatalf("SSH remote scan exit=%d", code)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc model.Document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Git) != 1 || doc.Git[0].Commit != commit || doc.Git[0].RequestedURL != remote || !strings.Contains(doc.Source, "git+"+remote+"@"+commit) {
+		t.Fatalf("SSH provenance or source incorrect: %#v %s", doc.Git, doc.Source)
+	}
+	sshArgs, err := os.ReadFile(sshLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"BatchMode=yes", "StrictHostKeyChecking=yes", "ConnectTimeout=15"} {
+		if !strings.Contains(string(sshArgs), required) {
+			t.Fatalf("SSH option %q missing: %s", required, sshArgs)
+		}
+	}
+	if code := runScan([]string{remote, "--git-ref", "main", "--all", "--output", filepath.Join(t.TempDir(), "denied.json")}); code != 2 {
+		t.Fatalf("SSH URL without --network allow exit=%d", code)
 	}
 }
 
