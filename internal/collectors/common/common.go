@@ -252,6 +252,13 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.GraphState = "partial"
 		case "rust_auditable_origin_unverified":
 			doc.Coverage.OriginState = "partial"
+		case "r_installed_description_invalid":
+			doc.Coverage.GraphState = "partial"
+			doc.Coverage.OriginState = "partial"
+		case "r_installed_dependency_unparsed", "r_installed_dependency_unresolved", "r_installed_dependency_ambiguous", "r_installed_dependency_constraint_unverified":
+			doc.Coverage.GraphState = "partial"
+		case "r_installed_origin_unavailable":
+			doc.Coverage.OriginState = "partial"
 		case "node_system_owner_unresolved", "node_system_owner_ambiguous", "node_system_ownership_scan_limited", "ruby_platform_config_invalid", "ruby_platform_config_oversized":
 			doc.Coverage.GraphState = "partial"
 		}
