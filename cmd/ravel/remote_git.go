@@ -127,6 +127,11 @@ func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 			return 1
 		}
 	}
+	lfsPointers, lfsLimited, err := gitLFSPointerPaths(checkout)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ravel: could not inspect Git LFS pointers:", err)
+		return 1
+	}
 	intermediate := filepath.Join(root, "scan.ravel.json")
 	args := []string{checkout, "--format", "ravel-json", "--output", intermediate}
 	if options.All {
@@ -168,6 +173,15 @@ func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "git_nested_submodules_not_scanned", Scope: submodule.Path})
 			doc.Coverage.GraphState = "partial"
 		}
+	}
+	for _, pointer := range lfsPointers {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "git_lfs_pointer_not_materialized", Scope: pointer})
+	}
+	if lfsLimited {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "git_lfs_pointer_report_limited"})
+	}
+	if len(lfsPointers) != 0 {
+		doc.Coverage.GraphState = "partial"
 	}
 	if !options.Submodules {
 		if _, err := os.Stat(filepath.Join(checkout, ".gitmodules")); err == nil {
