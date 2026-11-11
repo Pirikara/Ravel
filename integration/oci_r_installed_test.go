@@ -17,15 +17,74 @@ func ociTestRDescription(name, version, extra string) []byte {
 }
 
 func ociScanInstalledR(t *testing.T, layers []ociTestLayer) model.Document {
+	return ociScanInstalledRWithEnv(t, layers, nil)
+}
+
+func ociScanInstalledRWithEnv(t *testing.T, layers []ociTestLayer, env []string) model.Document {
 	t.Helper()
 	layout := ociTestLayout(t)
-	image := ociTestImage(t, layout, "linux", "arm64", layers)
+	image := ociTestImageWithEnv(t, layout, "linux", "arm64", layers, "", env)
 	ociTestIndex(t, layout, image)
 	doc, output, code := ociTestScan(t, layout)
 	if code != 0 {
 		t.Fatalf("installed R package scan failed: code=%d output=%s", code, output)
 	}
 	return doc
+}
+
+func TestOCIInstalledRConfiguredLibrariesAndFinalLayers(t *testing.T) {
+	const custom = "opt/ravel-test/Rlibs/"
+	const hostSite = "usr/local/lib/R/host-site-library/"
+	base := []ociTestEntry{
+		{name: custom + "docopt/DESCRIPTION", data: ociTestRDescription("docopt", "0.7.2", "Imports: stats\n")},
+		{name: hostSite + "BiocGenerics/DESCRIPTION", data: ociTestRDescription("BiocGenerics", "0.50.0", "")},
+		{name: ociRLibrary + "stats/DESCRIPTION", data: ociTestRDescription("stats", "4.5.1", "")},
+		{name: "opt/other/source/pkg/DESCRIPTION", data: ociTestRDescription("pkg", "1.0.0", "")},
+	}
+	env := []string{"R_LIBS=/opt/ravel-test/Rlibs", "R_LIBS_SITE=/usr/local/lib/R/host-site-library"}
+	for _, test := range []struct {
+		name  string
+		env   []string
+		upper []ociTestEntry
+		want  string
+	}{
+		{name: "configured", env: env, want: "docopt@0.7.2,BiocGenerics@0.50.0,stats@4.5.1"},
+		{name: "unconfigured", want: "stats@4.5.1"},
+		{name: "whiteout", env: env, upper: []ociTestEntry{{name: custom + "docopt/.wh.DESCRIPTION"}}, want: "BiocGenerics@0.50.0,stats@4.5.1"},
+		{name: "opaque host library", env: env, upper: []ociTestEntry{{name: hostSite + ".wh..wh..opq"}}, want: "docopt@0.7.2,stats@4.5.1"},
+		{name: "parent symlink", env: env, upper: []ociTestEntry{{name: custom + "docopt", typeflag: tar.TypeSymlink, linkname: "/elsewhere"}}, want: "BiocGenerics@0.50.0,stats@4.5.1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			layers := []ociTestLayer{{entries: base}}
+			if test.upper != nil {
+				layers = append(layers, ociTestLayer{entries: test.upper})
+			}
+			doc := ociScanInstalledRWithEnv(t, layers, test.env)
+			got := ociRComponents(doc)
+			for _, label := range strings.Split(test.want, ",") {
+				if _, found := got[label]; !found {
+					t.Fatalf("configured R package %s missing: %#v", label, got)
+				}
+			}
+			if len(got) != len(strings.Split(test.want, ",")) {
+				t.Fatalf("unconfigured or removed R package included: %#v", got)
+			}
+			for _, label := range []string{"docopt@0.7.2", "BiocGenerics@0.50.0"} {
+				if component, found := got[label]; found && (len(component.Evidence) != 2 || component.Evidence[1].Collector != "r-library-config" || !strings.HasPrefix(component.Evidence[1].Pointer, "config.Env/R_LIBS")) {
+					t.Fatalf("configured R library evidence missing: %#v", component)
+				}
+			}
+		})
+	}
+}
+
+func TestOCIInstalledRConfiguredLibraryInvalidPathReported(t *testing.T) {
+	doc := ociScanInstalledRWithEnv(t, []ociTestLayer{{entries: []ociTestEntry{
+		{name: "opt/ravel-test/Rlibs/docopt/DESCRIPTION", data: ociTestRDescription("docopt", "0.7.2", "")},
+	}}}, []string{"R_LIBS=../opt/ravel-test/Rlibs"})
+	if len(doc.Components) != 0 || !ociTestRubyHasIssue(doc, "r_installed_library_path_unresolved") {
+		t.Fatalf("invalid configured R library path was trusted: components=%#v issues=%#v", doc.Components, doc.Coverage.Issues)
+	}
 }
 
 func ociRComponents(doc model.Document) map[string]model.Component {

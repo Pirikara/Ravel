@@ -20,6 +20,8 @@ const (
 	maxRDescriptionBytes = 1 << 20
 	maxRDescriptionFiles = 5000
 	maxRDescriptionTotal = 64 << 20
+	maxRLibraryRoots     = 32
+	maxRLibraryPathBytes = 4096
 )
 
 var rPackageName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9.]{0,127}$`)
@@ -36,18 +38,107 @@ type rInstalledRecord struct {
 	fields    map[string]rDescriptionField
 }
 
-func isInstalledRDescriptionPath(name string) bool {
+type rLibraryRoot struct {
+	dir      string
+	variable string
+}
+
+// The image config supplies only literal Unix library roots. R also expands
+// version tokens and can modify .libPaths() at startup; those cases are left
+// unresolved rather than guessed from image contents.
+func installedRLibraryRoots(env []string) ([]rLibraryRoot, []model.Issue) {
+	values := map[string]string{}
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && (key == "R_LIBS" || key == "R_LIBS_USER" || key == "R_LIBS_SITE" || key == "R_HOME") {
+			values[key] = value // OCI environment variables use the last value of a repeated key.
+		}
+	}
+	var roots []rLibraryRoot
+	var issues []model.Issue
+	seen := map[string]bool{}
+	issueAdded := map[string]bool{}
+	addIssue := func(key string) {
+		if !issueAdded[key] {
+			issues = append(issues, model.Issue{Code: "r_installed_library_path_unresolved", Name: key})
+			issueAdded[key] = true
+		}
+	}
+	addRoot := func(key, dir string) {
+		if len(dir) > maxRLibraryPathBytes || !strings.HasPrefix(dir, "/") || dir == "/" || path.Clean(dir) != dir || strings.ContainsAny(dir, "\\\x00%~") {
+			addIssue(key)
+			return
+		}
+		if seen[dir] {
+			return
+		}
+		if len(roots) >= maxRLibraryRoots {
+			addIssue(key)
+			return
+		}
+		roots = append(roots, rLibraryRoot{dir: strings.TrimPrefix(dir, "/"), variable: key})
+		seen[dir] = true
+	}
+	for _, key := range []string{"R_LIBS", "R_LIBS_USER", "R_LIBS_SITE"} {
+		value := values[key]
+		if value == "" || value == "NULL" {
+			continue
+		}
+		if len(value) > maxRLibraryRoots*maxRLibraryPathBytes {
+			addIssue(key)
+			continue
+		}
+		for _, dir := range strings.Split(value, ":") {
+			if dir != "" {
+				addRoot(key, dir)
+			}
+		}
+	}
+	if home := values["R_HOME"]; home != "" {
+		if len(home) > maxRLibraryPathBytes || !strings.HasPrefix(home, "/") || home == "/" || path.Clean(home) != home || strings.ContainsAny(home, "\\\x00%~") {
+			addIssue("R_HOME")
+		} else {
+			addRoot("R_HOME", home+"/library")
+			addRoot("R_HOME", home+"/site-library")
+		}
+	}
+	return roots, issues
+}
+
+func isConventionalRDescriptionPath(name string) bool {
 	parts := strings.Split(name, "/")
 	n := len(parts)
 	return n >= 5 && parts[n-1] == "DESCRIPTION" && rPackageName.MatchString(parts[n-2]) &&
 		(parts[n-3] == "site-library" || parts[n-3] == "library") && parts[n-4] == "R" && parts[n-5] == "lib"
 }
 
+func rDescriptionLibrarySource(name string, roots []rLibraryRoot) (string, bool) {
+	if isConventionalRDescriptionPath(name) {
+		return "", true
+	}
+	for _, root := range roots {
+		remainder, found := strings.CutPrefix(name, root.dir+"/")
+		if !found {
+			continue
+		}
+		packageName, suffix, ok := strings.Cut(remainder, "/")
+		if ok && suffix == "DESCRIPTION" && rPackageName.MatchString(packageName) {
+			return root.variable, true
+		}
+	}
+	return "", false
+}
+
+func isInstalledRDescriptionPath(name string, roots []rLibraryRoot) bool {
+	_, found := rDescriptionLibrarySource(name, roots)
+	return found
+}
+
 // Installed packages are identified from final-layer DESCRIPTION files. R's
 // library() requires a Built field; source-tree DESCRIPTION files and the
 // translation-only directory are therefore not treated as installed packages.
-func inspectInstalledRDescription(data []byte, source, filename string) (rInstalledRecord, bool, error) {
-	if len(data) == 0 || len(data) > maxRDescriptionBytes || !isInstalledRDescriptionPath(filename) {
+func inspectInstalledRDescription(data []byte, source, filename string, roots []rLibraryRoot) (rInstalledRecord, bool, error) {
+	if len(data) == 0 || len(data) > maxRDescriptionBytes || !isInstalledRDescriptionPath(filename, roots) {
 		return rInstalledRecord{}, false, errors.New("invalid R DESCRIPTION path or size")
 	}
 	fields, err := parseRDescriptionFields(data)

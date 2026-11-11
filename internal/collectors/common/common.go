@@ -252,7 +252,7 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.GraphState = "partial"
 		case "rust_auditable_origin_unverified":
 			doc.Coverage.OriginState = "partial"
-		case "r_installed_description_invalid":
+		case "r_installed_description_invalid", "r_installed_library_path_unresolved":
 			doc.Coverage.GraphState = "partial"
 			doc.Coverage.OriginState = "partial"
 		case "r_installed_dependency_unparsed", "r_installed_dependency_unresolved", "r_installed_dependency_ambiguous", "r_installed_dependency_constraint_unverified":
