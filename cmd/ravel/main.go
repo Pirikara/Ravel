@@ -328,7 +328,7 @@ func runScanWithProgress(args []string, progress bool) int {
 	platform := fs.String("platform", "", "OCI image platform: os/architecture[/variant]")
 	imageSource := fs.String("image-source", "registry", "image reference source: registry or docker")
 	gitRef := fs.String("git-ref", "", "Git branch, tag, qualified ref, or full commit for a remote URL")
-	gitSubmodules := fs.Bool("git-submodules", false, "fetch pinned first-level submodules in a remote Git scan")
+	gitSubmodules := fs.Bool("git-submodules", false, "fetch pinned submodules up to three levels in a remote Git scan")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

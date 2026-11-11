@@ -64,15 +64,16 @@ after the scan. Each Git command has a three-minute timeout; the checkout is
 limited to 512 MiB and 100,000 filesystem entries. Remote scans are static:
 package-manager execution and `--resolve` are unavailable. Submodules are
 skipped by default and a `.gitmodules` file produces a coverage issue.
-`--git-submodules` requires `--all --recursive` and fetches up to 32 first-level
-submodules at the exact commits recorded by the parent. Their URLs must use the
-same transport, host, and SSH username as the parent; relative URLs are resolved
-against the parent repository. Local file submodules must stay in the parent
-repository's directory. Git's tree listing is capped at 32 MiB for this check;
-the checkout's 512 MiB and 100,000-entry limits include all fetched children.
-Nested submodules remain skipped and produce a coverage
-issue. Each fetched submodule gets its own Git provenance entry and stable source
-paths. An escaping symlink causes the scan to fail. Use a local checkout when
+`--git-submodules` requires `--all --recursive` and fetches at most three levels
+and 32 submodules in total, each at the commit recorded by its immediate parent.
+At every level, URLs must use the parent's transport, host, and SSH username;
+relative URLs are resolved against the immediate parent repository. Local file
+submodules must stay in their parent repository's directory. Git's tree listing
+is capped at 32 MiB per inspected repository; the checkout's 512 MiB and
+100,000-entry limits include all fetched children. A gitlink beyond the depth
+limit produces a coverage issue. Each fetched submodule gets its own Git
+provenance entry and stable source paths. An escaping symlink causes the scan
+to fail. Use a local checkout when
 these limits or URL rules do not fit. `--all --recursive` scans supported static inputs in nested
 projects; manifests without static dependency data are reported as skipped.
 

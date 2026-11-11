@@ -15,6 +15,7 @@ import (
 )
 
 const maxGitSubmodules = 32
+const maxGitSubmoduleDepth = 3
 
 type gitSubmodule struct {
 	Path, URL, Commit string
@@ -24,38 +25,67 @@ type gitSubmoduleConfig struct {
 	path, url string
 }
 
-func fetchGitSubmodules(root, checkout string, parent *url.URL) ([]gitSubmodule, error) {
+func fetchGitSubmodules(root, checkout string, parent *url.URL) ([]gitSubmodule, []string, error) {
+	submodules := []gitSubmodule{}
+	depthLimited := []string{}
+	err := fetchNestedGitSubmodules(root, checkout, parent, "", 0, &submodules, &depthLimited)
+	return submodules, depthLimited, err
+}
+
+func fetchNestedGitSubmodules(root, checkout string, parent *url.URL, scope string, depth int, collected *[]gitSubmodule, depthLimited *[]string) error {
+	if depth == maxGitSubmoduleDepth {
+		gitlinks, err := remoteGitlinks(root, checkout, parent.Scheme)
+		if err != nil {
+			return fmt.Errorf("submodule %q: %w", scope, err)
+		}
+		if len(gitlinks) != 0 {
+			*depthLimited = append(*depthLimited, scope)
+		}
+		return nil
+	}
 	submodules, err := configuredGitSubmodules(root, checkout, parent)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if len(*collected)+len(submodules) > maxGitSubmodules {
+		return errors.New("remote Git checkout exceeds total submodule limit")
 	}
 	for i := range submodules {
-		item := &submodules[i]
+		item := submodules[i]
 		location := filepath.Join(checkout, filepath.FromSlash(item.Path))
-		if err := prepareSubmoduleDirectory(checkout, item.Path); err != nil {
-			return nil, err
+		item.Path = path.Join(scope, item.Path)
+		if err := prepareSubmoduleDirectory(checkout, submodules[i].Path); err != nil {
+			return err
 		}
 		if _, err := remoteGitCommand(root, location, parent.Scheme, false, "init", "--quiet"); err != nil {
-			return nil, fmt.Errorf("could not initialize submodule %q", item.Path)
+			return fmt.Errorf("could not initialize submodule %q", item.Path)
 		}
 		if _, err := remoteGitCommand(root, location, parent.Scheme, false, "remote", "add", "origin", item.URL); err != nil {
-			return nil, fmt.Errorf("could not configure submodule %q", item.Path)
+			return fmt.Errorf("could not configure submodule %q", item.Path)
 		}
 		if _, err := remoteGitCommand(root, location, parent.Scheme, false, "fetch", "--depth", "1", "--no-tags", "origin", item.Commit); err != nil {
-			return nil, fmt.Errorf("submodule %q fetch failed or exceeded its time or size limit", item.Path)
+			return fmt.Errorf("submodule %q fetch failed or exceeded its time or size limit", item.Path)
 		}
 		fetched, err := remoteGitCommand(root, location, parent.Scheme, false, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
 		if err != nil || strings.TrimSpace(fetched) != item.Commit {
-			return nil, fmt.Errorf("submodule %q did not resolve to its pinned commit", item.Path)
+			return fmt.Errorf("submodule %q did not resolve to its pinned commit", item.Path)
 		}
 		if _, err := remoteGitCommand(root, location, parent.Scheme, true, "-c", "core.hooksPath="+os.DevNull, "checkout", "--detach", "--force", item.Commit); err != nil {
-			return nil, fmt.Errorf("submodule %q checkout failed or exceeded its time or size limit", item.Path)
+			return fmt.Errorf("submodule %q checkout failed or exceeded its time or size limit", item.Path)
 		}
 		if err := checkRemoteGitTree(root, location); err != nil {
-			return nil, fmt.Errorf("submodule %q: %w", item.Path, err)
+			return fmt.Errorf("submodule %q: %w", item.Path, err)
+		}
+		*collected = append(*collected, item)
+		child, err := validateGitURL(item.URL)
+		if err != nil {
+			return fmt.Errorf("submodule %q has an invalid URL", item.Path)
+		}
+		if err := fetchNestedGitSubmodules(root, location, child, item.Path, depth+1, collected, depthLimited); err != nil {
+			return err
 		}
 	}
-	return submodules, nil
+	return nil
 }
 
 func configuredGitSubmodules(root, checkout string, parent *url.URL) ([]gitSubmodule, error) {

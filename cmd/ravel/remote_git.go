@@ -120,8 +120,9 @@ func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 		return 1
 	}
 	submodules := []gitSubmodule{}
+	depthLimited := []string{}
 	if options.Submodules {
-		submodules, err = fetchGitSubmodules(root, checkout, repository)
+		submodules, depthLimited, err = fetchGitSubmodules(root, checkout, repository)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ravel:", err)
 			return 1
@@ -162,17 +163,19 @@ func runScanRemoteGit(rawURL string, options remoteGitOptions) int {
 	}
 	stable := "git+" + rawURL + "@" + commit
 	doc.Project = strings.TrimSuffix(filepath.Base(repository.Path), ".git")
-	for _, submodule := range submodules {
+	// Descendants must be rewritten before their ancestor checkout paths.
+	for i := len(submodules) - 1; i >= 0; i-- {
+		submodule := submodules[i]
 		rewriteGitPaths(&doc, filepath.Join(checkout, filepath.FromSlash(submodule.Path)), "git+"+submodule.URL+"@"+submodule.Commit)
 	}
 	rewriteGitPaths(&doc, checkout, stable)
 	doc.Git = []model.GitProvenance{{Commit: commit, Dirty: false, Scope: ".", RequestedURL: rawURL, RequestedRef: options.Ref}}
 	for _, submodule := range submodules {
 		doc.Git = append(doc.Git, model.GitProvenance{Commit: submodule.Commit, Dirty: false, Scope: submodule.Path, RequestedURL: submodule.URL, RequestedRef: submodule.Commit})
-		if _, err := os.Stat(filepath.Join(checkout, filepath.FromSlash(submodule.Path), ".gitmodules")); err == nil {
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "git_nested_submodules_not_scanned", Scope: submodule.Path})
-			doc.Coverage.GraphState = "partial"
-		}
+	}
+	for _, scope := range depthLimited {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "git_submodule_depth_limit", Scope: scope})
+		doc.Coverage.GraphState = "partial"
 	}
 	for _, pointer := range lfsPointers {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "git_lfs_pointer_not_materialized", Scope: pointer})
