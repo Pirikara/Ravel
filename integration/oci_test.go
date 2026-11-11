@@ -96,6 +96,15 @@ func ociTestTar(t *testing.T, entries []ociTestEntry) []byte {
 
 func ociTestImage(t *testing.T, layout, osName, arch string, layers []ociTestLayer, variant ...string) ociTestDescriptor {
 	t.Helper()
+	selectedVariant := ""
+	if len(variant) > 0 {
+		selectedVariant = variant[0]
+	}
+	return ociTestImageWithEnv(t, layout, osName, arch, layers, selectedVariant, nil)
+}
+
+func ociTestImageWithEnv(t *testing.T, layout, osName, arch string, layers []ociTestLayer, variant string, env []string) ociTestDescriptor {
+	t.Helper()
 	var layerDescriptors []ociTestDescriptor
 	var diffIDs []string
 	for _, layer := range layers {
@@ -123,8 +132,11 @@ func ociTestImage(t *testing.T, layout, osName, arch string, layers []ociTestLay
 		diffIDs = append(diffIDs, diffID)
 	}
 	configValues := map[string]any{"os": osName, "architecture": arch, "rootfs": map[string]any{"type": "layers", "diff_ids": diffIDs}}
-	if len(variant) > 0 {
-		configValues["variant"] = variant[0]
+	if variant != "" {
+		configValues["variant"] = variant
+	}
+	if env != nil {
+		configValues["config"] = map[string]any{"Env": env}
 	}
 	configData, err := json.Marshal(configValues)
 	if err != nil {

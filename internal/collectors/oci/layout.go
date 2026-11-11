@@ -114,15 +114,19 @@ type imageConfig struct {
 	OS           string `json:"os"`
 	Architecture string `json:"architecture"`
 	Variant      string `json:"variant"`
-	RootFS       struct {
+	Config       struct {
+		Env []string `json:"Env"`
+	} `json:"config"`
+	RootFS struct {
 		Type    string   `json:"type"`
 		DiffIDs []string `json:"diff_ids"`
 	} `json:"rootfs"`
 }
 
 type imageChoice struct {
-	config imageConfig
-	layers []descriptor
+	config       imageConfig
+	configDigest string
+	layers       []descriptor
 }
 
 type javaArchiveState struct {
@@ -224,7 +228,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			platform += "/" + config.Variant
 		}
 		if requestedPlatform == "" || matchesPlatform(requestedPlatform, platform) {
-			choices = append(choices, imageChoice{config: config, layers: manifest.Layers})
+			choices = append(choices, imageChoice{config: config, configDigest: manifest.Config.Digest, layers: manifest.Layers})
 		}
 	}
 	if len(choices) != 1 {
@@ -234,6 +238,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		return model.Document{}, errors.New("OCI platform selects multiple images; choose a single-image layout")
 	}
 	choice := choices[0]
+	var rLibraryRoots []rLibraryRoot
+	var rLibraryIssues []model.Issue
+	if choice.config.OS == "linux" {
+		rLibraryRoots, rLibraryIssues = installedRLibraryRoots(choice.config.Config.Env)
+	}
 	type databaseState struct {
 		data  []byte
 		layer string
@@ -413,7 +422,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				}
 			}
 		}
-		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths, nodePackageLinks, project, choice.config.Architecture)
+		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths, nodePackageLinks, project, choice.config.Architecture, rLibraryRoots)
 		if err != nil {
 			return model.Document{}, fmt.Errorf("OCI layer %d: %w", i, err)
 		}
@@ -862,6 +871,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Coverage.OriginState = "unknown"
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "os_package_database_not_found", Name: "dpkg,apk,rpm"}, model.Issue{Code: "image_language_packages_unscanned"})
 		doc.Coverage.Issues = append(doc.Coverage.Issues, nodeLinkIssues...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, rLibraryIssues...)
 		if goScanLimited {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
 		}
@@ -882,6 +892,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	doc.Sources = sources
 	doc.Coverage.Platforms = []string{platform}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, nodeLinkIssues...)
+	doc.Coverage.Issues = append(doc.Coverage.Issues, rLibraryIssues...)
 	if goScanLimited {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_scan_limited"})
 	}
@@ -1217,13 +1228,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	rRecords := make([]rInstalledRecord, 0, len(rNames))
 	for _, name := range rNames {
 		state := rDescriptions[name]
-		record, installed, err := inspectInstalledRDescription(state.data, "oci:"+state.layer+"!/"+name, name)
+		record, installed, err := inspectInstalledRDescription(state.data, "oci:"+state.layer+"!/"+name, name, rLibraryRoots)
 		if err != nil {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "r_installed_description_invalid", Name: name})
 			continue
 		}
 		if !installed {
 			continue
+		}
+		if variable, matched := rDescriptionLibrarySource(name, rLibraryRoots); matched && variable != "" {
+			record.component.Evidence = append(record.component.Evidence, model.Evidence{Collector: "r-library-config", InputPath: "oci:" + choice.configDigest, InputDigest: choice.configDigest, Pointer: "config.Env/" + variable, Method: "configured-library-path"})
 		}
 		rRecords = append(rRecords, record)
 		doc.Components = append(doc.Components, record.component)
@@ -1704,7 +1718,7 @@ type layerChange struct {
 	whiteouts                []string
 }
 
-func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, existingNodeLinks map[string]string, project, architecture string) (layerChange, string, error) {
+func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, existingNodeLinks map[string]string, project, architecture string, rLibraryRoots []rLibraryRoot) (layerChange, string, error) {
 	if item.MediaType != plainLayerType && item.MediaType != gzipLayerType && item.MediaType != plainNonDistType && item.MediaType != gzipNonDistType && item.MediaType != dockerPlainLayerType && item.MediaType != dockerGzipLayerType && item.MediaType != dockerForeignLayerType {
 		return layerChange{}, "", fmt.Errorf("unsupported OCI layer media type %s", item.MediaType)
 	}
@@ -2139,7 +2153,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 			continue
 		}
-		if isInstalledRDescriptionPath(name) {
+		if isInstalledRDescriptionPath(name, rLibraryRoots) {
 			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxRDescriptionBytes {
 				return layerChange{}, "", fmt.Errorf("unsupported OCI installed R DESCRIPTION entry: %s", name)
 			}

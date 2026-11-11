@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -9,7 +10,7 @@ const rTestDescription = "Package: MASS\nVersion: 7.3-65\nDepends: R (>= 4.4.0),
 const rTestPath = "usr/local/lib/R/library/MASS/DESCRIPTION"
 
 func TestInstalledRDescriptionIdentityAndContinuation(t *testing.T) {
-	record, installed, err := inspectInstalledRDescription([]byte(rTestDescription), "oci:sha256:layer!/"+rTestPath, rTestPath)
+	record, installed, err := inspectInstalledRDescription([]byte(rTestDescription), "oci:sha256:layer!/"+rTestPath, rTestPath, nil)
 	if err != nil || !installed {
 		t.Fatalf("installed R package rejected: installed=%v err=%v", installed, err)
 	}
@@ -33,7 +34,7 @@ func TestInstalledRDescriptionRequiresBuiltAndMatchingDirectory(t *testing.T) {
 		{name: "site library", path: "opt/conda/lib/R/site-library/MASS/DESCRIPTION", data: rTestDescription, installed: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, installed, err := inspectInstalledRDescription([]byte(test.data), "oci:layer!/"+test.path, test.path)
+			_, installed, err := inspectInstalledRDescription([]byte(test.data), "oci:layer!/"+test.path, test.path, nil)
 			if installed != test.installed || (err != nil) != test.invalid {
 				t.Fatalf("unexpected R DESCRIPTION result: installed=%v err=%v", installed, err)
 			}
@@ -56,5 +57,48 @@ func TestCompareRVersions(t *testing.T) {
 		if got != test.want || ok != test.ok {
 			t.Fatalf("compareRVersions(%q, %q) = %d, %v", test.a, test.b, got, ok)
 		}
+	}
+}
+
+func TestInstalledRConfiguredLibraryRoots(t *testing.T) {
+	roots, issues := installedRLibraryRoots([]string{
+		"R_LIBS=/old/lib", "R_LIBS=/opt/ravel-test/Rlibs:/opt/other/lib",
+		"R_LIBS_SITE=/usr/local/lib/R/host-site-library", "R_HOME=/opt/R/4.5/lib/R",
+		"R_LIBS_USER=~/R/library/%v",
+	})
+	if len(roots) != 5 || len(issues) != 1 || issues[0].Name != "R_LIBS_USER" {
+		t.Fatalf("configured R roots or unresolved path reporting incorrect: roots=%#v issues=%#v", roots, issues)
+	}
+	for _, test := range []struct {
+		name, wantSource string
+		found            bool
+	}{
+		{"opt/ravel-test/Rlibs/docopt/DESCRIPTION", "R_LIBS", true},
+		{"usr/local/lib/R/host-site-library/littler/DESCRIPTION", "R_LIBS_SITE", true},
+		{"opt/R/4.5/lib/R/library/base/DESCRIPTION", "", true},
+		{"opt/R/4.5/lib/R/site-library/other/DESCRIPTION", "", true},
+		{"old/lib/stale/DESCRIPTION", "", false},
+		{"opt/ravel-test/Rlibs/nested/docopt/DESCRIPTION", "", false},
+		{"opt/elsewhere/source/DESCRIPTION", "", false},
+	} {
+		got, found := rDescriptionLibrarySource(test.name, roots)
+		if got != test.wantSource || found != test.found {
+			t.Fatalf("R library path %q: source=%q found=%v", test.name, got, found)
+		}
+	}
+}
+
+func TestInstalledRLibraryRootsRejectUnsafeAndExcessivePaths(t *testing.T) {
+	roots, issues := installedRLibraryRoots([]string{"R_LIBS=/safe:/opt/../outside:relative:/tmp/%v:/tmp/~/pkg", "R_LIBS_SITE=NULL"})
+	if len(roots) != 1 || roots[0].dir != "safe" || len(issues) != 1 || issues[0].Name != "R_LIBS" {
+		t.Fatalf("unsafe R roots accepted: roots=%#v issues=%#v", roots, issues)
+	}
+	paths := make([]string, maxRLibraryRoots+1)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("/opt/Rlibs/%d", i)
+	}
+	roots, issues = installedRLibraryRoots([]string{"R_LIBS=" + strings.Join(paths, ":")})
+	if len(roots) != maxRLibraryRoots || len(issues) != 1 || issues[0].Name != "R_LIBS" {
+		t.Fatalf("unbounded R roots accepted: roots=%d issues=%#v", len(roots), issues)
 	}
 }
