@@ -87,6 +87,55 @@ func TestOCIInstalledRConfiguredLibraryInvalidPathReported(t *testing.T) {
 	}
 }
 
+func TestOCIInstalledRStartupLibrariesAndFinalLayers(t *testing.T) {
+	const environ = "opt/ravel-startup/config/Renviron.site"
+	const profile = "opt/ravel-startup/config/Rprofile.site"
+	base := []ociTestEntry{
+		{name: environ, data: []byte("R_LIBS=/opt/ravel-startup/env-lib\n")},
+		{name: profile, data: []byte(".libPaths(c(\"/opt/ravel-startup/profile-lib\", .libPaths()))\n")},
+		{name: "opt/ravel-startup/env-lib/docopt/DESCRIPTION", data: ociTestRDescription("docopt", "0.7.2", "")},
+		{name: "opt/ravel-startup/profile-lib/littler/DESCRIPTION", data: ociTestRDescription("littler", "0.3.21", "")},
+		{name: "opt/old-lib/stale/DESCRIPTION", data: ociTestRDescription("stale", "1.0.0", "")},
+		{name: "opt/project/source/DESCRIPTION", data: ociTestRDescription("source", "1.0.0", "")},
+	}
+	env := []string{"R_LIBS=/opt/old-lib", "R_ENVIRON=/" + environ, "R_PROFILE=/" + profile}
+	for _, test := range []struct {
+		name  string
+		upper []ociTestEntry
+		want  string
+		issue bool
+	}{
+		{name: "both startup files", want: "docopt@0.7.2,littler@0.3.21"},
+		{name: "profile replaced", upper: []ociTestEntry{{name: profile, data: []byte("if (FALSE) .libPaths('/opt/ravel-startup/profile-lib')\n")}}, want: "docopt@0.7.2", issue: true},
+		{name: "environment removed", upper: []ociTestEntry{{name: "opt/ravel-startup/config/.wh.Renviron.site"}}, want: "littler@0.3.21,stale@1.0.0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			layers := []ociTestLayer{{entries: base}}
+			if test.upper != nil {
+				layers = append(layers, ociTestLayer{entries: test.upper})
+			}
+			doc := ociScanInstalledRWithEnv(t, layers, env)
+			got := ociRComponents(doc)
+			if len(got) != len(strings.Split(test.want, ",")) {
+				t.Fatalf("startup library count incorrect: %#v", got)
+			}
+			for _, label := range strings.Split(test.want, ",") {
+				if _, found := got[label]; !found {
+					t.Fatalf("startup package %s missing: %#v", label, got)
+				}
+			}
+			if ociTestRubyHasIssue(doc, "r_installed_library_path_unresolved") != test.issue {
+				t.Fatalf("startup uncertainty incorrect: %#v", doc.Coverage.Issues)
+			}
+			for _, label := range []string{"docopt@0.7.2", "littler@0.3.21"} {
+				if component, found := got[label]; found && (len(component.Evidence) != 3 || component.Evidence[2].Collector != "r-library-startup") {
+					t.Fatalf("startup file evidence missing: %#v", component)
+				}
+			}
+		})
+	}
+}
+
 func ociRComponents(doc model.Document) map[string]model.Component {
 	result := map[string]model.Component{}
 	for _, component := range doc.Components {
@@ -188,5 +237,18 @@ func TestOCIInstalledRDescriptionBeneathSameLayerSymlinkRejected(t *testing.T) {
 	_, output, code := ociTestScan(t, layout)
 	if code != 1 || !strings.Contains(output, "non-directory entry") {
 		t.Fatalf("R DESCRIPTION below symlink accepted: code=%d output=%s", code, output)
+	}
+}
+
+func TestOCIInstalledRStartupBeneathSameLayerSymlinkRejected(t *testing.T) {
+	layout := ociTestLayout(t)
+	image := ociTestImageWithEnv(t, layout, "linux", "arm64", []ociTestLayer{{entries: []ociTestEntry{
+		{name: "opt/ravel-startup/config", typeflag: tar.TypeSymlink, linkname: "/elsewhere"},
+		{name: "opt/ravel-startup/config/Renviron.site", data: []byte("R_LIBS=/opt/library\n")},
+	}}}, "", []string{"R_ENVIRON=/opt/ravel-startup/config/Renviron.site"})
+	ociTestIndex(t, layout, image)
+	_, output, code := ociTestScan(t, layout)
+	if code != 1 || !strings.Contains(output, "non-directory entry") {
+		t.Fatalf("R startup file below symlink accepted: code=%d output=%s", code, output)
 	}
 }

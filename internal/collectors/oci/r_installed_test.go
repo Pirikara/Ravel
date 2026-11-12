@@ -102,3 +102,32 @@ func TestInstalledRLibraryRootsRejectUnsafeAndExcessivePaths(t *testing.T) {
 		t.Fatalf("unbounded R roots accepted: roots=%d issues=%#v", len(roots), issues)
 	}
 }
+
+func TestInstalledRStartupFilesAcceptOnlyLiteralPaths(t *testing.T) {
+	paths, issues := rStartupPaths([]string{
+		"R_ENVIRON=../tmp/Renviron.site", "R_ENVIRON=/opt/R/Renviron.site",
+		"R_PROFILE=/opt/R/%v/Rprofile.site",
+	})
+	if paths["R_ENVIRON"] != "opt/R/Renviron.site" || len(paths) != 1 || len(issues) != 1 || issues[0].Name != "R_PROFILE" {
+		t.Fatalf("startup file path validation incorrect: paths=%#v issues=%#v", paths, issues)
+	}
+	roots, issues := applyRStartupRoots([]string{"R_LIBS=/old/lib"}, map[string][]byte{
+		"R_ENVIRON": []byte("# startup variables\nR_LIBS=/opt/new/lib\n"),
+		"R_PROFILE": []byte("# site profile\n.libPaths(c('/opt/profile/lib', .libPaths()))\n"),
+	})
+	if len(roots) != 2 || roots[0].dir != "opt/new/lib" || roots[0].variable != "R_ENVIRON" || roots[1].dir != "opt/profile/lib" || roots[1].variable != "R_PROFILE" || len(issues) != 0 {
+		t.Fatalf("literal startup roots incorrect: roots=%#v issues=%#v", roots, issues)
+	}
+	for _, content := range []string{
+		"if (FALSE) .libPaths(c('/opt/profile/lib', .libPaths()))\n",
+		".libPaths(c('/opt/profile/lib', .libPaths()))\n.libPaths('/other')\n",
+		".libPaths(c('../relative', .libPaths()))\n",
+	} {
+		if _, ok := rStartupProfileRoots([]byte(content)); ok {
+			t.Fatalf("dynamic or unsafe startup profile accepted: %q", content)
+		}
+	}
+	if _, ok := rStartupEnvironment([]byte("R_LIBS=${HOME}/R/library\n")); ok {
+		t.Fatal("expanded startup environment path accepted")
+	}
+}

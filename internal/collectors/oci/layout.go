@@ -2,6 +2,7 @@ package oci
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -240,8 +241,12 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	choice := choices[0]
 	var rLibraryRoots []rLibraryRoot
 	var rLibraryIssues []model.Issue
+	var startupPaths map[string]string
 	if choice.config.OS == "linux" {
 		rLibraryRoots, rLibraryIssues = installedRLibraryRoots(choice.config.Config.Env)
+		var startupIssues []model.Issue
+		startupPaths, startupIssues = rStartupPaths(choice.config.Config.Env)
+		rLibraryIssues = append(rLibraryIssues, startupIssues...)
 	}
 	type databaseState struct {
 		data  []byte
@@ -268,6 +273,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	nodePackageLinks := map[string]string{}
 	rubySpecs := map[string]databaseState{}
 	rDescriptions := map[string]databaseState{}
+	rStartupFiles := map[string]databaseState{}
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
 	goScanLimited := false
@@ -292,6 +298,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
+		for _, name := range startupPaths {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
 		for _, name := range []string{nodeRuntimeBinaryPath, nodeRuntimeHeaderPath, bunBinaryPath, denoBinaryPath, httpdBinaryPath, haproxyBinaryPath, memcachedBinaryPath, micromambaBinaryPath, phpCLIBinaryPath, phpFPMBinaryPath, postgresBinaryPath, redisBinaryPath} {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
@@ -422,7 +436,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				}
 			}
 		}
-		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths, nodePackageLinks, project, choice.config.Architecture, rLibraryRoots)
+		change, blobPath, err := scanLayer(layout, layer, choice.config.RootFS.DiffIDs[i], relevantPaths, nodePackageLinks, project, choice.config.Architecture, rLibraryRoots, startupPaths)
 		if err != nil {
 			return model.Document{}, fmt.Errorf("OCI layer %d: %w", i, err)
 		}
@@ -495,6 +509,11 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 						delete(metadata, name)
 					}
+				}
+			}
+			for name := range rStartupFiles {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					delete(rStartupFiles, name)
 				}
 			}
 			for name := range pythonEggRequirements {
@@ -651,6 +670,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		for name, data := range change.rDescriptions {
 			rDescriptions[name] = databaseState{data: data, layer: layer.Digest}
+		}
+		for name, data := range change.rStartup {
+			rStartupFiles[name] = databaseState{data: data, layer: layer.Digest}
 		}
 		for name, state := range change.java {
 			state.layer = layer.Digest
@@ -842,6 +864,18 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if rustPackages > 50000 {
 			return model.Document{}, errors.New("OCI image has too many Rust audit package records")
 		}
+	}
+	if len(startupPaths) > 0 {
+		files := map[string][]byte{}
+		for key, name := range startupPaths {
+			if state, found := rStartupFiles[name]; found {
+				files[key] = state.data
+			}
+		}
+		var startupIssues []model.Issue
+		rLibraryRoots, startupIssues = applyRStartupRoots(choice.config.Config.Env, files)
+		_, pathIssues := rStartupPaths(choice.config.Config.Env)
+		rLibraryIssues = append(pathIssues, startupIssues...)
 	}
 	platform := choice.config.OS + "/" + choice.config.Architecture
 	if choice.config.Variant != "" {
@@ -1227,6 +1261,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	sort.Strings(rNames)
 	rRecords := make([]rInstalledRecord, 0, len(rNames))
 	for _, name := range rNames {
+		if !isInstalledRDescriptionPath(name, rLibraryRoots) {
+			continue
+		}
 		state := rDescriptions[name]
 		record, installed, err := inspectInstalledRDescription(state.data, "oci:"+state.layer+"!/"+name, name, rLibraryRoots)
 		if err != nil {
@@ -1238,6 +1275,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		if variable, matched := rDescriptionLibrarySource(name, rLibraryRoots); matched && variable != "" {
 			record.component.Evidence = append(record.component.Evidence, model.Evidence{Collector: "r-library-config", InputPath: "oci:" + choice.configDigest, InputDigest: choice.configDigest, Pointer: "config.Env/" + variable, Method: "configured-library-path"})
+			if startupPath, selected := startupPaths[variable]; selected {
+				if startup, found := rStartupFiles[startupPath]; found {
+					hash := sha256.Sum256(startup.data)
+					pointer := ".libPaths"
+					if variable == "R_ENVIRON" {
+						pointer = "R_LIBS*"
+					}
+					record.component.Evidence = append(record.component.Evidence, model.Evidence{Collector: "r-library-startup", InputPath: "oci:" + startup.layer + "!/" + startupPath, InputDigest: "sha256:" + hex.EncodeToString(hash[:]), Pointer: pointer, Method: "startup-library-path"})
+				}
+			}
 		}
 		rRecords = append(rRecords, record)
 		doc.Components = append(doc.Components, record.component)
@@ -1693,6 +1740,7 @@ type layerChange struct {
 	nodeLinks                map[string]string
 	rubySpecs                map[string][]byte
 	rDescriptions            map[string][]byte
+	rStartup                 map[string][]byte
 	java                     map[string]javaArchiveState
 	goBinaries               map[string]goBinaryState
 	goLimited                bool
@@ -1718,7 +1766,7 @@ type layerChange struct {
 	whiteouts                []string
 }
 
-func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, existingNodeLinks map[string]string, project, architecture string, rLibraryRoots []rLibraryRoot) (layerChange, string, error) {
+func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePaths map[string]bool, existingNodeLinks map[string]string, project, architecture string, rLibraryRoots []rLibraryRoot, startupPaths map[string]string) (layerChange, string, error) {
 	if item.MediaType != plainLayerType && item.MediaType != gzipLayerType && item.MediaType != plainNonDistType && item.MediaType != gzipNonDistType && item.MediaType != dockerPlainLayerType && item.MediaType != dockerGzipLayerType && item.MediaType != dockerForeignLayerType {
 		return layerChange{}, "", fmt.Errorf("unsupported OCI layer media type %s", item.MediaType)
 	}
@@ -1749,7 +1797,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, osReleases: map[string]osReleaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, condaMetadata: map[string]condaMetadataState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, rDescriptions: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
+	change := layerChange{files: map[string]databaseChange{}, osReleases: map[string]osReleaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, condaMetadata: map[string]condaMetadataState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, rDescriptions: map[string][]byte{}, rStartup: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
 	seenDatabase := map[string]bool{}
 	seenDPKGLists := map[string]bool{}
 	parentReplaced := map[string]bool{}
@@ -2153,8 +2201,35 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 			continue
 		}
-		if isInstalledRDescriptionPath(name, rLibraryRoots) {
+		startupFile := false
+		for _, file := range startupPaths {
+			if name == file {
+				startupFile = true
+				break
+			}
+		}
+		if startupFile {
+			if _, duplicate := change.rStartup[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI R startup file: %s", name)
+			}
+			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxRStartupBytes {
+				change.rStartup[name] = nil
+				continue
+			}
+			data, err := io.ReadAll(io.LimitReader(reader, maxRStartupBytes+1))
+			if err != nil || len(data) != int(header.Size) {
+				return layerChange{}, "", errors.New("invalid OCI R startup file")
+			}
+			change.rStartup[name] = data
+			continue
+		}
+		knownRDescription := isInstalledRDescriptionPath(name, rLibraryRoots)
+		if knownRDescription || len(startupPaths) > 0 && isPotentialRDescriptionPath(name) {
 			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA || header.Size > maxRDescriptionBytes {
+				if !knownRDescription {
+					change.rDescriptions[name] = nil
+					continue
+				}
 				return layerChange{}, "", fmt.Errorf("unsupported OCI installed R DESCRIPTION entry: %s", name)
 			}
 			if _, duplicate := change.rDescriptions[name]; duplicate {
@@ -2164,8 +2239,10 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			if err != nil || len(data) != int(header.Size) {
 				return layerChange{}, "", errors.New("invalid OCI installed R DESCRIPTION entry")
 			}
-			change.rDescriptions[name] = data
-			rBytes += len(data)
+			if knownRDescription || bytes.Contains(data, []byte("Built:")) {
+				change.rDescriptions[name] = data
+				rBytes += len(data)
+			}
 			if len(change.rDescriptions) > maxRDescriptionFiles || rBytes > maxRDescriptionTotal {
 				return layerChange{}, "", errors.New("OCI layer has too much installed R DESCRIPTION metadata")
 			}
@@ -2651,7 +2728,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			return layerChange{}, "", fmt.Errorf("OCI layer replaces database parent directory and %s together", target)
 		}
 	}
-	for _, metadata := range []map[string][]byte{change.python, change.pipVendor, change.node, change.rubySpecs, change.rDescriptions} {
+	for _, metadata := range []map[string][]byte{change.python, change.pipVendor, change.node, change.rubySpecs, change.rDescriptions, change.rStartup} {
 		for name := range metadata {
 			for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 				if nonDirectoryPaths[ancestor] {
