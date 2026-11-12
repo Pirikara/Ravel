@@ -112,9 +112,9 @@ func TestRemoteResolutionRejectsUnpinnedImportAndPrivateFetch(t *testing.T) {
 	}
 }
 
-func TestRemoteImportsIncludeTypeOnlyAndReExports(t *testing.T) {
+func TestRemoteImportsExcludeTypeOnlyAndIncludeReExports(t *testing.T) {
 	specs, err := remoteImports("https://cdn.example.org/mod.ts", []byte(`import type { Shape } from "./shape.ts"; export * from "./value.ts";`))
-	if err != nil || len(specs) != 2 || specs[0] != "./shape.ts" || specs[1] != "./value.ts" {
+	if err != nil || len(specs) != 1 || specs[0] != "./value.ts" {
 		t.Fatalf("remote imports = %#v, %v", specs, err)
 	}
 }
@@ -123,28 +123,6 @@ func TestRemoteJSONModuleHasNoImportEdges(t *testing.T) {
 	specs, err := remoteImports("https://cdn.example.org/config.json", []byte(`{"import":"./not-a-module.ts"}`))
 	if err != nil || len(specs) != 0 {
 		t.Fatalf("remote JSON imports = %#v, %v", specs, err)
-	}
-}
-
-func TestTypeOnlyImportsIgnoreCommentsAndExamples(t *testing.T) {
-	data := []byte("// import type { Fake } from './comment.ts';\n" +
-		"/* export type { Fake } from './block.ts'; */\n" +
-		"const example = \"import type { Fake } from './string.ts'\";\n" +
-		"const pattern = /import type { Fake } from 'regex.ts'/;\n" +
-		"import type { Real } from './real.ts';\n" +
-		"export { type Other } from './other.ts';\n")
-	specs := typeOnlyImportSpecifiers(data)
-	if len(specs) != 2 || specs[0] != "./real.ts" || specs[1] != "./other.ts" {
-		t.Fatalf("type imports = %#v", specs)
-	}
-}
-
-func TestLocalTypeOnlyImportIsRemoteRoot(t *testing.T) {
-	const raw = "https://cdn.example.org/types.ts"
-	file := writeRemoteFixture(t, map[string]string{raw: `export type Shape = { x: number };`}, `import type { Shape } from "`+raw+`";`, "")
-	doc, err := Collect(file, "fixture")
-	if err != nil || len(doc.Components) != 1 || len(doc.Edges) != 1 {
-		t.Fatalf("type-only remote root missed: %v %#v", err, doc)
 	}
 }
 

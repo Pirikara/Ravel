@@ -311,12 +311,6 @@ func remoteImports(source string, data []byte) ([]string, error) {
 			specs = append(specs, imp.Path)
 		}
 	}
-	for _, spec := range typeOnlyImportSpecifiers(data) {
-		if !seen[spec] {
-			seen[spec] = true
-			specs = append(specs, spec)
-		}
-	}
 	sort.Strings(specs)
 	return specs, nil
 }
