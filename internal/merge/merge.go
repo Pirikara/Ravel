@@ -79,6 +79,7 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "direct", Evidence: input.Root.Evidence})
 		}
 		componentNames := map[string]string{}
+		componentVersions := map[string]string{}
 		for _, component := range input.Components {
 			if component.ID == "" || component.ID == "root" {
 				return model.Document{}, fmt.Errorf("input %d has invalid component ID", index)
@@ -89,6 +90,7 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			id := "merge:" + common.ID(fmt.Sprintf("%d|%s|%s", index, input.Source, component.ID))
 			ids[component.ID] = id
 			componentNames[component.ID] = component.Name
+			componentVersions[component.ID] = component.Version
 			component.ID = id
 			doc.Components = append(doc.Components, component)
 		}
@@ -107,7 +109,8 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 				return model.Document{}, fmt.Errorf("input %d has dangling origin", index)
 			}
 			if origin.SafeURL != "" && safeurl.Clean(origin.SafeURL) != origin.SafeURL &&
-				!(hasGitHubActions && safeurl.IsGitHubActionsRepository(origin.SafeURL, componentNames[origin.Occurrence])) {
+				!(hasGitHubActions && safeurl.IsGitHubActionsRepository(origin.SafeURL, componentNames[origin.Occurrence])) &&
+				safeurl.CleanNpmTarball(origin.SafeURL, componentNames[origin.Occurrence], componentVersions[origin.Occurrence]) != origin.SafeURL {
 				return model.Document{}, fmt.Errorf("input %d has unsafe origin URL", index)
 			}
 			origin.Occurrence = id
