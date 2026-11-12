@@ -274,7 +274,14 @@ func resolveRemoteSpecifier(parent, spec string) string {
 }
 
 func remoteImports(source string, data []byte) ([]string, error) {
-	loader, ok := sourceLoader(filepath.Ext(strings.SplitN(source, "?", 2)[0]))
+	ext := filepath.Ext(strings.SplitN(source, "?", 2)[0])
+	if strings.EqualFold(ext, ".json") {
+		if !json.Valid(data) {
+			return nil, errors.New("invalid remote JSON module")
+		}
+		return nil, nil
+	}
+	loader, ok := sourceLoader(ext)
 	if !ok {
 		loader = api.LoaderTS
 	}

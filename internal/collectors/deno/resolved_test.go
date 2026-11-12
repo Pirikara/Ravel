@@ -119,6 +119,13 @@ func TestRemoteImportsIncludeTypeOnlyAndReExports(t *testing.T) {
 	}
 }
 
+func TestRemoteJSONModuleHasNoImportEdges(t *testing.T) {
+	specs, err := remoteImports("https://cdn.example.org/config.json", []byte(`{"import":"./not-a-module.ts"}`))
+	if err != nil || len(specs) != 0 {
+		t.Fatalf("remote JSON imports = %#v, %v", specs, err)
+	}
+}
+
 func TestTypeOnlyImportsIgnoreCommentsAndExamples(t *testing.T) {
 	data := []byte("// import type { Fake } from './comment.ts';\n" +
 		"/* export type { Fake } from './block.ts'; */\n" +
