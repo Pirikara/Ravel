@@ -42,3 +42,36 @@ func TestDenoUnlinkedRemoteLockRecords(t *testing.T) {
 		t.Fatal("remote lockfile credentials leaked")
 	}
 }
+
+func TestDenoResolveCLIRejectsPrivateRemoteWithoutExecuting(t *testing.T) {
+	fixture := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixture, "main.ts"), []byte(`import "https://127.0.0.1/private.ts";`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock := `{"version":"5","remote":{"https://127.0.0.1/private.ts":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`
+	if err := os.WriteFile(filepath.Join(fixture, "deno.lock"), []byte(lock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "ravel.json")
+	if data, err := exec.Command(executable, "scan", fixture, "--resolve", "--network", "allow", "--format", "ravel-json", "--output", output).CombinedOutput(); err != nil {
+		t.Fatalf("Deno resolved scan failed: %v: %s", err, data)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc model.Document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Components) != 1 || len(doc.Edges) != 1 {
+		t.Fatalf("unexpected resolved graph: %d components, %d edges", len(doc.Components), len(doc.Edges))
+	}
+	found := false
+	for _, issue := range doc.Coverage.Issues {
+		found = found || issue.Code == "remote_source_unavailable" && issue.Name == "https://127.0.0.1/private.ts"
+	}
+	if !found {
+		t.Fatalf("private remote was not reported unavailable: %#v", doc.Coverage.Issues)
+	}
+}

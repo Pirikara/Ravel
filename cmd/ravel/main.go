@@ -14,6 +14,7 @@ import (
 
 	"github.com/Pirikara/Ravel/internal/collectors/bundler"
 	"github.com/Pirikara/Ravel/internal/collectors/cargo"
+	"github.com/Pirikara/Ravel/internal/collectors/deno"
 	"github.com/Pirikara/Ravel/internal/collectors/dpkg"
 	"github.com/Pirikara/Ravel/internal/collectors/gomod"
 	"github.com/Pirikara/Ravel/internal/collectors/gradle"
@@ -81,7 +82,7 @@ func buildVersion() string {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: ravel version")
-	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG|GIT_URL [--git-ref REF --network allow] [--git-submodules] [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries] [--include-archives]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve --allow-exec --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
+	fmt.Fprintln(os.Stderr, "       ravel scan PATH|IMAGE:TAG|GIT_URL [--git-ref REF --network allow] [--git-submodules] [--manager NAME|--all [--recursive [--include-test-and-vendor] [--include-binaries] [--include-archives]]] [--image-source registry|docker] [--format cyclonedx-json|spdx-json|ravel-json] [--output FILE] [--report FILE] [--strict] [--resolve [--allow-exec] --network deny|allow] [--configuration NAME] [--platform OS/ARCH]")
 	fmt.Fprintln(os.Stderr, "       ravel explain PACKAGE --input ravel.json [--format text|json]")
 	fmt.Fprintln(os.Stderr, "       ravel graph --input ravel.json [--format html|dot|text] [--output FILE] [--focus PACKAGE] [--direction dependencies|dependents] [--depth N]")
 	fmt.Fprintln(os.Stderr, "       ravel diff BEFORE.ravel.json AFTER.ravel.json [--format text|json]")
@@ -321,7 +322,7 @@ func runScanWithProgress(args []string, progress bool) int {
 	includeBinaries := fs.Bool("include-binaries", false, "include local Go ELF and Mach-O executables with --all --recursive")
 	includeArchives := fs.Bool("include-archives", false, "include supported package archives with --all --recursive")
 	strict := fs.Bool("strict", false, "fail on partial coverage")
-	resolve := fs.Bool("resolve", false, "resolve dependencies with a package manager command")
+	resolve := fs.Bool("resolve", false, "resolve dependencies with a package manager or verified remote source")
 	allowExec := fs.Bool("allow-exec", false, "allow a package manager command")
 	network := fs.String("network", "deny", "deny or allow")
 	configuration := fs.String("configuration", "runtimeClasspath", "Gradle configuration to resolve")
@@ -339,8 +340,8 @@ func runScanWithProgress(args []string, progress bool) int {
 	if fs.NArg() == 1 {
 		path = fs.Arg(0)
 	}
-	if *network != "deny" && *network != "allow" || *resolve && !*allowExec {
-		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec; --network must be deny or allow")
+	if *network != "deny" && *network != "allow" {
+		fmt.Fprintln(os.Stderr, "ravel: --network must be deny or allow")
 		return 2
 	}
 	if *imageSource != "registry" && *imageSource != "docker" {
@@ -459,8 +460,12 @@ func runScanWithProgress(args []string, progress bool) int {
 		fmt.Fprintln(os.Stderr, "ravel:", err)
 		return 2
 	}
-	if *resolve && selected != "go" && selected != "maven" && selected != "gradle" && selected != "cargo" && selected != "swiftpm" {
-		fmt.Fprintln(os.Stderr, "ravel: --resolve currently supports Go modules, Maven, Gradle, Cargo, and SwiftPM")
+	if *resolve && selected != "go" && selected != "maven" && selected != "gradle" && selected != "cargo" && selected != "swiftpm" && selected != "deno" {
+		fmt.Fprintln(os.Stderr, "ravel: --resolve currently supports Go modules, Maven, Gradle, Cargo, SwiftPM, and Deno")
+		return 2
+	}
+	if *resolve && selected != "deno" && !*allowExec {
+		fmt.Fprintln(os.Stderr, "ravel: --resolve requires --allow-exec for this manager")
 		return 2
 	}
 	if *configuration != "runtimeClasspath" && (!*resolve || selected != "gradle") {
@@ -555,6 +560,8 @@ func runScanWithProgress(args []string, progress bool) int {
 		doc, err = cargo.CollectResolved(lock, project, *network == "allow")
 	case *resolve && selected == "swiftpm":
 		doc, err = swiftpm.CollectResolved(lock, project, *network == "allow")
+	case *resolve && selected == "deno":
+		doc, err = deno.CollectResolved(lock, project, *network == "allow")
 	case selected == "go" && filepath.Base(lock) == "go.mod":
 		doc, err = gomod.CollectManifest(lock, project)
 	case selected == "gradle" && (filepath.Base(lock) == "build.gradle" || filepath.Base(lock) == "build.gradle.kts"):

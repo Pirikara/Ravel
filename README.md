@@ -63,6 +63,15 @@ ravel graph --input scan.ravel.json --format html --output dependencies.html
 
 Open `dependencies.html` in a browser to inspect the recorded dependency graph offline. Use a component ID with `explain` or `graph --focus` when the same name appears more than once. See the [CLI guide](docs/cli.md) for all commands and options.
 
+For Deno projects, opt into remote dependency resolution when you need imports between HTTPS modules:
+
+```sh
+ravel scan path/to/deno/project --manager deno --resolve --network allow \
+  --format ravel-json --output deno.ravel.json
+```
+
+Ravel verifies each fetched module against `deno.lock` before following its imports. Deno and project code are not executed. Lockfile URLs whose reachability cannot be established remain coverage issues.
+
 To compare an externally issued OpenVEX document with a scan, use `ravel vex`:
 
 ```sh

@@ -131,6 +131,12 @@ func scanSourceImports(base string) ([]sourceImport, []string, []model.Issue) {
 				imports = append(imports, sourceImport{specifier: imp.Path, path: path, evidence: evidence})
 			}
 		}
+		for _, spec := range typeOnlyImportSpecifiers(data) {
+			if !seen[spec] {
+				seen[spec] = true
+				imports = append(imports, sourceImport{specifier: spec, path: path, evidence: evidence})
+			}
+		}
 		return nil
 	})
 	if err != nil {
