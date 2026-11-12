@@ -126,6 +126,12 @@ func collectResolved(file, project string, fetch remoteFetcher) (model.Document,
 		for _, spec := range specs {
 			mapped := mappedRemoteSpecifier(spec, raw, imports, scopes)
 			if mapped != "" {
+				// Import-map relative values are relative to the map file,
+				// not to the importing remote module.
+				if strings.HasPrefix(mapped, "./") || strings.HasPrefix(mapped, "../") || strings.HasPrefix(mapped, "/") {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "remote_import_unresolved", Name: clean})
+					continue
+				}
 				spec = mapped
 			}
 			child := resolveRemoteSpecifier(finalURL, spec)

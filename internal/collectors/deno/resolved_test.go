@@ -76,6 +76,21 @@ func TestRemoteResolutionRejectsChangedOrUnavailableSource(t *testing.T) {
 	}
 }
 
+func TestRemoteImportMapRelativeValueDoesNotResolveAgainstRemoteURL(t *testing.T) {
+	const base = "https://cdn.example.org/"
+	sources := map[string]string{
+		base + "a.ts":     `import "alias";`,
+		base + "local.ts": `export const wrong = true;`,
+	}
+	file := writeRemoteFixture(t, sources, `import "`+base+`a.ts";`, `{"imports":{"alias":"./local.ts"}}`)
+	doc, err := collectResolved(file, "fixture", func(_ context.Context, raw string) ([]byte, string, error) {
+		return []byte(sources[raw]), raw, nil
+	})
+	if err != nil || len(doc.Components) != 1 || !hasIssue(doc, "remote_import_unresolved", base+"a.ts") || !hasIssue(doc, "lock_remote_reachability_unknown", base+"local.ts") {
+		t.Fatalf("relative import-map value was resolved against the remote URL: %v %#v", err, doc)
+	}
+}
+
 func TestRemoteResolutionRejectsUnpinnedImportAndPrivateFetch(t *testing.T) {
 	const base = "https://cdn.example.org/"
 	sources := map[string]string{base + "a.ts": `import "./not-locked.ts";`}
