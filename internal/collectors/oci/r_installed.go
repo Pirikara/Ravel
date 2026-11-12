@@ -22,11 +22,13 @@ const (
 	maxRDescriptionTotal = 64 << 20
 	maxRLibraryRoots     = 32
 	maxRLibraryPathBytes = 4096
+	maxRStartupBytes     = 64 << 10
 )
 
 var rPackageName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9.]{0,127}$`)
 var rPackageVersion = regexp.MustCompile(`^[0-9]+(?:[.-][0-9]+)*$`)
 var rDependency = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9.]*)(?:\s*\(\s*(>=|<=|==|=|>|<)\s*([0-9]+(?:[.-][0-9]+)*)\s*\))?$`)
+var rProfileLiteral = regexp.MustCompile(`^\.libPaths\(c\(["'](/[^"']+)["'],\s*\.libPaths\(\)\)\)$`)
 
 type rDescriptionField struct {
 	value string
@@ -103,6 +105,129 @@ func installedRLibraryRoots(env []string) ([]rLibraryRoot, []model.Issue) {
 		}
 	}
 	return roots, issues
+}
+
+// Only explicitly selected startup files are inspected. R evaluates profiles as
+// code, so a profile is accepted only when its entire active content is one
+// literal additive .libPaths call. Other code is reported as unresolved.
+func rStartupPaths(env []string) (map[string]string, []model.Issue) {
+	values := map[string]string{}
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || key != "R_ENVIRON" && key != "R_PROFILE" {
+			continue
+		}
+		values[key] = value
+	}
+	paths := map[string]string{}
+	var issues []model.Issue
+	for _, key := range []string{"R_ENVIRON", "R_PROFILE"} {
+		value, found := values[key]
+		if !found {
+			continue
+		}
+		if len(value) > maxRLibraryPathBytes || !strings.HasPrefix(value, "/") || value == "/" || path.Clean(value) != value || strings.ContainsAny(value, "\\\x00%~") {
+			issues = append(issues, model.Issue{Code: "r_installed_library_path_unresolved", Name: key})
+			continue
+		}
+		paths[key] = strings.TrimPrefix(value, "/")
+	}
+	return paths, issues
+}
+
+func rStartupEnvironment(data []byte) ([]string, bool) {
+	var env []string
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		key = strings.TrimSpace(key)
+		if key != "R_LIBS" && key != "R_LIBS_USER" && key != "R_LIBS_SITE" {
+			continue
+		}
+		if !ok || strings.ContainsAny(value, "'$\"`\\") {
+			return nil, false
+		}
+		env = append(env, key+"="+strings.TrimSpace(value))
+	}
+	return env, true
+}
+
+func rStartupProfileRoots(data []byte) ([]rLibraryRoot, bool) {
+	var active []string
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			active = append(active, line)
+		}
+	}
+	if len(active) == 0 {
+		return nil, true
+	}
+	if len(active) != 1 {
+		return nil, false
+	}
+	match := rProfileLiteral.FindStringSubmatch(active[0])
+	if match == nil {
+		return nil, false
+	}
+	roots, issues := installedRLibraryRoots([]string{"R_LIBS=" + match[1]})
+	if len(issues) != 0 || len(roots) != 1 {
+		return nil, false
+	}
+	roots[0].variable = "R_PROFILE"
+	return roots, true
+}
+
+func applyRStartupRoots(env []string, files map[string][]byte) ([]rLibraryRoot, []model.Issue) {
+	roots, issues := installedRLibraryRoots(env)
+	if data, found := files["R_ENVIRON"]; found {
+		startupEnv, ok := rStartupEnvironment(data)
+		if !ok || data == nil {
+			issues = append(issues, model.Issue{Code: "r_installed_library_path_unresolved", Name: "R_ENVIRON"})
+		} else {
+			var newIssues []model.Issue
+			roots, newIssues = installedRLibraryRoots(append(append([]string(nil), env...), startupEnv...))
+			issues = append(issues, newIssues...)
+			fileRoots, _ := installedRLibraryRoots(startupEnv)
+			for i := range roots {
+				for _, fileRoot := range fileRoots {
+					if roots[i].dir == fileRoot.dir {
+						roots[i].variable = "R_ENVIRON"
+					}
+				}
+			}
+		}
+	}
+	if data, found := files["R_PROFILE"]; found {
+		profileRoots, ok := rStartupProfileRoots(data)
+		if !ok || data == nil {
+			issues = append(issues, model.Issue{Code: "r_installed_library_path_unresolved", Name: "R_PROFILE"})
+		} else {
+			for _, candidate := range profileRoots {
+				duplicate := false
+				for _, existing := range roots {
+					duplicate = duplicate || existing.dir == candidate.dir
+				}
+				if duplicate {
+					continue
+				}
+				if len(roots) >= maxRLibraryRoots {
+					issues = append(issues, model.Issue{Code: "r_installed_library_path_unresolved", Name: "R_PROFILE"})
+					break
+				}
+				roots = append(roots, candidate)
+			}
+		}
+	}
+	return roots, issues
+}
+
+func isPotentialRDescriptionPath(name string) bool {
+	parts := strings.Split(name, "/")
+	return len(parts) >= 3 && parts[len(parts)-1] == "DESCRIPTION" && rPackageName.MatchString(parts[len(parts)-2])
 }
 
 func isConventionalRDescriptionPath(name string) bool {
