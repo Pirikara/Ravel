@@ -126,6 +126,131 @@ func TestRemoteJSONModuleHasNoImportEdges(t *testing.T) {
 	}
 }
 
+func TestRemoteSourceImportsLockedJSRAndNPMClosure(t *testing.T) {
+	const raw = "https://cdn.example.org/mod.ts"
+	source := `import "jsr:@example/lib@1.2.3"; import "npm:chalk@5.3.0";`
+	file := writeRemoteFixture(t, map[string]string{raw: source}, `import "`+raw+`";`, "")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock map[string]any
+	if err := json.Unmarshal(data, &lock); err != nil {
+		t.Fatal(err)
+	}
+	lock["specifiers"] = map[string]string{"jsr:@example/core@^1.0.0": "1.0.0"}
+	lock["jsr"] = map[string]any{
+		"@example/lib@1.2.3":  map[string]any{"integrity": strings.Repeat("a", 64), "dependencies": []string{"jsr:@example/core@^1.0.0"}},
+		"@example/core@1.0.0": map[string]any{"integrity": strings.Repeat("b", 64)},
+	}
+	lock["npm"] = map[string]any{"chalk@5.3.0": map[string]any{"integrity": "sha512-" + strings.Repeat("A", 88)}}
+	data, err = json.Marshal(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := collectResolved(file, "fixture", func(_ context.Context, spec string) ([]byte, string, error) {
+		return []byte(source), spec, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Components) != 4 || len(doc.Edges) != 4 || hasIssue(doc, "remote_import_unresolved", raw) {
+		t.Fatalf("remote package closure missing: %d components, %d edges, issues=%#v", len(doc.Components), len(doc.Edges), doc.Coverage.Issues)
+	}
+	for _, want := range []string{"@example/lib", "@example/core", "chalk"} {
+		found := false
+		for _, component := range doc.Components {
+			found = found || component.Name == want
+		}
+		if !found {
+			t.Fatalf("missing %s", want)
+		}
+	}
+	refs := map[string]string{}
+	for _, component := range doc.Components {
+		refs[component.Name] = component.ID
+	}
+	wantEdges := map[string]string{
+		"root\x00" + refs[raw]:                                "",
+		refs[raw] + "\x00" + refs["@example/lib"]:             "verified-remote-import",
+		refs[raw] + "\x00" + refs["chalk"]:                    "verified-remote-import",
+		refs["@example/lib"] + "\x00" + refs["@example/core"]: "lockfile-analysis",
+	}
+	for _, edge := range doc.Edges {
+		key := edge.From + "\x00" + edge.To
+		method, ok := wantEdges[key]
+		if !ok || method != "" && edge.Evidence.Method != method {
+			t.Fatalf("unexpected edge: %#v", edge)
+		}
+		delete(wantEdges, key)
+	}
+	if len(wantEdges) != 0 {
+		t.Fatalf("missing edges: %#v", wantEdges)
+	}
+}
+
+func TestRemoteSourceCannotAddPackageAfterIntegrityMismatch(t *testing.T) {
+	const raw = "https://cdn.example.org/mod.ts"
+	file := writeRemoteFixture(t, map[string]string{raw: `import "npm:chalk@5.3.0";`}, `import "`+raw+`";`, "")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock map[string]any
+	if err := json.Unmarshal(data, &lock); err != nil {
+		t.Fatal(err)
+	}
+	lock["npm"] = map[string]any{"chalk@5.3.0": map[string]any{"integrity": "sha512-" + strings.Repeat("A", 88)}}
+	data, err = json.Marshal(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := collectResolved(file, "fixture", func(_ context.Context, spec string) ([]byte, string, error) {
+		return []byte(`import "npm:chalk@5.3.0"; // changed`), spec, nil
+	})
+	if err != nil || len(doc.Components) != 1 || len(doc.Edges) != 1 || !hasIssue(doc, "remote_source_integrity_mismatch", raw) {
+		t.Fatalf("unverified source added package: %v %#v", err, doc)
+	}
+}
+
+func TestRemoteSourceResolvesVersionThreePackagePin(t *testing.T) {
+	const raw = "https://cdn.example.org/mod.ts"
+	const source = `import "jsr:@example/lib@^1.0.0";`
+	file := writeRemoteFixture(t, map[string]string{raw: source}, `import "`+raw+`";`, "")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock map[string]any
+	if err := json.Unmarshal(data, &lock); err != nil {
+		t.Fatal(err)
+	}
+	lock["version"] = "3"
+	lock["packages"] = map[string]any{
+		"specifiers": map[string]string{"jsr:@example/lib@^1.0.0": "jsr:@example/lib@1.2.3"},
+		"jsr":        map[string]any{"@example/lib@1.2.3": map[string]any{"integrity": strings.Repeat("a", 64), "dependencies": map[string]string{}}},
+	}
+	data, err = json.Marshal(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := collectResolved(file, "fixture", func(_ context.Context, spec string) ([]byte, string, error) {
+		return []byte(source), spec, nil
+	})
+	if err != nil || len(doc.Components) != 2 || len(doc.Edges) != 2 || hasIssue(doc, "remote_import_unresolved", raw) {
+		t.Fatalf("v3 pin not resolved: %v %#v", err, doc)
+	}
+}
+
 func publicIPMust(raw string) bool {
 	addr, err := netip.ParseAddr(raw)
 	return err == nil && publicIP(addr)

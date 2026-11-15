@@ -136,81 +136,8 @@ func Collect(file, project string) (model.Document, error) {
 	if len(roots) == 0 && len(sourceFiles) == 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
 	}
-	items := map[string]item{}
-	byName := map[string][]string{}
-	for key, meta := range lock.JSR {
-		name, version, ok := splitNameVersion(key)
-		if !ok {
-			continue
-		}
-		ref := "deno:jsr:" + common.ID(key)
-		items["jsr:"+key] = item{ref: ref, name: name, version: version, deps: meta.Dependencies, kind: "jsr"}
-		byName["jsr:"+name] = append(byName["jsr:"+name], "jsr:"+key)
-	}
-	for key, meta := range lock.NPM {
-		name, version, ok := splitNameVersion(key)
-		if !ok {
-			continue
-		}
-		version = strings.SplitN(version, "_", 2)[0]
-		ref := "deno:npm:" + common.ID(key)
-		items["npm:"+key] = item{ref: ref, name: name, version: version, deps: meta.Dependencies, kind: "npm"}
-		byName["npm:"+name] = append(byName["npm:"+name], "npm:"+key)
-	}
-	resolve := func(spec string) string {
-		if strings.HasPrefix(spec, "http://") || strings.HasPrefix(spec, "https://") {
-			if _, exists := lock.Remote[spec]; exists && safeurl.Clean(spec) != "" {
-				return "remote:" + spec
-			}
-			return ""
-		}
-		kind := "npm"
-		value := spec
-		if strings.HasPrefix(value, "jsr:") {
-			kind = "jsr"
-			value = strings.TrimPrefix(value, "jsr:")
-		} else {
-			value = strings.TrimPrefix(value, "npm:")
-		}
-		name, version, withVersion := splitNameVersion(value)
-		if !withVersion {
-			name = barePackageName(value)
-		}
-		if pinned, ok := lock.Specifiers[spec]; ok {
-			version = pinned
-			withVersion = true
-		} else if withVersion {
-			if slash := strings.IndexByte(version, '/'); slash >= 0 {
-				version = version[:slash]
-				if pinned, ok := lock.Specifiers[kind+":"+name+"@"+version]; ok {
-					version = pinned
-				}
-			}
-		}
-		if withVersion {
-			key := kind + ":" + name + "@" + version
-			if _, ok := items[key]; ok {
-				return key
-			}
-			var matching string
-			for _, candidate := range byName[kind+":"+name] {
-				if strings.HasPrefix(candidate, key+"_") {
-					if matching != "" {
-						return ""
-					}
-					matching = candidate
-				}
-			}
-			if matching != "" {
-				return matching
-			}
-			return ""
-		}
-		if matches := byName[kind+":"+name]; len(matches) == 1 {
-			return matches[0]
-		}
-		return ""
-	}
+	items, byName := indexLockedPackages(lock)
+	resolve := func(spec string) string { return resolveLockedSpec(spec, lock, items, byName) }
 	visited := map[string]bool{}
 	seenEdges := map[string]bool{}
 	var visit func(key, from string)
@@ -246,24 +173,7 @@ func Collect(file, project string) (model.Document, error) {
 			return
 		}
 		entry := items[key]
-		meta := packageEntry{}
-		if entry.kind == "jsr" {
-			meta = lock.JSR[strings.TrimPrefix(key, "jsr:")]
-		} else {
-			meta = lock.NPM[strings.TrimPrefix(key, "npm:")]
-		}
-		ev := common.Evidence(file, "deno-lock", "/"+entry.kind, data)
-		component := model.Component{ID: entry.ref, Kind: "package", Name: entry.name, Version: entry.version, Evidence: []model.Evidence{ev}}
-		if entry.kind == "jsr" {
-			component.Hashes = common.HexSHA256(meta.Integrity)
-			doc.Origins = append(doc.Origins, model.Origin{Occurrence: entry.ref, Kind: "registry_identity", SafeURL: "https://jsr.io", Status: "inferred", Evidence: ev})
-		} else {
-			component.Hashes = common.Integrity(meta.Integrity)
-			component.PURL = common.NpmPURL(entry.name, entry.version)
-			component.PURLBasis = "ecosystem_inferred"
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "source_unresolved", Name: entry.name})
-		}
-		doc.Components = append(doc.Components, component)
+		addLockedPackage(&doc, file, data, lock, key, entry)
 		for _, dep := range entry.deps {
 			resolved := resolve(dep)
 			if resolved == "" {

@@ -60,14 +60,22 @@ func collectResolved(file, project string, fetch remoteFetcher) (model.Document,
 	if err := json.Unmarshal(data, &lock); err != nil {
 		return doc, err
 	}
+	if lock.Version == "3" {
+		if err := normalizeV3(&lock); err != nil {
+			return doc, err
+		}
+	}
+	items, byName := indexLockedPackages(lock)
 	imports, scopes := resolvedImportMap(filepath.Dir(file))
 	urls := make(map[string]string, len(lock.Remote))
 	queue := make([]string, 0)
+	present := make(map[string]bool, len(doc.Components))
 	for raw := range lock.Remote {
 		ref := remoteRef(raw)
 		urls[ref] = raw
 	}
 	for _, component := range doc.Components {
+		present[component.ID] = true
 		if raw, ok := urls[component.ID]; ok {
 			queue = append(queue, raw)
 		}
@@ -77,6 +85,52 @@ func collectResolved(file, project string, fetch remoteFetcher) (model.Document,
 	edges := map[string]bool{}
 	for _, edge := range doc.Edges {
 		edges[edge.From+"\x00"+edge.To] = true
+	}
+	lockEvidence := common.Evidence(file, "deno-lock", "/specifiers", data)
+	var visitLockedPackage func(string)
+	visitLockedPackage = func(key string) {
+		entry, ok := items[key]
+		if !ok || present[entry.ref] {
+			return
+		}
+		addLockedPackage(&doc, file, data, lock, key, entry)
+		present[entry.ref] = true
+		for _, dep := range entry.deps {
+			childKey := resolveLockedSpec(dep, lock, items, byName)
+			if childKey == "" {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: entry.name})
+				continue
+			}
+			childRef := ""
+			if child, ok := items[childKey]; ok {
+				childRef = child.ref
+			} else if strings.HasPrefix(childKey, "remote:") {
+				rawURL := strings.TrimPrefix(childKey, "remote:")
+				if !validRemoteURL(rawURL) || safeurl.Clean(rawURL) == "" {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source"})
+					continue
+				}
+				childRef = remoteRef(rawURL)
+				if !present[childRef] {
+					addRemoteComponent(&doc, file, data, rawURL, lock.Remote[rawURL])
+					present[childRef] = true
+				}
+				if !seen[rawURL] {
+					queue = append(queue, rawURL)
+				}
+			}
+			if childRef == "" {
+				continue
+			}
+			edgeKey := entry.ref + "\x00" + childRef
+			if !edges[edgeKey] {
+				edges[edgeKey] = true
+				doc.Edges = append(doc.Edges, model.Edge{From: entry.ref, To: childRef, Kind: "depends_on", Evidence: lockEvidence})
+			}
+			if _, ok := items[childKey]; ok {
+				visitLockedPackage(childKey)
+			}
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -134,6 +188,21 @@ func collectResolved(file, project string, fetch remoteFetcher) (model.Document,
 				}
 				spec = mapped
 			}
+			if strings.HasPrefix(spec, "jsr:") || strings.HasPrefix(spec, "npm:") {
+				key := resolveLockedSpec(spec, lock, items, byName)
+				entry, ok := items[key]
+				if !ok {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "remote_import_unresolved", Name: clean})
+					continue
+				}
+				edgeKey := remoteRef(raw) + "\x00" + entry.ref
+				if !edges[edgeKey] {
+					edges[edgeKey] = true
+					doc.Edges = append(doc.Edges, model.Edge{From: remoteRef(raw), To: entry.ref, Kind: "depends_on", Evidence: ev})
+				}
+				visitLockedPackage(key)
+				continue
+			}
 			child := resolveRemoteSpecifier(finalURL, spec)
 			if child == "" {
 				if strings.HasPrefix(spec, "node:") || strings.HasPrefix(spec, "data:") {
@@ -155,8 +224,9 @@ func collectResolved(file, project string, fetch remoteFetcher) (model.Document,
 				edges[remoteRef(raw)+"\x00"+ref] = true
 				doc.Edges = append(doc.Edges, model.Edge{From: remoteRef(raw), To: ref, Kind: "depends_on", Evidence: ev})
 			}
-			if !hasComponent(doc.Components, ref) {
+			if !present[ref] {
 				addRemoteComponent(&doc, file, data, child, lock.Remote[child])
+				present[ref] = true
 			}
 			if !seen[child] {
 				queue = append(queue, child)
@@ -189,15 +259,6 @@ func collectResolved(file, project string, fetch remoteFetcher) (model.Document,
 }
 
 func remoteRef(raw string) string { return "deno:remote:" + common.ID("remote:"+raw) }
-
-func hasComponent(components []model.Component, ref string) bool {
-	for _, component := range components {
-		if component.ID == ref {
-			return true
-		}
-	}
-	return false
-}
 
 func addRemoteComponent(doc *model.Document, file string, lockData []byte, raw, digest string) {
 	ref := remoteRef(raw)
