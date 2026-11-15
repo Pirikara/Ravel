@@ -244,7 +244,7 @@ ravel scan path/to/deno/project --manager deno \
   --resolve --network allow --format ravel-json --output deno.ravel.json
 ```
 
-Ravel fetches HTTPS modules reached from local imports or previously verified remote imports, checks their SHA-256 against `deno.lock`, then records their import edges with source evidence. Unreached lock entries stay unknown rather than being listed as active dependencies. Failed downloads, mismatched hashes, computed imports, and imports absent from the lockfile remain coverage issues. This mode has a two-minute deadline and size limits; the static scan remains offline.
+Ravel fetches HTTPS modules reached from local imports or previously verified remote imports, checks their SHA-256 against `deno.lock`, then records their import edges with source evidence. Verified remote imports of locked JSR or npm packages also include those packages and their lockfile dependency closure. Unreached lock entries stay unknown rather than being listed as active dependencies. Failed downloads, mismatched hashes, computed imports, and imports absent from the lockfile remain coverage issues. This mode has a two-minute deadline and size limits; the static scan remains offline.
 
 `enrich` is a separate, explicit network operation. It reads Ravel JSON and adds development repository **candidates** from matched registry metadata without changing package identities, distribution origins, or dependency edges:
 
