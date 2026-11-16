@@ -14,7 +14,7 @@ require (
 	github.com/sassoftware/go-rpmutils v0.4.0
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
 	github.com/ulikunitz/xz v0.5.17
-	golang.org/x/mod v0.42.0
+	golang.org/x/mod v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.62.0
 )
