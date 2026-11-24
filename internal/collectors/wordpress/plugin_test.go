@@ -21,6 +21,9 @@ func TestHeaderMatchesWordPressFieldsAndBounds(t *testing.T) {
 		{"not_a_header", "<?php $s = 'Plugin Name: fake';", "", false, 0},
 		{"outside_header", strings.Repeat(" ", HeaderBytes) + "\nPlugin Name: Example\nVersion: 1", "", false, 0},
 		{"after_four_kib", strings.Repeat(" ", 6000) + "\nPlugin Name: Example\nVersion: 4", "4", true, 2},
+		{"inline_php_tag", "<?php /* Plugin Name: Example\nVersion: 5 */", "5", true, 1},
+		{"inline_short_tag", "<? /* Plugin Name: Example\nVersion: 6 */", "6", true, 1},
+		{"header_label_spacing", "Plugin Name : Example\nVersion: 7", "", false, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			record, found, err := Parse([]byte(tc.header), "example.php", "example.php")

@@ -70,9 +70,16 @@ func Parse(data []byte, source, location string) (Record, bool, error) {
 	lines := map[string]int{}
 	text := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
 	for i, line := range strings.Split(text, "\n") {
+		line = strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(line, "<?") {
+			line = line[2:]
+			if len(line) >= 3 && strings.EqualFold(line[:3], "php") {
+				line = line[3:]
+			}
+		}
 		line = strings.TrimLeft(line, " \t/*#@")
 		key, value, ok := strings.Cut(line, ":")
-		key = strings.ToLower(strings.TrimSpace(key))
+		key = strings.ToLower(key)
 		if !ok || key != "plugin name" && key != "version" && key != "requires plugins" {
 			continue
 		}

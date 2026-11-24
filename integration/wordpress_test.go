@@ -50,7 +50,7 @@ func TestWordPressRepositoryInventory(t *testing.T) {
 func TestWordPressExplicitInputAndOverwriteProtection(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "custom.php")
-	const header = "<?php\n/* Plugin Name: Custom Plugin\nVersion: 1.0-beta */\nthrow new Exception('do not run');"
+	const header = "<?php /* Plugin Name: Custom Plugin\nVersion: 1.0-beta */\nthrow new Exception('do not run');"
 	if err := os.WriteFile(file, []byte(header), 0o600); err != nil {
 		t.Fatal(err)
 	}
