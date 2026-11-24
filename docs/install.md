@@ -100,6 +100,19 @@ The binary is installed in `GOBIN`, or in `GOPATH/bin` when `GOBIN` is unset. Ma
 
 ## Build from source
 
+If Go is not installed, install [mise](https://mise.jdx.dev/), then run:
+
+```sh
+git clone https://github.com/Pirikara/Ravel.git
+cd Ravel
+mise trust
+mise install
+mise exec -- go build -o ravel ./cmd/ravel
+./ravel version
+```
+
+With Go 1.27 or newer already available, build directly:
+
 ```sh
 git clone https://github.com/Pirikara/Ravel.git
 cd Ravel
