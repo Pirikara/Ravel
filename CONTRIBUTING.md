@@ -10,7 +10,9 @@ For a feature request, describe the input or workflow and the evidence Ravel cou
 
 ## Make a change
 
-Ravel requires Go 1.27 or newer. Build and run the test suite with:
+Ravel requires Go 1.27 or newer. If Go is not installed, install [mise](https://mise.jdx.dev/), review the checked-in `mise.toml`, then run `mise trust` and `mise install` in the repository. It selects the latest Go 1.27 patch release, matching `go.mod` and CI. Run commands through `mise exec --` if mise is not activated in your shell.
+
+Build and run the test suite with:
 
 ```sh
 go build ./cmd/ravel
