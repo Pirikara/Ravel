@@ -73,6 +73,7 @@ func TestCLIAndCycloneDXSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := []expected{
+		{"wordpress-source", "wordpress", 1, 1, "partial", "partial", []string{"Example Plugin"}, "", "secret"},
 		{"bundler-basic", "bundler", 2, 2, "complete_for_scope", "complete_for_scope", []string{"alpha", "beta"}, "", "secret"},
 		{"bundler-generated-4", "bundler", 2, 3, "complete_for_scope", "complete_for_scope", []string{"ravel_alpha", "ravel_beta"}, "", ""},
 		{"bundler-git-scp", "bundler", 1, 1, "complete_for_scope", "complete_for_scope", []string{"gitgem"}, "", ""},
