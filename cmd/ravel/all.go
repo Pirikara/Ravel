@@ -42,6 +42,7 @@ import (
 	"github.com/Pirikara/Ravel/internal/collectors/shards"
 	"github.com/Pirikara/Ravel/internal/collectors/stack"
 	"github.com/Pirikara/Ravel/internal/collectors/swiftpm"
+	"github.com/Pirikara/Ravel/internal/collectors/wordpress"
 	"github.com/Pirikara/Ravel/internal/collectors/yarn"
 	"github.com/Pirikara/Ravel/internal/export"
 	"github.com/Pirikara/Ravel/internal/merge"
@@ -73,6 +74,7 @@ func runScanAll(path, format, output, report string, strict, recursive, includeT
 	var inputs []model.Document
 	var skipped []model.Issue
 	var observed []string
+	var wordpressFiles []string
 	runtimeDeclarations := runtimeversion.Result{}
 	project := filepath.Base(filepath.Clean(path))
 	directories := []string{path}
@@ -84,6 +86,20 @@ func runScanAll(path, format, output, report string, strict, recursive, includeT
 		}
 	}
 	for _, directory := range directories {
+		pluginFiles, err := wordpress.Files(directory)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ravel:", err)
+			return 1
+		}
+		for _, file := range pluginFiles {
+			if _, _, _, installed := wordpress.InstalledPath(filepath.ToSlash(file)); directory == path || installed {
+				wordpressFiles = append(wordpressFiles, file)
+				if len(wordpressFiles) > wordpress.MaxFiles {
+					fmt.Fprintln(os.Stderr, "ravel: too many WordPress plugin headers")
+					return 1
+				}
+			}
+		}
 		foundRuntime := runtimeversion.CollectDirectory(directory)
 		runtimeDeclarations.Requirements = append(runtimeDeclarations.Requirements, foundRuntime.Requirements...)
 		runtimeDeclarations.Sources = append(runtimeDeclarations.Sources, foundRuntime.Sources...)
@@ -179,6 +195,20 @@ func runScanAll(path, format, output, report string, strict, recursive, includeT
 				}
 			}
 		}
+	}
+	if len(wordpressFiles) > 0 {
+		doc, err := wordpress.CollectFiles(wordpressFiles, project)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ravel:", err)
+			return 1
+		}
+		for _, source := range doc.Sources {
+			if samePath(output, source) || report != "" && samePath(report, source) {
+				fmt.Fprintln(os.Stderr, "ravel: output and report cannot overwrite a plugin input")
+				return 2
+			}
+		}
+		inputs = append(inputs, doc)
 	}
 	if includeBinaries {
 		binaries, err := repositoryGoBinaryCandidates(path, includeTestVendor)
@@ -425,7 +455,8 @@ func scanDirectories(root string, includeTestVendor bool) ([]string, error) {
 		if (name == "installed" || name == "installed.adb") && filepath.Base(filepath.Dir(path)) == "db" && filepath.Base(filepath.Dir(filepath.Dir(path))) == "apk" && filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path)))) == "lib" {
 			dirs[filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(path))))] = true
 		}
-		if recursiveCandidate(name) || isWorkflowPath(path) {
+		_, _, _, wordpressCandidate := wordpress.InstalledPath(filepath.ToSlash(path))
+		if recursiveCandidate(name) || isWorkflowPath(path) || wordpressCandidate {
 			dirs[filepath.Dir(path)] = true
 		}
 		return nil
@@ -667,6 +698,8 @@ func recursiveCandidate(name string) bool {
 
 func collectStatic(manager, lock, project string) (model.Document, error) {
 	switch manager {
+	case "wordpress":
+		return wordpress.Collect(lock, project)
 	case "bundler":
 		return bundler.Collect(lock, project)
 	case "gemspec":

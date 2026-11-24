@@ -259,6 +259,10 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.GraphState = "partial"
 		case "r_installed_origin_unavailable":
 			doc.Coverage.OriginState = "partial"
+		case "wordpress_plugin_dependency_unresolved", "wordpress_plugin_activation_unverified", "wordpress_plugin_scan_limited", "wordpress_plugin_header_unavailable", "wordpress_plugin_header_invalid":
+			doc.Coverage.GraphState = "partial"
+		case "wordpress_plugin_origin_unavailable":
+			doc.Coverage.OriginState = "partial"
 		case "node_system_owner_unresolved", "node_system_owner_ambiguous", "node_system_ownership_scan_limited", "ruby_platform_config_invalid", "ruby_platform_config_oversized":
 			doc.Coverage.GraphState = "partial"
 		}

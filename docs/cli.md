@@ -33,6 +33,15 @@ ravel scan ./project/poetry.lock --output poetry.cdx.json --report poetry.covera
 ravel scan ./project --output project.cdx.json --report project.coverage.json
 ```
 
+Scan a WordPress plugin's main PHP file or its source directory with `--manager wordpress`. Use `--all --recursive` on a WordPress installation to discover conventional plugin directories and collect Composer/npm inputs alongside them:
+
+```sh
+ravel scan ./my-plugin --manager wordpress --output plugin.cdx.json
+ravel scan ./wordpress --all --recursive --output wordpress.cdx.json
+```
+
+WordPress plugin headers are also detected in OCI images. The scan records files present in the input; activation and distribution origin remain unverified. See [known limits](limitations.md) for supported layouts and evidence scope.
+
 For a remote Git repository, specify a branch, tag, or full commit explicitly:
 
 ```sh

@@ -26,6 +26,7 @@ import (
 	"github.com/Pirikara/Ravel/internal/collectors/rpm"
 	"github.com/Pirikara/Ravel/internal/collectors/runtimeversion"
 	"github.com/Pirikara/Ravel/internal/collectors/swiftpm"
+	"github.com/Pirikara/Ravel/internal/collectors/wordpress"
 	"github.com/Pirikara/Ravel/internal/export"
 	"github.com/Pirikara/Ravel/internal/merge"
 	"github.com/Pirikara/Ravel/internal/model"
@@ -364,7 +365,7 @@ func runScanWithProgress(args []string, progress bool) int {
 			return 2
 		}
 	}
-	if *manager != "auto" && *manager != "bundler" && *manager != "gemspec" && *manager != "github-actions" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "deb-archive" && *manager != "rpm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "rebar" && *manager != "shards" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "conda-lock" && *manager != "pixi" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
+	if *manager != "auto" && *manager != "wordpress" && *manager != "bundler" && *manager != "gemspec" && *manager != "github-actions" && *manager != "ruby-gem" && *manager != "npm" && *manager != "bun" && *manager != "deno" && *manager != "swiftpm" && *manager != "nuget" && *manager != "nuget-archive" && *manager != "npm-archive" && *manager != "deb-archive" && *manager != "rpm-archive" && *manager != "uv" && *manager != "pylock" && *manager != "requirements" && *manager != "pnpm" && *manager != "poetry" && *manager != "yarn" && *manager != "cargo" && *manager != "composer" && *manager != "conan" && *manager != "cocoapods" && *manager != "pipenv" && *manager != "pdm" && *manager != "go" && *manager != "pub" && *manager != "gradle" && *manager != "maven" && *manager != "sbt" && *manager != "mix" && *manager != "rebar" && *manager != "shards" && *manager != "cabal" && *manager != "stack" && *manager != "julia" && *manager != "renv" && *manager != "conda-lock" && *manager != "pixi" && *manager != "dpkg" && *manager != "apk" && *manager != "rpm" && *manager != "oci" && *manager != "java-archive" && *manager != "python-wheel" {
 		fmt.Fprintln(os.Stderr, "ravel: unsupported manager")
 		return 2
 	}
@@ -695,6 +696,9 @@ func samePath(a, b string) bool {
 
 func selectLock(input string, directory bool, requested string) (string, string, error) {
 	managerForFile := func(name string) string {
+		if strings.HasSuffix(name, ".php") {
+			return "wordpress"
+		}
 		if isBundlerLockName(name) {
 			return "bundler"
 		}
@@ -1115,9 +1119,21 @@ func selectLock(input string, directory bool, requested string) (string, string,
 			candidates["github-actions"] = files[0]
 		}
 	}
+	if requested == "wordpress" || requested == "auto" {
+		files, err := wordpress.Files(input)
+		if err != nil {
+			return "", "", err
+		}
+		if len(files) > 0 {
+			candidates["wordpress"] = input
+		}
+	}
 	if requested != "auto" {
 		if lock := candidates[requested]; lock != "" {
 			return lock, requested, nil
+		}
+		if requested == "wordpress" {
+			return "", "", errors.New("no WordPress plugin headers found")
 		}
 		return "", "", fmt.Errorf("no %s lockfile found", requested)
 	}

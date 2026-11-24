@@ -162,7 +162,11 @@ func TestSPDX23AllFixtures(t *testing.T) {
 				t.Fatalf("conditional edges exported or unconditional edges lost: got %d, want %d", len(output.Relationships), len(unconditional))
 			}
 			for _, rel := range output.Relationships {
-				if rel.Type != "DEPENDS_ON" || !ids[rel.From] || !ids[rel.To] {
+				wantType := "DEPENDS_ON"
+				if name == "wordpress-source" {
+					wantType = "CONTAINS"
+				}
+				if rel.Type != wantType || !ids[rel.From] || !ids[rel.To] {
 					t.Fatalf("invalid SPDX relationship: %+v", rel)
 				}
 			}
@@ -171,8 +175,8 @@ func TestSPDX23AllFixtures(t *testing.T) {
 			}
 		})
 	}
-	if count != 234 {
-		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 234", count)
+	if count != 235 {
+		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 235", count)
 	}
 }
 

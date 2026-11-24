@@ -29,6 +29,7 @@ import (
 	"github.com/Pirikara/Ravel/internal/collectors/nuget"
 	"github.com/Pirikara/Ravel/internal/collectors/python"
 	"github.com/Pirikara/Ravel/internal/collectors/rpm"
+	"github.com/Pirikara/Ravel/internal/collectors/wordpress"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -273,6 +274,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	nodePackageLinks := map[string]string{}
 	rubySpecs := map[string]databaseState{}
 	rDescriptions := map[string]databaseState{}
+	wordpressHeaders := map[string]databaseState{}
 	rStartupFiles := map[string]databaseState{}
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
@@ -314,7 +316,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				}
 			}
 		}
-		for _, metadata := range []map[string]databaseState{pythonMetadata, setuptoolsVendor, pipVendor, nodeMetadata, rubySpecs, rDescriptions} {
+		for _, metadata := range []map[string]databaseState{pythonMetadata, setuptoolsVendor, pipVendor, nodeMetadata, rubySpecs, rDescriptions, wordpressHeaders} {
 			for name := range metadata {
 				for current := name; ; current = path.Dir(current) {
 					relevantPaths[current] = true
@@ -504,7 +506,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			if removed == "." || removed == redisBinaryPath || strings.HasPrefix(redisBinaryPath, removed+"/") {
 				redisBinary = nil
 			}
-			for _, metadata := range []map[string]databaseState{pythonMetadata, setuptoolsVendor, pipVendor, nodeMetadata, rubySpecs, rDescriptions} {
+			for _, metadata := range []map[string]databaseState{pythonMetadata, setuptoolsVendor, pipVendor, nodeMetadata, rubySpecs, rDescriptions, wordpressHeaders} {
 				for name := range metadata {
 					if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 						delete(metadata, name)
@@ -670,6 +672,12 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		for name, data := range change.rDescriptions {
 			rDescriptions[name] = databaseState{data: data, layer: layer.Digest}
+		}
+		for name, data := range change.wordpressHeaders {
+			wordpressHeaders[name] = databaseState{data: data, layer: layer.Digest}
+		}
+		if len(wordpressHeaders) > wordpress.MaxFiles {
+			return model.Document{}, errors.New("OCI image has too many WordPress plugin headers")
 		}
 		for name, data := range change.rStartup {
 			rStartupFiles[name] = databaseState{data: data, layer: layer.Digest}
@@ -897,7 +905,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(condaMetadata) == 0 && len(dotnetDeps) == 0 && len(dotnetAssemblies) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(rDescriptions) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && micromambaBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(condaMetadata) == 0 && len(dotnetDeps) == 0 && len(dotnetAssemblies) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(rDescriptions) == 0 && len(wordpressHeaders) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && micromambaBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -1255,6 +1263,28 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_installed_activation_unresolved"}, model.Issue{Code: "ruby_installed_origin_unavailable"})
 	}
 	rNames := make([]string, 0, len(rDescriptions))
+	wordpressNames := make([]string, 0, len(wordpressHeaders))
+	for name := range wordpressHeaders {
+		wordpressNames = append(wordpressNames, name)
+	}
+	sort.Strings(wordpressNames)
+	var wordpressRecords []wordpress.Record
+	for _, name := range wordpressNames {
+		state := wordpressHeaders[name]
+		if state.data == nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "wordpress_plugin_header_unavailable", Scope: name})
+			continue
+		}
+		record, found, err := wordpress.Parse(state.data, "oci:"+state.layer+"!/"+name, name)
+		if err != nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "wordpress_plugin_header_invalid", Scope: name})
+			continue
+		}
+		if found {
+			wordpressRecords = append(wordpressRecords, record)
+		}
+	}
+	wordpress.Append(&doc, wordpressRecords)
 	for name := range rDescriptions {
 		rNames = append(rNames, name)
 	}
@@ -1740,6 +1770,7 @@ type layerChange struct {
 	nodeLinks                map[string]string
 	rubySpecs                map[string][]byte
 	rDescriptions            map[string][]byte
+	wordpressHeaders         map[string][]byte
 	rStartup                 map[string][]byte
 	java                     map[string]javaArchiveState
 	goBinaries               map[string]goBinaryState
@@ -1797,7 +1828,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	limited := &io.LimitedReader{R: uncompressed, N: maxExpandedLayer + 1}
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
-	change := layerChange{files: map[string]databaseChange{}, osReleases: map[string]osReleaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, condaMetadata: map[string]condaMetadataState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, rDescriptions: map[string][]byte{}, rStartup: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
+	change := layerChange{files: map[string]databaseChange{}, osReleases: map[string]osReleaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, condaMetadata: map[string]condaMetadataState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, rDescriptions: map[string][]byte{}, wordpressHeaders: map[string][]byte{}, rStartup: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
 	seenDatabase := map[string]bool{}
 	seenDPKGLists := map[string]bool{}
 	parentReplaced := map[string]bool{}
@@ -2221,6 +2252,24 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 				return layerChange{}, "", errors.New("invalid OCI R startup file")
 			}
 			change.rStartup[name] = data
+			continue
+		}
+		if _, _, _, candidate := wordpress.InstalledPath(name); candidate {
+			if _, duplicate := change.wordpressHeaders[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI WordPress plugin header: %s", name)
+			}
+			if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+				change.wordpressHeaders[name] = nil
+			} else {
+				data, err := io.ReadAll(io.LimitReader(reader, wordpress.HeaderBytes))
+				if err != nil {
+					return layerChange{}, "", errors.New("invalid OCI WordPress plugin header")
+				}
+				change.wordpressHeaders[name] = data
+			}
+			if len(change.wordpressHeaders) > wordpress.MaxFiles {
+				return layerChange{}, "", errors.New("OCI layer has too many WordPress plugin headers")
+			}
 			continue
 		}
 		knownRDescription := isInstalledRDescriptionPath(name, rLibraryRoots)
@@ -2728,7 +2777,7 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			return layerChange{}, "", fmt.Errorf("OCI layer replaces database parent directory and %s together", target)
 		}
 	}
-	for _, metadata := range []map[string][]byte{change.python, change.pipVendor, change.node, change.rubySpecs, change.rDescriptions, change.rStartup} {
+	for _, metadata := range []map[string][]byte{change.python, change.pipVendor, change.node, change.rubySpecs, change.rDescriptions, change.wordpressHeaders, change.rStartup} {
 		for name := range metadata {
 			for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 				if nonDirectoryPaths[ancestor] {
