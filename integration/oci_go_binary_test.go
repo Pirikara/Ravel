@@ -15,10 +15,20 @@ import (
 	"testing"
 )
 
-func ociGoBinaryFixture(t *testing.T) ([]byte, string) {
+func ociGoBinaryFixture(t *testing.T) ([]byte, string, string) {
 	t.Helper()
+	// Use the dependency already downloaded to build this test suite. A fixed
+	// older version may be absent from a clean CI cache after a module update.
+	versionCmd := exec.Command("go", "list", "-m", "-f", "{{.Version}}", "golang.org/x/mod")
+	versionCmd.Dir = ".."
+	versionCmd.Env = append(os.Environ(), "GOPROXY=off", "GOSUMDB=off", "GOWORK=off")
+	versionOutput, err := versionCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("find cached fixture dependency: %v: %s", err, versionOutput)
+	}
+	moduleVersion := strings.TrimSpace(string(versionOutput))
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/semver-tool\n\ngo 1.27\n\nrequire golang.org/x/mod v0.42.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/semver-tool\n\ngo 1.27\n\nrequire golang.org/x/mod "+moduleVersion+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\nimport (\"fmt\"; \"golang.org/x/mod/semver\")\nfunc main() { fmt.Println(semver.IsValid(\"v1.2.3\")) }\n"), 0o644); err != nil {
@@ -35,18 +45,18 @@ func ociGoBinaryFixture(t *testing.T) ([]byte, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(info.Deps) != 1 || info.Deps[0].Path != "golang.org/x/mod" {
+	if len(info.Deps) != 1 || info.Deps[0].Path != "golang.org/x/mod" || info.Deps[0].Version != moduleVersion {
 		t.Fatalf("fixture build info unexpected: %#v", info)
 	}
 	data, err := os.ReadFile(binary)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return data, info.GoVersion
+	return data, info.GoVersion, moduleVersion
 }
 
 func TestOCIGoBinaryEmbeddedModulesAndEvidence(t *testing.T) {
-	binary, goVersion := ociGoBinaryFixture(t)
+	binary, goVersion, moduleVersion := ociGoBinaryFixture(t)
 	layout := ociTestLayout(t)
 	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
 		{name: "usr/local/bin/semver-tool", data: binary, mode: 0o755},
@@ -72,11 +82,11 @@ func TestOCIGoBinaryEmbeddedModulesAndEvidence(t *testing.T) {
 		if component.Name == "semver-tool" && (component.Kind != "application" || len(component.Hashes) != 1 || component.Hashes[0].Content != digest || !strings.Contains(component.Context, "main_module=example.com/semver-tool")) {
 			t.Fatalf("Go executable metadata incorrect: %#v", component)
 		}
-		if component.Name == "golang.org/x/mod" && component.PURL != "pkg:golang/golang.org/x/mod@v0.42.0" {
+		if component.Name == "golang.org/x/mod" && component.PURL != "pkg:golang/golang.org/x/mod@"+moduleVersion {
 			t.Fatalf("Go module PURL incorrect: %#v", component)
 		}
 	}
-	for _, name := range []string{"semver-tool@", "stdlib@" + goVersion, "golang.org/x/mod@v0.42.0"} {
+	for _, name := range []string{"semver-tool@", "stdlib@" + goVersion, "golang.org/x/mod@" + moduleVersion} {
 		if !components[name] {
 			t.Fatalf("missing %s: %#v", name, doc.Components)
 		}
@@ -91,7 +101,7 @@ func TestOCIGoBinaryEmbeddedModulesAndEvidence(t *testing.T) {
 }
 
 func TestOCIGoBinaryLargerThanMemoryLimit(t *testing.T) {
-	binary, goVersion := ociGoBinaryFixture(t)
+	binary, goVersion, moduleVersion := ociGoBinaryFixture(t)
 	const paddedSize = int64(64<<20) + 1
 	layout := ociTestLayout(t)
 	layerPath := filepath.Join(layout, "large-layer.tar")
@@ -162,7 +172,7 @@ func TestOCIGoBinaryLargerThanMemoryLimit(t *testing.T) {
 			t.Fatalf("large Go binary evidence incorrect: %#v", component)
 		}
 	}
-	for _, key := range []string{"large-go@", "stdlib@" + goVersion, "golang.org/x/mod@v0.42.0"} {
+	for _, key := range []string{"large-go@", "stdlib@" + goVersion, "golang.org/x/mod@" + moduleVersion} {
 		if !found[key] {
 			t.Fatalf("missing large Go component %s", key)
 		}
@@ -175,7 +185,7 @@ func TestOCIGoBinaryLargerThanMemoryLimit(t *testing.T) {
 }
 
 func TestOCIGoBinaryFinalLayerOverlay(t *testing.T) {
-	binary, _ := ociGoBinaryFixture(t)
+	binary, _, _ := ociGoBinaryFixture(t)
 	for _, test := range []struct {
 		name    string
 		entries []ociTestEntry
@@ -210,7 +220,7 @@ func TestOCIGoBinaryFinalLayerOverlay(t *testing.T) {
 }
 
 func TestOCIGoBinaryUnderSameLayerSymlinkRejected(t *testing.T) {
-	binary, _ := ociGoBinaryFixture(t)
+	binary, _, _ := ociGoBinaryFixture(t)
 	layout := ociTestLayout(t)
 	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
 		{name: "app", typeflag: tar.TypeSymlink, linkname: "/outside"},
@@ -224,7 +234,7 @@ func TestOCIGoBinaryUnderSameLayerSymlinkRejected(t *testing.T) {
 }
 
 func TestOCIGoBinaryIdenticalBytesAtDistinctPaths(t *testing.T) {
-	binaryBytes, _ := ociGoBinaryFixture(t)
+	binaryBytes, _, _ := ociGoBinaryFixture(t)
 	layout := ociTestLayout(t)
 	image := ociTestImage(t, layout, "linux", "amd64", []ociTestLayer{{entries: []ociTestEntry{
 		{name: "usr/bin/first", data: binaryBytes, mode: 0o755},
@@ -245,7 +255,7 @@ func TestOCIGoBinaryIdenticalBytesAtDistinctPaths(t *testing.T) {
 }
 
 func TestOCIGoBinaryMalformedSectionNamesReported(t *testing.T) {
-	binaryBytes, _ := ociGoBinaryFixture(t)
+	binaryBytes, _, _ := ociGoBinaryFixture(t)
 	mutated := append([]byte(nil), binaryBytes...)
 	if len(mutated) < 64 || string(mutated[:4]) != "\x7fELF" || mutated[4] != 2 || mutated[5] != 1 {
 		t.Fatal("fixture must be ELF64 little-endian")
