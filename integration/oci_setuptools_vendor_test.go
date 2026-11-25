@@ -34,7 +34,7 @@ func TestOCISetuptoolsVendoredMetadata(t *testing.T) {
 			setuptoolsID = component.ID
 		case "autocommand":
 			vendorID = component.ID
-			if component.Version != "2.2.2" || component.PURL != "" || !strings.Contains(component.Context, "vendor=setuptools;image=linux/arm64") || len(component.Evidence) != 1 || component.Evidence[0].Collector != "python-vendor-dist-info" || component.Evidence[0].InputDigest != "sha256:"+hex.EncodeToString(hash[:]) || !strings.HasSuffix(component.Evidence[0].InputPath, "!/"+ociVendoredPath) {
+			if component.Version != "2.2.2" || component.PURL != "pkg:pypi/autocommand@2.2.2" || component.PURLBasis != "ecosystem_inferred" || !strings.Contains(component.Context, "vendor=setuptools;image=linux/arm64") || len(component.Evidence) != 1 || component.Evidence[0].Collector != "python-vendor-dist-info" || component.Evidence[0].InputDigest != "sha256:"+hex.EncodeToString(hash[:]) || !strings.HasSuffix(component.Evidence[0].InputPath, "!/"+ociVendoredPath) {
 				t.Fatalf("setuptools vendored identity or evidence incorrect: %#v", component)
 			}
 		default:

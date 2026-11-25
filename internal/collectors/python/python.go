@@ -100,6 +100,12 @@ func normalized(name string) string {
 }
 
 func purl(name, version string) string {
+	return DistributionPURL(name, version)
+}
+
+// DistributionPURL formats Python ecosystem coordinates. It does not establish
+// the index, VCS checkout, or archive that supplied an installed distribution.
+func DistributionPURL(name, version string) string {
 	if name == "" || version == "" {
 		return ""
 	}

@@ -50,7 +50,7 @@ func CollectInstalledMetadata(data []byte, source, project, metadataPath string)
 	evidence := model.Evidence{Collector: collector, InputPath: source, InputDigest: digest, Method: "installed-metadata"}
 	id := "python-installed:" + common.ID(metadataPath+"\x00"+name+"\x00"+version)
 	doc := common.NewDocument(source, project, "python-installed", nil)
-	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, Context: "location=" + installedMetadataEnvironment(metadataPath), Evidence: []model.Evidence{evidence}})
+	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, PURL: purl(name, version), PURLBasis: "ecosystem_inferred", Context: "location=" + installedMetadataEnvironment(metadataPath), Evidence: []model.Evidence{evidence}})
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: name})
 	for _, header := range headers {

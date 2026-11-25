@@ -24,6 +24,9 @@ func TestOCIPipVendoredPackagesAndEvidence(t *testing.T) {
 	}
 	pipID := ""
 	for _, component := range doc.Components {
+		if component.PURL == "" || component.PURLBasis != "ecosystem_inferred" {
+			t.Fatalf("installed or vendored Python coordinate missing: %#v", component)
+		}
 		if component.Name == "pip" {
 			pipID = component.ID
 		}

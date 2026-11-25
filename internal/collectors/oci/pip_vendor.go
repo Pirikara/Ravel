@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/collectors/python"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -70,7 +71,7 @@ func collectPipVendor(data []byte, source, project, filename, pipID string) (mod
 		id := "python-vendor:" + common.ID(source+"\x00"+canonical+"\x00"+version)
 		itemEvidence := evidence
 		itemEvidence.Line = lineNumber + 1
-		doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, Context: "location=/" + vendorDir + ";vendor=pip", Evidence: []model.Evidence{itemEvidence}})
+		doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, PURL: python.DistributionPURL(name, version), PURLBasis: "ecosystem_inferred", Context: "location=/" + vendorDir + ";vendor=pip", Evidence: []model.Evidence{itemEvidence}})
 		from, kind := pipID, "embedded"
 		if from == "" {
 			from, kind = "root", "installed"
