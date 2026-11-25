@@ -94,3 +94,20 @@ func TestImageRequirementsIncludesStayInStagedImage(t *testing.T) {
 		t.Fatalf("escape was not rejected: %v %#v", err, issues)
 	}
 }
+
+func TestImageProjectStagingRejectsEscapingNames(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "uv.lock")
+	if err := os.WriteFile(outside, []byte("untouched"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{outside, "../outside/uv.lock", "app/../../outside/uv.lock", "app/../uv.lock"} {
+		_, _, err := parseImageLocks(map[string]imageProjectFile{name: {data: []byte("overwrite"), layer: "sha256:test"}}, "test")
+		if err == nil {
+			t.Fatalf("accepted unsafe staging path %q", name)
+		}
+	}
+	data, err := os.ReadFile(outside)
+	if err != nil || string(data) != "untouched" {
+		t.Fatal("outside file changed")
+	}
+}

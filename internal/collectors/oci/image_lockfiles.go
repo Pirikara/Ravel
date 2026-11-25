@@ -3,6 +3,7 @@ package oci
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
@@ -213,6 +214,11 @@ func parseImageLocks(files map[string]imageProjectFile, project string) ([]image
 		return nil, nil, err
 	}
 	defer os.RemoveAll(root)
+	staging, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer staging.Close()
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)
@@ -225,11 +231,14 @@ func parseImageLocks(files map[string]imageProjectFile, project string) ([]image
 			issues = append(issues, model.Issue{Code: "image_project_file_" + state.status, Name: name})
 			continue
 		}
-		file := filepath.Join(root, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+		relative := filepath.FromSlash(name)
+		if !filepath.IsLocal(relative) || path.Clean(name) != name || strings.ContainsAny(name, "\\\x00") {
+			return nil, nil, errors.New("invalid image project file path")
+		}
+		if err := staging.MkdirAll(filepath.Dir(relative), 0700); err != nil {
 			return nil, nil, err
 		}
-		if err := os.WriteFile(file, state.data, 0600); err != nil {
+		if err := staging.WriteFile(relative, state.data, 0600); err != nil {
 			return nil, nil, err
 		}
 	}
