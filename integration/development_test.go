@@ -77,7 +77,7 @@ func TestCycloneDXDoesNotDuplicateVCSReference(t *testing.T) {
 		}
 		count := 0
 		for _, ref := range component.ExternalReferences {
-			if ref.Type == "vcs" && ref.URL == "https://github.com/Seldaek/monolog.git" {
+			if ref.Type == "vcs" && ref.URL == "git+https://github.com/Seldaek/monolog.git@abcdef1234567890" {
 				count++
 			}
 		}

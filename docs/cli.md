@@ -181,14 +181,14 @@ ravel vex --input project.ravel.json --vex supplier.openvex.json \
   --format json --output vex-matches.json
 ```
 
-`vex` reads a local OpenVEX v0.2.0 document. It reports each statement with its issuer, timestamp, vulnerability ID, status, rationale, and products, along with the VEX input's SHA-256 digest. A product matches an SBOM component only when its `@id` PURL or `identifiers.purl` is exactly equal to the component PURL. All matching component IDs are listed with `matchMethod: exact_purl`; unmatched products remain visible with a reason. The issuer's subcomponent PURLs are shown for context but are not correlated to the SBOM. Product IDs based only on hashes, CPEs, or other identifiers remain unmatched. An issuer's status for a dependency does not establish the status of the application that contains it. Ravel does not check signatures, establish the issuer's authority, detect vulnerabilities, or change the SBOM or any vulnerability finding. The output is a correlation report, not a VEX document authored by Ravel.
+`vex` reads a local OpenVEX v0.2.0 document. It reports each statement with its issuer, timestamp, vulnerability ID, status, rationale, and products, along with the VEX input's SHA-256 digest. A product matches an SBOM component only when its `@id` PURL or `identifiers.purl` is exactly equal to the component PURL. Source qualifiers are part of that exact match: a public-registry PURL does not match a private package with `repository_url`, `download_url`, or `vcs_url`. All matching component IDs are listed with `matchMethod: exact_purl`; unmatched products remain visible with a reason. The issuer's subcomponent PURLs are shown for context but are not correlated to the SBOM. Product IDs based only on hashes, CPEs, or other identifiers remain unmatched. An issuer's status for a dependency does not establish the status of the application that contains it. Ravel does not check signatures, establish the issuer's authority, detect vulnerabilities, or change the SBOM or any vulnerability finding. The output is a correlation report, not a VEX document authored by Ravel.
 
 ## Coverage and output formats
 
 | Output | Use it for | Retained detail |
 | --- | --- | --- |
 | `cyclonedx-json` (default) | A standard CycloneDX 1.7 SBOM | Packages and unconditional dependencies; some provenance details as supported by the format. |
-| `spdx-json` | A standard SPDX 2.3 SBOM | Packages, PURLs when established, and unconditional dependencies. |
+| `spdx-json` | A standard SPDX 2.3 SBOM | Packages, source-qualified PURLs when established, source information/download locations, and unconditional dependencies. |
 | `ravel-json` | Investigation, `explain`, `graph`, `diff`, `merge`, and `enrich` | Evidence, conditional edges, origin and development records, and scan coverage. |
 | `--report FILE` | Checking the result of any output format | Scan issues and `outputLosses` for the chosen format. |
 

@@ -65,7 +65,7 @@ func TestPublishedPubPackageWithLeadingUnderscore(t *testing.T) {
 
 func TestYarnOfficialRegistryProducesNpmIdentity(t *testing.T) {
 	doc := scanBBPFixture(t, "yarn-classic-yarn-registry", false)
-	if len(doc.Components) != 1 || doc.Components[0].PURL != "pkg:npm/is-number@7.0.0" {
+	if len(doc.Components) != 1 || !purlSource(doc.Components[0].PURL, "npm", "download_url", "https://registry.yarnpkg.com/is-number/-/is-number-7.0.0.tgz") {
 		t.Fatalf("official Yarn registry package identity missing: %#v", doc.Components)
 	}
 	if len(doc.Origins) != 1 || doc.Origins[0].SafeURL != "https://registry.yarnpkg.com/is-number/-/is-number-7.0.0.tgz" {

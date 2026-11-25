@@ -138,6 +138,7 @@ func HexSHA256(raw string) []model.Hash {
 }
 
 func Finalize(doc *model.Document) {
+	qualifyOriginPURLs(doc)
 	for _, origin := range doc.Origins {
 		if origin.Kind != "vcs" || origin.SafeURL == "" {
 			continue
@@ -155,6 +156,8 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "purl_source_ambiguous":
+			doc.Coverage.OriginState = "partial"
 		case "installed_distribution_origin_unverified", "python_direct_url_invalid", "python_direct_url_unsupported":
 			doc.Coverage.OriginState = "partial"
 		case "image_lockfile_scan_limited", "image_project_file_limited", "image_project_file_unsupported", "image_lockfile_invalid", "image_lockfile_match_ambiguous", "image_lockfile_source_conflict", "image_lockfile_no_installed_match", "image_lockfile_installation_unverified":

@@ -116,7 +116,11 @@ func CollectInstalled(data []byte, source, project, metadataPath string) (model.
 			if item.kind == "vcs" && commit.MatchString(item.source.Reference) {
 				revision = item.source.Reference
 			}
-			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: item.kind, SafeURL: clean, Revision: revision, Status: "recorded_in_install_metadata", Evidence: e})
+			vcs := ""
+			if item.kind == "vcs" {
+				vcs = item.source.Type
+			}
+			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: item.kind, VCSType: vcs, SafeURL: clean, Revision: revision, Status: "recorded_in_install_metadata", Evidence: e})
 		}
 		if len(doc.Origins) == originsBefore {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: pkg.Name})

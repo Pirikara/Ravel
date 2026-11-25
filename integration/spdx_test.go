@@ -2,6 +2,8 @@ package integration_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/Pirikara/Ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
 func TestSPDX23AllFixtures(t *testing.T) {
@@ -88,6 +91,7 @@ func TestSPDX23AllFixtures(t *testing.T) {
 					Name             string `json:"name"`
 					Comment          string `json:"comment"`
 					DownloadLocation string `json:"downloadLocation"`
+					SourceInfo       string `json:"sourceInfo"`
 					FilesAnalyzed    bool   `json:"filesAnalyzed"`
 					ExternalRefs     []struct {
 						Type    string `json:"referenceType"`
@@ -106,10 +110,35 @@ func TestSPDX23AllFixtures(t *testing.T) {
 			if output.Version != "SPDX-2.3" || output.CreationInfo.Created != "2023-11-14T22:13:20Z" || len(output.Packages) != len(doc.Components)+1 || len(output.DocumentDescribes) != 1 || output.DocumentDescribes[0] != "SPDXRef-Root" {
 				t.Fatalf("unexpected SPDX document structure: %+v", output)
 			}
+			allowedDownloads := map[string]map[string]bool{}
+			hasOrigins := map[string]bool{}
+			for _, c := range doc.Components {
+				hash := sha256.Sum256([]byte(c.ID))
+				id := "SPDXRef-Package-" + hex.EncodeToString(hash[:])
+				allowedDownloads[id] = map[string]bool{"NOASSERTION": true}
+				for _, origin := range doc.Origins {
+					if origin.Occurrence != c.ID {
+						continue
+					}
+					hasOrigins[id] = true
+					clean := safeurl.Clean(origin.SafeURL)
+					if origin.Kind == "download_url" && clean != "" {
+						allowedDownloads[id][clean] = true
+					}
+					if origin.Kind == "vcs" && origin.VCSType != "" && origin.Revision != "" && clean != "" {
+						location := origin.VCSType + "+" + clean + "@" + origin.Revision
+						if subdir, ok := strings.CutPrefix(origin.Target, "subdirectory="); ok {
+							location += "#" + subdir
+						}
+						allowedDownloads[id][location] = true
+					}
+				}
+			}
+			allowedDownloads["SPDXRef-Root"] = map[string]bool{"NOASSERTION": true}
 			ids := map[string]bool{}
 			purls := map[string]int{}
 			for _, pkg := range output.Packages {
-				if ids[pkg.ID] || pkg.DownloadLocation != "NOASSERTION" || pkg.FilesAnalyzed {
+				if ids[pkg.ID] || !allowedDownloads[pkg.ID][pkg.DownloadLocation] || hasOrigins[pkg.ID] && pkg.SourceInfo == "" || pkg.FilesAnalyzed {
 					t.Fatalf("invalid or duplicate package: %+v", pkg)
 				}
 				ids[pkg.ID] = true

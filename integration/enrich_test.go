@@ -74,7 +74,7 @@ func TestRubyGemsEnrichCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	sha := sha256.Sum256(response)
-	if len(doc.Components) != 1 || doc.Components[0].Name != "rack" || doc.Components[0].PURL != "" || len(doc.Development) != 1 || doc.Development[0].SafeURL != "https://github.com/rack/rack" || doc.Development[0].Status != "registry_metadata" || doc.Development[0].Evidence.InputDigest != "sha256:"+hex.EncodeToString(sha[:]) || doc.Development[0].Evidence.InputPath != server.URL+"/api/v2/rubygems/rack/versions/3.1.0.json" {
+	if len(doc.Components) != 1 || doc.Components[0].Name != "rack" || !purlSource(doc.Components[0].PURL, "gem", "repository_url", server.URL) || len(doc.Development) != 1 || doc.Development[0].SafeURL != "https://github.com/rack/rack" || doc.Development[0].Status != "registry_metadata" || doc.Development[0].Evidence.InputDigest != "sha256:"+hex.EncodeToString(sha[:]) || doc.Development[0].Evidence.InputPath != server.URL+"/api/v2/rubygems/rack/versions/3.1.0.json" {
 		t.Fatalf("RubyGems metadata was not attached with evidence: %#v", doc)
 	}
 	if _, err := time.Parse(time.RFC3339, doc.Development[0].Evidence.ObservedAt); err != nil {
@@ -170,7 +170,7 @@ func TestNPMEnrichCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	sha := sha256.Sum256(body)
-	if len(doc.Components) != 1 || doc.Components[0].Name != "is-number" || doc.Components[0].PURL != "" || len(doc.Development) != 1 || doc.Development[0].SafeURL != "https://github.com/jonschlinkert/is-number.git" || doc.Development[0].Status != "registry_metadata" || doc.Development[0].Evidence.InputDigest != "sha256:"+hex.EncodeToString(sha[:]) || doc.Development[0].Evidence.InputPath != server.URL+"/is-number/7.0.0" {
+	if len(doc.Components) != 1 || doc.Components[0].Name != "is-number" || !purlSource(doc.Components[0].PURL, "npm", "download_url", server.URL+"/is-number/-/is-number-7.0.0.tgz") || len(doc.Development) != 1 || doc.Development[0].SafeURL != "https://github.com/jonschlinkert/is-number.git" || doc.Development[0].Status != "registry_metadata" || doc.Development[0].Evidence.InputDigest != "sha256:"+hex.EncodeToString(sha[:]) || doc.Development[0].Evidence.InputPath != server.URL+"/is-number/7.0.0" {
 		t.Fatalf("npm development metadata was not attached with evidence: %#v", doc)
 	}
 	if _, err := time.Parse(time.RFC3339, doc.Development[0].Evidence.ObservedAt); err != nil {

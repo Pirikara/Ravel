@@ -20,8 +20,8 @@ func TestCollectMetadataSourcesAndConditions(t *testing.T) {
 		switch component.Name {
 		case "alpha":
 			alpha = component.ID
-			if component.PURL != "" {
-				t.Fatalf("alternate Cargo registry was conflated with crates.io: %#v", component)
+			if component.PURL != "pkg:cargo/alpha@1.2.3?repository_url=https:%2F%2Fregistry.example.test%2Findex" {
+				t.Fatalf("alternate Cargo registry locator missing: %#v", component)
 			}
 		case "beta":
 			beta = component.ID

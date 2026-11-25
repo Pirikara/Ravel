@@ -32,6 +32,7 @@ type spdxPackage struct {
 	Purpose          string            `json:"primaryPackagePurpose"`
 	Comment          string            `json:"comment,omitempty"`
 	DownloadLocation string            `json:"downloadLocation"`
+	SourceInfo       string            `json:"sourceInfo,omitempty"`
 	FilesAnalyzed    bool              `json:"filesAnalyzed"`
 	LicenseConcluded string            `json:"licenseConcluded"`
 	LicenseDeclared  string            `json:"licenseDeclared"`
@@ -122,6 +123,10 @@ func SPDX23(doc model.Document) ([]byte, error) {
 	}
 	out.Packages = append(out.Packages, root)
 	lockAnnotations := imageLockAnnotations(doc)
+	origins := map[string][]model.Origin{}
+	for _, o := range doc.Origins {
+		origins[o.Occurrence] = append(origins[o.Occurrence], o)
+	}
 	ids := map[string]string{"root": root.ID}
 	for _, c := range doc.Components {
 		if c.ID == "" || c.ID == "root" {
@@ -140,6 +145,8 @@ func SPDX23(doc model.Document) ([]byte, error) {
 			purpose = "APPLICATION"
 		}
 		item := spdxPackage{ID: id, Name: c.Name, Version: c.Version, Purpose: purpose, DownloadLocation: "NOASSERTION", LicenseConcluded: "NOASSERTION", LicenseDeclared: "NOASSERTION", CopyrightText: "NOASSERTION"}
+		item.SourceInfo = packageSourceInfo(origins[c.ID])
+		item.DownloadLocation = packageDownloadLocation(origins[c.ID])
 		if c.Context != "" {
 			item.Comment = "Ravel context: " + c.Context
 		}
