@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Pirikara/Ravel/internal/model"
@@ -12,17 +13,20 @@ import (
 // Diff compares two Ravel documents by occurrence ID. Evidence file paths and
 // digests are intentionally excluded from change detection.
 type Diff struct {
-	AddedComponents    []model.Component   `json:"addedComponents"`
-	RemovedComponents  []model.Component   `json:"removedComponents"`
-	ChangedComponents  []ComponentChange   `json:"changedComponents"`
-	AddedEdges         []model.Edge        `json:"addedEdges"`
-	RemovedEdges       []model.Edge        `json:"removedEdges"`
-	AddedOrigins       []model.Origin      `json:"addedOrigins"`
-	RemovedOrigins     []model.Origin      `json:"removedOrigins"`
-	AddedDevelopment   []model.Development `json:"addedDevelopment"`
-	RemovedDevelopment []model.Development `json:"removedDevelopment"`
-	BeforeCoverage     model.Coverage      `json:"beforeCoverage"`
-	AfterCoverage      model.Coverage      `json:"afterCoverage"`
+	AddedComponents    []model.Component          `json:"addedComponents"`
+	RemovedComponents  []model.Component          `json:"removedComponents"`
+	ChangedComponents  []ComponentChange          `json:"changedComponents"`
+	AddedEdges         []model.Edge               `json:"addedEdges"`
+	RemovedEdges       []model.Edge               `json:"removedEdges"`
+	AddedOrigins       []model.Origin             `json:"addedOrigins"`
+	RemovedOrigins     []model.Origin             `json:"removedOrigins"`
+	AddedDevelopment   []model.Development        `json:"addedDevelopment"`
+	RemovedDevelopment []model.Development        `json:"removedDevelopment"`
+	RootChange         *RootChange                `json:"rootChange,omitempty"`
+	AddedRuntimes      []model.RuntimeRequirement `json:"addedRuntimes"`
+	RemovedRuntimes    []model.RuntimeRequirement `json:"removedRuntimes"`
+	BeforeCoverage     model.Coverage             `json:"beforeCoverage"`
+	AfterCoverage      model.Coverage             `json:"afterCoverage"`
 }
 
 type ComponentChange struct {
@@ -30,12 +34,42 @@ type ComponentChange struct {
 	After  model.Component `json:"after"`
 }
 
+type RootChange struct {
+	Before *model.ProjectIdentity `json:"before"`
+	After  *model.ProjectIdentity `json:"after"`
+}
+
 func Compare(before, after model.Document) Diff {
 	result := Diff{
 		AddedComponents: []model.Component{}, RemovedComponents: []model.Component{}, ChangedComponents: []ComponentChange{},
 		AddedEdges: []model.Edge{}, RemovedEdges: []model.Edge{}, AddedOrigins: []model.Origin{}, RemovedOrigins: []model.Origin{}, AddedDevelopment: []model.Development{}, RemovedDevelopment: []model.Development{},
+		AddedRuntimes: []model.RuntimeRequirement{}, RemovedRuntimes: []model.RuntimeRequirement{},
 		BeforeCoverage: before.Coverage, AfterCoverage: after.Coverage,
 	}
+	if !sameRoot(before.Root, after.Root) {
+		result.RootChange = &RootChange{Before: before.Root, After: after.Root}
+	}
+	previousRuntimes, currentRuntimes := map[string]model.RuntimeRequirement{}, map[string]model.RuntimeRequirement{}
+	for _, runtime := range before.Runtimes {
+		previousRuntimes[runtimeKey(runtime)] = runtime
+	}
+	for _, runtime := range after.Runtimes {
+		currentRuntimes[runtimeKey(runtime)] = runtime
+	}
+	for key, runtime := range previousRuntimes {
+		if _, found := currentRuntimes[key]; !found {
+			result.RemovedRuntimes = append(result.RemovedRuntimes, runtime)
+		}
+	}
+	for key, runtime := range currentRuntimes {
+		if _, found := previousRuntimes[key]; !found {
+			result.AddedRuntimes = append(result.AddedRuntimes, runtime)
+		}
+	}
+	sort.Slice(result.AddedRuntimes, func(i, j int) bool { return runtimeKey(result.AddedRuntimes[i]) < runtimeKey(result.AddedRuntimes[j]) })
+	sort.Slice(result.RemovedRuntimes, func(i, j int) bool {
+		return runtimeKey(result.RemovedRuntimes[i]) < runtimeKey(result.RemovedRuntimes[j])
+	})
 	previous := make(map[string]model.Component, len(before.Components))
 	current := make(map[string]model.Component, len(after.Components))
 	for _, component := range before.Components {
@@ -129,6 +163,19 @@ func Compare(before, after model.Document) Diff {
 	return result
 }
 
+func sameRoot(a, b *model.ProjectIdentity) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Name == b.Name && a.Version == b.Version
+}
+
+func runtimeKey(runtime model.RuntimeRequirement) string {
+	runtime.Evidence = model.Evidence{}
+	encoded, _ := json.Marshal(runtime)
+	return string(encoded)
+}
+
 func developmentKey(source model.Development) string {
 	return strings.Join([]string{source.Occurrence, source.SafeURL, source.Status}, "\x00")
 }
@@ -144,11 +191,27 @@ func edgeKey(edge model.Edge) string {
 	return strings.Join([]string{edge.From, edge.To, edge.Kind, edge.Condition}, "\x00")
 }
 func originKey(origin model.Origin) string {
-	return strings.Join([]string{origin.Occurrence, origin.Kind, origin.SafeURL, origin.LocalPath, origin.Target, origin.Revision, origin.Status}, "\x00")
+	return strings.Join([]string{origin.Occurrence, origin.Kind, origin.SafeURL, origin.LocalPath, origin.Target, origin.Revision, origin.VCSType, origin.Status}, "\x00")
 }
 
 func DiffText(diff Diff) string {
 	var lines []string
+	if change := diff.RootChange; change != nil {
+		switch {
+		case change.Before == nil:
+			lines = append(lines, "+ application "+rootLabel(change.After))
+		case change.After == nil:
+			lines = append(lines, "- application "+rootLabel(change.Before))
+		default:
+			lines = append(lines, "~ application "+rootLabel(change.Before)+" -> "+rootLabel(change.After))
+		}
+	}
+	for _, runtime := range diff.RemovedRuntimes {
+		lines = append(lines, "- runtime "+runtimeLabel(runtime))
+	}
+	for _, runtime := range diff.AddedRuntimes {
+		lines = append(lines, "+ runtime "+runtimeLabel(runtime))
+	}
 	for _, component := range diff.RemovedComponents {
 		lines = append(lines, "- package "+component.Name+"@"+component.Version+" ["+component.ID+"]")
 	}
@@ -178,4 +241,19 @@ func DiffText(diff Diff) string {
 	}
 	lines = append(lines, fmt.Sprintf("coverage: graph %s -> %s; origin %s -> %s", diff.BeforeCoverage.GraphState, diff.AfterCoverage.GraphState, diff.BeforeCoverage.OriginState, diff.AfterCoverage.OriginState))
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func rootLabel(root *model.ProjectIdentity) string {
+	if root.Version == "" {
+		return root.Name
+	}
+	return root.Name + "@" + root.Version
+}
+
+func runtimeLabel(runtime model.RuntimeRequirement) string {
+	label := runtime.Name + " " + runtime.Relation + " " + strconv.Quote(runtime.Requirement) + " [" + runtime.Scope + "]"
+	if runtime.Policy != "" {
+		label += " (policy " + strconv.Quote(runtime.Policy) + ")"
+	}
+	return label
 }
