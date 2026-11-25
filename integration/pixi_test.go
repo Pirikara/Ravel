@@ -46,8 +46,8 @@ func TestPixiSelectedOccurrencesAndEdges(t *testing.T) {
 		if pkg.Name == "PyParsing" && pkg.PURL != "pkg:pypi/pyparsing@3.2.0" {
 			t.Fatalf("official PyPI identity: %#v", pkg)
 		}
-		if pkg.Name == "zlib" && pkg.PURL != "" {
-			t.Fatalf("unverified Conda PURL: %#v", pkg)
+		if pkg.Name == "zlib" && !purlSource(pkg.PURL, "conda", "download_url", "") {
+			t.Fatalf("missing source-qualified Conda PURL: %#v", pkg)
 		}
 	}
 	direct := 0
@@ -197,7 +197,7 @@ func TestPixiPyprojectNativeDependencies(t *testing.T) {
 		t.Fatalf("self-extra marker was asserted: %#v", edge)
 	}
 	for _, pkg := range doc.Components {
-		if pkg.Name == "packaging" && pkg.PURL != "" {
+		if pkg.Name == "packaging" && !purlSource(pkg.PURL, "conda", "download_url", "") {
 			t.Fatalf("PyPI dependency overrode selected Conda package: %#v", pkg)
 		}
 	}

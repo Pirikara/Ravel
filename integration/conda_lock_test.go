@@ -40,8 +40,8 @@ func TestCondaLockCLI(t *testing.T) {
 		if pkg.Name == "My_Package" && (pkg.PURL != "pkg:pypi/my-package@1.0.0" || pkg.Context != "manager=pip;category=dev;optional=true") {
 			t.Fatalf("conda-lock Pip identity: %#v", pkg)
 		}
-		if pkg.Name == "python" && pkg.PURL != "" {
-			t.Fatalf("unverified Conda PURL: %#v", pkg)
+		if pkg.Name == "python" && !purlSource(pkg.PURL, "conda", "download_url", "") {
+			t.Fatalf("missing source-qualified Conda PURL: %#v", pkg)
 		}
 	}
 	for _, edge := range basic.Edges {

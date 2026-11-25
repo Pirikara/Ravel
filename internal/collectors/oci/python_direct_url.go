@@ -81,7 +81,7 @@ func collectImagePythonDirectURLs(doc *model.Document, files map[string]imagePro
 			if record.VCS != nil {
 				vcs, commit := record.VCS.VCS, record.VCS.Commit
 				if (vcs == "git" || vcs == "hg") && imageVCSCommit.MatchString(commit) || vcs == "svn" && imageSVNRevision.MatchString(commit) {
-					origin.Kind, origin.Revision = "vcs", commit
+					origin.Kind, origin.Revision, origin.VCSType = "vcs", commit, vcs
 				} else {
 					issue("python_direct_url_unsupported")
 					continue

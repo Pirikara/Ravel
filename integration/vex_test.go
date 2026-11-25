@@ -66,3 +66,28 @@ func TestOpenVEXRejectsInvalidAndProtectsInputs(t *testing.T) {
 		t.Fatalf("VEX input changed: %v", err)
 	}
 }
+
+func TestOpenVEXDoesNotApplyPublicPackageStatusToPrivateSource(t *testing.T) {
+	dir := t.TempDir()
+	sbom := filepath.Join(dir, "private.json")
+	input := filepath.Join("..", "testdata", "fixtures", "uv-basic")
+	if out, err := exec.Command(executable, "scan", input, "--format", "ravel-json", "--output", sbom).CombinedOutput(); err != nil {
+		t.Fatalf("scan: %v %s", err, out)
+	}
+	document := `{"@context":"https://openvex.dev/ns/v0.2.0","@id":"https://example.test/vex/private-source","author":"Example Security Team","timestamp":"2026-11-25T00:00:00Z","version":1,"statements":[{"vulnerability":{"name":"CVE-2026-1"},"products":[{"@id":"pkg:pypi/requests@2.32.3"}],"status":"not_affected","justification":"vulnerable_code_not_present"},{"vulnerability":{"name":"CVE-2026-2"},"products":[{"@id":"pkg:pypi/requests@2.32.3?repository_url=https:%2F%2Fpypi.example.test%2Fsimple"}],"status":"under_investigation"}]}`
+	vexPath := filepath.Join(dir, "vex.json")
+	if err := os.WriteFile(vexPath, []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(executable, "vex", "--input", sbom, "--vex", vexPath, "--format", "json").CombinedOutput()
+	if err != nil {
+		t.Fatalf("vex: %v %s", err, out)
+	}
+	var result vex.Result
+	if err := json.Unmarshal(out, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Statements) != 2 || result.Statements[0].Products[0].Matched || !result.Statements[1].Products[0].Matched || result.Statements[1].Products[0].MatchMethod != "exact_purl" {
+		t.Fatalf("private source conflated with public package: %+v", result)
+	}
+}

@@ -23,8 +23,8 @@ type Component struct {
 	Platform string `json:"platform,omitempty"`
 	Context  string `json:"context,omitempty"`
 	PURL     string `json:"purl,omitempty"`
-	// PURLBasis marks an ecosystem coordinate inferred from package metadata
-	// without a confirmed registry. Empty retains the collector's prior policy.
+	// PURLBasis records an inferred coordinate or one qualified by source
+	// metadata. It does not assert independently verified artifact provenance.
 	PURLBasis string     `json:"purlBasis,omitempty"`
 	Hashes    []Hash     `json:"hashes,omitempty"`
 	Patches   []Patch    `json:"patches,omitempty"`
@@ -55,6 +55,7 @@ type Origin struct {
 	LocalPath  string   `json:"localPath,omitempty"`
 	Target     string   `json:"target,omitempty"`
 	Revision   string   `json:"revision,omitempty"`
+	VCSType    string   `json:"vcsType,omitempty"`
 	Status     string   `json:"status"`
 	Evidence   Evidence `json:"evidence"`
 }

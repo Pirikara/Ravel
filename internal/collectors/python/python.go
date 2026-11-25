@@ -59,6 +59,7 @@ type uvLock struct {
 }
 
 type pyVCS struct {
+	Type     string `toml:"type"`
 	URL      string `toml:"url"`
 	Path     string `toml:"path"`
 	CommitID string `toml:"commit-id"`
@@ -239,7 +240,11 @@ func CollectPylock(file, project string) (model.Document, error) {
 			if !commitID.MatchString(revision) {
 				revision = ""
 			}
+			before := len(doc.Origins)
 			addURLOrigin(&doc, ref, "vcs", pkg.VCS.URL, revision, ev, pkg.Name)
+			if len(doc.Origins) > before {
+				doc.Origins[len(doc.Origins)-1].VCSType = pkg.VCS.Type
+			}
 		case pkg.VCS.Path != "" || pkg.Directory.Path != "":
 			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", Status: "declared", Evidence: ev})
 		case pkg.Archive.URL != "":

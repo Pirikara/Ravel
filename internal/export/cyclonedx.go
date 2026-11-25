@@ -13,8 +13,9 @@ type property struct {
 }
 
 type reference struct {
-	Type string `json:"type"`
-	URL  string `json:"url"`
+	Type    string `json:"type"`
+	URL     string `json:"url"`
+	Comment string `json:"comment,omitempty"`
 }
 
 type component struct {
@@ -117,11 +118,13 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 			item.Properties = append(item.Properties, property{Name: "ravel:context", Value: c.Context})
 		}
 		for _, o := range origins[c.ID] {
+			if ref, ok := originReference(o); ok {
+				item.ExternalReferences = append(item.ExternalReferences, ref)
+			}
 			switch o.Kind {
 			case "declared_registry":
 				item.Properties = append(item.Properties, property{Name: "ravel:declaredRegistry", Value: o.SafeURL})
 			case "vcs":
-				item.ExternalReferences = append(item.ExternalReferences, reference{Type: "vcs", URL: o.SafeURL})
 				seenVCS[o.SafeURL] = true
 				if o.Revision != "" {
 					item.Properties = append(item.Properties, property{Name: "ravel:vcsRevision", Value: o.Revision})
@@ -131,7 +134,6 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 					item.Properties = append(item.Properties, property{Name: "ravel:localPath", Value: o.LocalPath})
 				}
 			case "download_url":
-				item.ExternalReferences = append(item.ExternalReferences, reference{Type: "distribution", URL: o.SafeURL})
 			case "registry_identity":
 				item.Properties = append(item.Properties, property{Name: "ravel:registryIdentity", Value: o.SafeURL})
 			case "podspec":

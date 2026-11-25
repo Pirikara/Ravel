@@ -59,8 +59,17 @@ DEPENDENCIES
 		t.Fatalf("got %d origins", len(doc.Origins))
 	}
 	for _, component := range doc.Components {
-		if component.PURL != "" {
-			t.Fatalf("non-default registry, Git, or path package assigned RubyGems PURL: %#v", component)
+		want := ""
+		switch component.Name {
+		case "alpha":
+			want = "pkg:gem/alpha@1.0.0?repository_url=https:%2F%2Fregistry.example.test%2Fgems"
+		case "beta":
+			want = "pkg:gem/beta@2.1.0?repository_url=https:%2F%2Fregistry.example.test%2Fgems"
+		case "gitgem":
+			want = "pkg:gem/gitgem@0.3.0?vcs_url=git%2Bhttps:%2F%2Fgit.example.test%2Fteam%2Fgitgem.git%400123456789abcdef0123456789abcdef01234567"
+		}
+		if component.PURL != want {
+			t.Fatalf("source-specific identity: %#v", component)
 		}
 	}
 	var sawRegistry, sawGit, sawPath bool

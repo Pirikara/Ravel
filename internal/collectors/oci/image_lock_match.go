@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Pirikara/Ravel/internal/model"
+	packageurl "github.com/package-url/packageurl-go"
 )
 
 var imagePythonNameSeparators = regexp.MustCompile(`[-_.]+`)
@@ -154,7 +155,7 @@ func imageLockSignature(lock imageLockDocument, c model.Component) string {
 		parts = append(parts, h.Alg+"="+h.Content)
 	}
 	for _, o := range lock.origins[c.ID] {
-		encoded, _ := json.Marshal([]string{o.Kind, o.SafeURL, o.LocalPath, o.Target, o.Revision})
+		encoded, _ := json.Marshal([]string{o.Kind, o.SafeURL, o.LocalPath, o.Target, o.Revision, o.VCSType})
 		parts = append(parts, string(encoded))
 	}
 	sort.Strings(parts)
@@ -217,7 +218,7 @@ func imageLockCompatible(lock imageLockDocument, candidate, installed model.Comp
 	if ecosystem == "cargo" {
 		switch imageContextValue(installed.Context, "source") {
 		case "crates.io":
-			return strings.HasPrefix(candidate.PURL, "pkg:cargo/")
+			return candidate.PURL == packageurl.NewPackageURL("cargo", "", candidate.Name, candidate.Version, nil, "").ToString()
 		case "git":
 			for _, o := range lock.origins[candidate.ID] {
 				if o.Kind == "vcs" {
@@ -325,7 +326,9 @@ func correlateImageLocks(doc *model.Document, files map[string]imageProjectFile)
 			conflicting := false
 			for _, known := range installedOrigins[installed.ID] {
 				for _, declared := range lock.origins[lock.doc.Components[candidate.component].ID] {
-					if known.Kind == declared.Kind && (known.Kind == "download_url" || known.Kind == "declared_registry" || known.Kind == "vcs") && known.SafeURL != "" && declared.SafeURL != "" && (known.SafeURL != declared.SafeURL || known.Kind == "vcs" && len(known.Revision) >= 40 && len(known.Revision) == len(declared.Revision) && known.Revision != declared.Revision) {
+					vcsConflict := known.Kind == "vcs" && (len(known.Revision) >= 40 && len(known.Revision) == len(declared.Revision) && known.Revision != declared.Revision ||
+						known.VCSType != "" && declared.VCSType != "" && known.VCSType != declared.VCSType)
+					if known.Kind == declared.Kind && (known.Kind == "download_url" || known.Kind == "declared_registry" || known.Kind == "vcs") && known.SafeURL != "" && declared.SafeURL != "" && (known.SafeURL != declared.SafeURL || vcsConflict) {
 						conflicting = true
 					}
 				}

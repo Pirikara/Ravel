@@ -21,14 +21,14 @@ func TestOutputLossReport(t *testing.T) {
 			"edge_kinds_omitted":        1,
 			"evidence_records_omitted":  7,
 			"source_paths_omitted":      2,
-			"origin_statuses_omitted":   2,
+			"origin_statuses_omitted":   0,
 		}},
 		{"spdx-json", map[string]int{
 			"conditional_edges_omitted": 2,
 			"edge_kinds_omitted":        1,
 			"evidence_records_omitted":  7,
 			"source_paths_omitted":      2,
-			"origin_records_omitted":    2,
+			"origin_records_as_text":    2,
 		}},
 	} {
 		t.Run(tc.format, func(t *testing.T) {

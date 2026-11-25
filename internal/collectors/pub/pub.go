@@ -131,7 +131,7 @@ func Collect(file, project string) (model.Document, error) {
 					revision = ""
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "source_unresolved", Name: name})
 				}
-				doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", SafeURL: clean, Revision: revision, Status: "declared", Evidence: ev})
+				doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", VCSType: "git", SafeURL: clean, Revision: revision, Status: "declared", Evidence: ev})
 			} else {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: name})
 			}

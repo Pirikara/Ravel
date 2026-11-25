@@ -395,7 +395,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		}
 	case "yarn-classic-alias":
 		main, parser := find("mermaid", "12.0.0"), find("@mermaid-js/parser", "2.0.0")
-		if !connected("root", main) || !connected(main, parser) || componentPURL(main) != "pkg:npm/mermaid@12.0.0" || len(doc.Components) != 2 {
+		if !connected("root", main) || !connected(main, parser) || !purlSource(componentPURL(main), "npm", "download_url", "https://registry.yarnpkg.com/mermaid/-/mermaid-12.0.0.tgz") || len(doc.Components) != 2 {
 			t.Fatal("Yarn alias lost the installed package or its dependency graph")
 		}
 		for _, component := range doc.Components {
@@ -419,7 +419,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			}
 		}
 	case "bundler-git-scp":
-		if len(doc.Components) != 1 || doc.Components[0].PURL != "" || len(doc.Origins) != 1 || doc.Origins[0].Kind != "vcs" || doc.Origins[0].SafeURL != "ssh://github.com/ravel/gitgem.git" || len(doc.Development) != 1 || doc.Development[0].SafeURL != "ssh://github.com/ravel/gitgem.git" {
+		if len(doc.Components) != 1 || !purlSource(doc.Components[0].PURL, "gem", "vcs_url", "git+ssh://github.com/ravel/gitgem.git@0123456789abcdef0123456789abcdef01234567") || len(doc.Origins) != 1 || doc.Origins[0].Kind != "vcs" || doc.Origins[0].SafeURL != "ssh://github.com/ravel/gitgem.git" || len(doc.Development) != 1 || doc.Development[0].SafeURL != "ssh://github.com/ravel/gitgem.git" {
 			t.Fatalf("scp-style Bundler Git source lost or assigned RubyGems identity: %#v", doc)
 		}
 	case "nuget-generated-10", "nuget-assets-generated-10":
@@ -529,7 +529,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Bun lock connected a dependency outside its declared range")
 		}
 	case "bun-v2-private":
-		if strings.Contains(string(bomData), "secret") || strings.Contains(string(bomData), "hidden") || len(doc.Components) != 1 || doc.Components[0].PURL != "" || len(doc.Components[0].Hashes) != 1 || len(doc.Origins) != 1 || doc.Origins[0].SafeURL != "https://packages.example.test/private-lib/-/private-lib-1.0.0.tgz" {
+		if strings.Contains(string(bomData), "secret") || strings.Contains(string(bomData), "hidden") || len(doc.Components) != 1 || !purlSource(doc.Components[0].PURL, "npm", "download_url", "https://packages.example.test/private-lib/-/private-lib-1.0.0.tgz") || len(doc.Components[0].Hashes) != 1 || len(doc.Origins) != 1 || doc.Origins[0].SafeURL != "https://packages.example.test/private-lib/-/private-lib-1.0.0.tgz" {
 			t.Fatal("Bun v2 private tarball lost integrity, guessed registry identity, or leaked credentials")
 		}
 	case "bun-v2-platform-generated-1_4":
@@ -582,7 +582,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			}
 		}
 		for _, c := range doc.Components {
-			if c.Name == "core" && c.PURL != "pkg:npm/core@1.0.0" || c.Name == "native" && c.PURL != "" {
+			if c.Name == "core" && c.PURL != "pkg:npm/core@1.0.0" || c.Name == "native" && !purlSource(c.PURL, "npm", "download_url", "https://packages.example.test/native/-/native-1.0.0.tgz") {
 				t.Fatalf("npm v1 private package assigned registry identity: %+v", c)
 			}
 		}
@@ -920,8 +920,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("npm nested dependency resolved to the wrong package version")
 		}
 		for _, component := range doc.Components {
-			if component.PURL != "" {
-				t.Fatal("private npm registry package assigned default npm PURL")
+			if !purlSource(component.PURL, "npm", "download_url", "") {
+				t.Fatal("private npm registry locator missing from PURL")
 			}
 		}
 	case "npm-v3-alias-generated-11":
@@ -1120,7 +1120,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			if c.ID == parent && (c.Kind != "application" || c.PURL != "") {
 				t.Fatalf("local uv root was misidentified as a registry package: %#v", c)
 			}
-			if c.ID == a && (c.PURL != "" || len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-256") {
+			if c.ID == a && (!purlSource(c.PURL, "pypi", "repository_url", "https://pypi.example.test/simple") || len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-256") {
 				t.Fatalf("private Python package assigned default PyPI identity or lost hash: %#v", c)
 			}
 			if c.ID == b && !strings.HasPrefix(c.PURL, "pkg:pypi/"+strings.ToLower(second)+"@") {
@@ -1325,7 +1325,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Poetry dependency chain missing")
 		}
 		for _, c := range doc.Components {
-			if c.ID == requests && (len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-256" || c.PURL != "") {
+			if c.ID == requests && (len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-256" || !purlSource(c.PURL, "pypi", "repository_url", "https://pypi.example.test/simple")) {
 				t.Fatal("Poetry private package hash missing or default PyPI PURL invented")
 			}
 			if c.ID == idna && c.PURL != "pkg:pypi/idna@3.10" {
@@ -1354,8 +1354,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		if len(doc.Origins) != 1 || doc.Origins[0].Kind != "vcs" || doc.Origins[0].SafeURL != "https://github.com/team/git-lib" || doc.Origins[0].Revision != "abcdef1234567890" {
 			t.Fatal("Poetry Git origin was not sanitized")
 		}
-		if doc.Components[0].PURL != "" {
-			t.Fatal("Poetry Git package assigned PyPI PURL")
+		if !purlSource(doc.Components[0].PURL, "pypi", "vcs_url", "git+https://github.com/team/git-lib@abcdef1234567890") {
+			t.Fatal("Poetry Git source locator missing from PURL")
 		}
 	case "poetry-ambiguous":
 		if !connected("root", find("parent", "1.0.0")) || len(doc.Edges) != 1 {
@@ -1367,8 +1367,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Yarn dependency chain missing")
 		}
 		for _, c := range doc.Components {
-			if c.PURL != "" {
-				t.Fatal("Yarn source without confirmed default registry assigned npm PURL")
+			if fixture == "yarn-classic-basic" && !purlSource(c.PURL, "npm", "download_url", "") || fixture == "yarn-berry-basic" && c.PURL != "" {
+				t.Fatal("Yarn source identity did not preserve the recorded locator")
 			}
 			if c.ID == alpha {
 				if fixture == "yarn-classic-basic" && (len(c.Hashes) != 1 || c.Hashes[0].Alg != "SHA-512") {
@@ -1448,8 +1448,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("Cargo lock graph missing")
 		}
 		for _, component := range doc.Components {
-			if component.PURL != "" {
-				t.Fatalf("alternate Cargo registry was conflated with crates.io: %#v", component)
+			if !purlSource(component.PURL, "cargo", "repository_url", "https://registry.example.test/index") {
+				t.Fatalf("alternate Cargo registry locator missing: %#v", component)
 			}
 		}
 		for _, c := range doc.Components {
@@ -1473,8 +1473,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		if len(doc.Origins) != 1 || doc.Origins[0].Kind != "vcs" || doc.Origins[0].SafeURL != "https://github.com/team/git-lib" || doc.Origins[0].Revision != "abcdef1234567890" {
 			t.Fatal("Cargo Git source not sanitized")
 		}
-		if doc.Components[0].PURL != "" {
-			t.Fatal("Cargo Git source was conflated with crates.io")
+		if !purlSource(doc.Components[0].PURL, "cargo", "vcs_url", "git+https://github.com/team/git-lib@abcdef1234567890") {
+			t.Fatal("Cargo Git locator missing from PURL")
 		}
 	case "cargo-sparse-default":
 		if len(doc.Components) != 1 || doc.Components[0].PURL != "pkg:cargo/serde@1.0.197" {
@@ -1508,7 +1508,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		if !connected("root", monolog) || !connected(monolog, psr) {
 			t.Fatal("Composer graph missing")
 		}
-		if componentPURL(monolog) != "pkg:composer/monolog/monolog@3.0.0" || componentPURL(psr) != "pkg:composer/psr/log@3.0.0" {
+		if !purlSource(componentPURL(monolog), "composer", "download_url", "https://api.github.com/repos/Seldaek/monolog/zipball/abcdef1234567890") || !purlSource(componentPURL(psr), "composer", "vcs_url", "git+https://github.com/php-fig/log.git@1234567890abcdef") {
 			t.Fatal("Composer ecosystem identity missing")
 		}
 		var vcs, dist bool
@@ -1793,8 +1793,8 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 			t.Fatal("PDM source types missing or unsafe")
 		}
 		for _, component := range doc.Components {
-			if component.PURL != "" {
-				t.Fatal("PDM non-registry package assigned PyPI PURL")
+			if component.Name == "local-lib" && component.PURL != "" || component.Name == "git-lib" && !purlSource(component.PURL, "pypi", "vcs_url", "git+https://github.com/team/git-lib.git@abcdef1234567890") || component.Name == "archive-lib" && !purlSource(component.PURL, "pypi", "download_url", "https://files.example.test/archive-lib-1.0.0.tar.gz") {
+				t.Fatal("PDM non-registry locator missing or local package assigned registry identity")
 			}
 		}
 	case "pdm-no-manifest":
@@ -2027,7 +2027,7 @@ func TestExplainCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("explain failed: %v: %s", err, output)
 	}
-	for _, want := range []string{"monolog/monolog@3.0.0", "pkg:composer/monolog/monolog@3.0.0", "purl basis: ecosystem_inferred", "https://github.com/Seldaek/monolog.git", "https://api.github.com/repos/Seldaek/monolog/zipball/abcdef1234567890", "required by: composer-basic", "depends on: psr/log@3.0.0", "composer.lock", "composer.json", "coverage: graph=partial"} {
+	for _, want := range []string{"monolog/monolog@3.0.0", "pkg:composer/monolog/monolog@3.0.0", "purl basis: source_qualified", "https://github.com/Seldaek/monolog.git", "https://api.github.com/repos/Seldaek/monolog/zipball/abcdef1234567890", "required by: composer-basic", "depends on: psr/log@3.0.0", "composer.lock", "composer.json", "coverage: graph=partial"} {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("explanation missing %q: %s", want, output)
 		}
@@ -2043,7 +2043,7 @@ func TestExplainCLI(t *testing.T) {
 	if err := json.Unmarshal(output, &detail); err != nil {
 		t.Fatal(err)
 	}
-	if detail.Component.PURL != "pkg:composer/monolog/monolog@3.0.0" || detail.Component.PURLBasis != "ecosystem_inferred" || len(detail.Origins) != 2 || len(detail.Incoming) != 1 || len(detail.Outgoing) != 1 {
+	if !purlSource(detail.Component.PURL, "composer", "download_url", "https://api.github.com/repos/Seldaek/monolog/zipball/abcdef1234567890") || detail.Component.PURLBasis != "source_qualified" || len(detail.Origins) != 2 || len(detail.Incoming) != 1 || len(detail.Outgoing) != 1 {
 		t.Fatalf("unexpected explanation: %#v", detail)
 	}
 	if err := exec.Command(executable, "explain", query, "extra", "--input", input).Run(); err == nil {

@@ -187,6 +187,7 @@ func Collect(path, project string) (model.Document, error) {
 			origin.SafeURL = safeurl.Clean(r.value)
 		case "GIT":
 			origin.Kind = "vcs"
+			origin.VCSType = "git"
 			origin.SafeURL = safeurl.Clean(r.value)
 		case "PATH":
 			origin.Kind = "local"

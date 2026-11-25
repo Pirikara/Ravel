@@ -75,13 +75,7 @@ func Losses(doc model.Document, format string) []Loss {
 	add("source_paths_omitted", sources)
 	add("coverage_issues_omitted", len(doc.Coverage.Issues))
 	if format == "spdx-json" {
-		omittedOrigins := 0
-		for _, origin := range doc.Origins {
-			if !isAnnotatedImageOrigin(origin) {
-				omittedOrigins++
-			}
-		}
-		add("origin_records_omitted", omittedOrigins)
+		add("origin_records_as_text", len(doc.Origins))
 		platforms, hashes := 0, 0
 		for _, component := range doc.Components {
 			if component.Platform != "" {
@@ -101,7 +95,8 @@ func Losses(doc model.Document, format string) []Loss {
 	} else {
 		originStatus := 0
 		for _, origin := range doc.Origins {
-			if origin.Status != "" && !isAnnotatedImageOrigin(origin) {
+			_, hasReference := originReference(origin)
+			if origin.Status != "" && !isAnnotatedImageOrigin(origin) && !hasReference {
 				originStatus++
 			}
 		}

@@ -51,7 +51,11 @@ func TestOCIImageLockfileCorrelationAcrossManagers(t *testing.T) {
 				t.Fatalf("scan: %d %s", code, output)
 			}
 			c := doc.Components[0]
-			if c.Name != tc.name || c.Version != tc.version || c.PURL == "" || c.PURLBasis != "ecosystem_inferred" || len(c.Hashes) != 0 {
+			basis := "ecosystem_inferred"
+			if tc.fixture == "pnpm-basic" || tc.fixture == "uv-basic" || tc.fixture == "poetry-basic" || tc.fixture == "pylock-basic" || tc.fixture == "bundler-basic" {
+				basis = "source_qualified"
+			}
+			if c.Name != tc.name || c.Version != tc.version || c.PURL == "" || c.PURLBasis != basis || len(c.Hashes) != 0 {
 				t.Fatalf("installed occurrence changed: %#v", c)
 			}
 			matched := false
@@ -222,11 +226,11 @@ func TestOCIOtherEcosystemLockfileCorrelation(t *testing.T) {
 		installed         ociTestEntry
 		packageName, purl string
 	}{
-		{"composer", "composer.lock", imageLockFixture(t, "composer-basic", "composer.lock"), ociTestEntry{name: "app/vendor/composer/installed.json", data: []byte(`[{"name":"monolog/monolog","version":"3.0.0"}]`)}, "monolog/monolog", "pkg:composer/monolog/monolog@3.0.0"},
+		{"composer", "composer.lock", imageLockFixture(t, "composer-basic", "composer.lock"), ociTestEntry{name: "app/vendor/composer/installed.json", data: []byte(`[{"name":"monolog/monolog","version":"3.0.0"}]`)}, "monolog/monolog", "pkg:composer/monolog/monolog@3.0.0?download_url=https:%2F%2Fapi.github.com%2Frepos%2FSeldaek%2Fmonolog%2Fzipball%2Fabcdef1234567890"},
 		{"nuget", "packages.lock.json", imageLockFixture(t, "nuget-single", "packages.lock.json"), ociTestEntry{name: "app/main.deps.json", data: []byte(`{"runtimeTarget":{"name":".NETCoreApp,Version=v8.0"},"targets":{".NETCoreApp,Version=v8.0":{"Example.Core/2.0.0":{"runtime":{"lib/net8.0/Example.Core.dll":{}}}}},"libraries":{"Example.Core/2.0.0":{"type":"package"}}}`)}, "Example.Core", "pkg:nuget/Example.Core@2.0.0"},
 		{"nuget-assets", "obj/project.assets.json", []byte(`{"version":3,"targets":{"net8.0":{"Example.Core/2.0.0":{"type":"package"}},"net9.0":{"Example.Core/2.0.0":{"type":"package"}}}}`), ociTestEntry{name: "app/main.deps.json", data: []byte(`{"runtimeTarget":{"name":".NETCoreApp,Version=v8.0"},"targets":{".NETCoreApp,Version=v8.0":{"Example.Core/2.0.0":{"runtime":{"lib/net8.0/Example.Core.dll":{}}}}},"libraries":{"Example.Core/2.0.0":{"type":"package"}}}`)}, "Example.Core", "pkg:nuget/Example.Core@2.0.0"},
-		{"conda", "conda-lock.yml", imageLockFixture(t, "conda-lock-basic", "conda-lock.yml"), ociTestEntry{name: "opt/conda/conda-meta/python-3.12.7-h1_0.json", data: []byte(`{"name":"python","version":"3.12.7","build":"h1_0","subdir":"linux-64"}`)}, "python", "pkg:conda/python@3.12.7?build=h1_0&subdir=linux-64"},
-		{"r", "renv.lock", imageLockFixture(t, "renv-basic", "renv.lock"), ociTestEntry{name: "usr/local/lib/R/site-library/markdown/DESCRIPTION", data: []byte("Package: markdown\nVersion: 1.13\nBuilt: R 4.4.2; x86_64-pc-linux-gnu\nRepository: CRAN\n")}, "markdown", "pkg:cran/markdown@1.13"},
+		{"conda", "conda-lock.yml", imageLockFixture(t, "conda-lock-basic", "conda-lock.yml"), ociTestEntry{name: "opt/conda/conda-meta/python-3.12.7-h1_0.json", data: []byte(`{"name":"python","version":"3.12.7","build":"h1_0","subdir":"linux-64"}`)}, "python", "pkg:conda/python@3.12.7?build=h1_0&download_url=https:%2F%2Fconda.anaconda.org%2Fconda-forge%2Flinux-64%2Fpython-3.12.7-h1_0.conda&subdir=linux-64"},
+		{"r", "renv.lock", imageLockFixture(t, "renv-basic", "renv.lock"), ociTestEntry{name: "usr/local/lib/R/site-library/markdown/DESCRIPTION", data: []byte("Package: markdown\nVersion: 1.13\nBuilt: R 4.4.2; x86_64-pc-linux-gnu\nRepository: CRAN\n")}, "markdown", "pkg:cran/markdown@1.13?repository_url=https:%2F%2Fcloud.r-project.org"},
 		{"maven", "dependency-tree.json", []byte(`{"groupId":"com.example","artifactId":"app","version":"1.0.0","children":[{"groupId":"com.example","artifactId":"sample","version":"1.0.0","type":"jar","scope":"compile"}]}`), ociTestEntry{name: "app/sample.jar", data: javaFixtureArchive(t, "java-jar-basic", "sample.jar")}, "com.example:sample", "pkg:maven/com.example/sample@1.0.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -237,7 +241,11 @@ func TestOCIOtherEcosystemLockfileCorrelation(t *testing.T) {
 				t.Fatalf("scan: %d %s", code, output)
 			}
 			c := dotnetComponent(t, doc, tc.packageName)
-			if c.PURL != tc.purl || c.PURLBasis != "ecosystem_inferred" {
+			basis := "ecosystem_inferred"
+			if tc.name == "composer" || tc.name == "conda" || tc.name == "r" {
+				basis = "source_qualified"
+			}
+			if c.PURL != tc.purl || c.PURLBasis != basis {
 				t.Fatalf("missing typed PURL: %#v", c)
 			}
 			matched := false
@@ -426,7 +434,7 @@ func TestOCIRubyVersionedGemHomesAndGlobalLock(t *testing.T) {
 				t.Fatalf("gem home or global match: %d %s", code, output)
 			}
 			c := dotnetComponent(t, doc, "alpha")
-			if c.PURL != "pkg:gem/alpha@1.0.0" || len(c.Evidence) != 2 {
+			if c.PURL != "pkg:gem/alpha@1.0.0?repository_url=https:%2F%2Fgems.example.test%2Fruby" || c.PURLBasis != "source_qualified" || len(c.Evidence) != 2 {
 				t.Fatalf("gem identity: %#v", c)
 			}
 		})

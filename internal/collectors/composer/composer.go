@@ -89,7 +89,7 @@ func Collect(file, project string) (model.Document, error) {
 					if !commit.MatchString(revision) {
 						revision = ""
 					}
-					doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", SafeURL: clean, Revision: revision, Status: "declared", Evidence: ev})
+					doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", VCSType: pkg.Source.Type, SafeURL: clean, Revision: revision, Status: "declared", Evidence: ev})
 					originCount++
 				} else {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: pkg.Name})
