@@ -155,6 +155,11 @@ func Finalize(doc *model.Document) {
 	}
 	for _, issue := range doc.Coverage.Issues {
 		switch issue.Code {
+		case "installed_distribution_origin_unverified", "python_direct_url_invalid", "python_direct_url_unsupported":
+			doc.Coverage.OriginState = "partial"
+		case "image_lockfile_scan_limited", "image_project_file_limited", "image_project_file_unsupported", "image_lockfile_invalid", "image_lockfile_match_ambiguous", "image_lockfile_source_conflict", "image_lockfile_no_installed_match", "image_lockfile_installation_unverified":
+			doc.Coverage.GraphState = "partial"
+			doc.Coverage.OriginState = "partial"
 		case "shards_package_invalid", "shards_manifest_dependency_invalid", "shards_transitive_graph_unavailable":
 			doc.Coverage.GraphState = "partial"
 		case "shards_source_unresolved", "shards_distribution_bytes_unverified":

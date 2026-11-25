@@ -13,6 +13,7 @@ import (
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
 const MaxInstalledPackageJSONBytes = 2 << 20
@@ -102,9 +103,21 @@ func CollectInstalledPackage(data []byte, source, project, metadataPath string) 
 	evidence := model.Evidence{Collector: "node-package-json", InputPath: source, InputDigest: digest, Method: "installed-metadata"}
 	id := "npm-installed:" + common.ID(metadataPath+"\x00"+name+"\x00"+version)
 	doc := common.NewDocument(source, project, "npm-installed", nil)
-	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, Context: "location=" + path.Dir(metadataPath), Evidence: []model.Evidence{evidence}})
+	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, PURL: common.NpmPURL(name, version), PURLBasis: "ecosystem_inferred", Context: "location=" + path.Dir(metadataPath), Evidence: []model.Evidence{evidence}})
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
-	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: name})
+	var resolved string
+	if json.Unmarshal(manifest["_resolved"], &resolved) == nil && safeurl.Clean(resolved) != "" {
+		kind := "download_url"
+		if strings.HasPrefix(resolved, "git+") || strings.HasPrefix(resolved, "git:") || strings.HasPrefix(resolved, "ssh:") || strings.HasPrefix(resolved, "git@") {
+			kind = "vcs"
+		}
+		e := evidence
+		e.Pointer = "/_resolved"
+		doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: kind, SafeURL: safeurl.Clean(resolved), Status: "recorded_in_install_metadata", Evidence: e})
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "installed_distribution_origin_unverified", Name: name})
+	} else {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: name})
+	}
 	for _, field := range []string{"dependencies", "optionalDependencies", "peerDependencies"} {
 		value := bytes.TrimSpace(manifest[field])
 		if len(value) > 0 && !bytes.Equal(value, []byte("null")) && !bytes.Equal(value, []byte("{}")) {

@@ -14,7 +14,7 @@ func TestInstalledMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc, err := CollectInstalledMetadata(data, filename, "sample", filename)
-	if err != nil || len(doc.Components) != 1 || len(doc.Edges) != 1 || doc.Components[0].Name != "python" || doc.Components[0].Version != "3.12.7" || doc.Components[0].PURL != "" || doc.Components[0].Context != "environment=/opt/conda;build=h123_0;subdir=linux-aarch64" {
+	if err != nil || len(doc.Components) != 1 || len(doc.Edges) != 1 || doc.Components[0].Name != "python" || doc.Components[0].Version != "3.12.7" || doc.Components[0].PURL != "pkg:conda/python@3.12.7?build=h123_0&subdir=linux-aarch64" || doc.Components[0].PURLBasis != "ecosystem_inferred" || doc.Components[0].Context != "environment=/opt/conda;build=h123_0;subdir=linux-aarch64" {
 		t.Fatalf("installed Conda package incorrect: doc=%#v err=%v", doc, err)
 	}
 	root, err := CollectInstalledMetadata(data, "conda-meta/python-3.12.7-h123_0.json", "sample", "conda-meta/python-3.12.7-h123_0.json")
@@ -59,7 +59,7 @@ func TestInstalledMetadataRecordedURL(t *testing.T) {
 				t.Fatal(err)
 			}
 			doc, err := CollectInstalledMetadata(data, filename, "sample", filename)
-			if err != nil || len(doc.Components) != 1 || doc.Components[0].PURL != "" {
+			if err != nil || len(doc.Components) != 1 || doc.Components[0].PURL == "" || doc.Components[0].PURLBasis != "ecosystem_inferred" {
 				t.Fatalf("Conda record invalid: doc=%#v err=%v", doc, err)
 			}
 			if tc.want == "" {

@@ -156,6 +156,8 @@ ravel scan image.docker.tar --platform linux/amd64 \
 
 An image reference uses the registry by default, with Docker credential configuration when authentication is required. `--image-source docker` reads only the local Docker daemon. Registry scans select `linux` on the host architecture by default; set `--platform os/architecture[/variant]` for another platform. Ravel records the selected manifest digest as the image source in Ravel JSON. A registry scan requires network access; an explicit `--network deny` is rejected. You can also scan an OCI layout directory, a `.oci.tar` archive, or a gzip-compressed `.docker.tar.gz` / `.oci.tar.gz` archive. For a generic `.tar` or `.tar.gz` file, specify `--manager oci`.
 
+Final-layer lockfiles are correlated automatically with detected installed packages. This can supplement PURLs, declared source URLs and conditional dependency information; lock-only dependencies are excluded. Correlations remain labeled as unverified installation provenance in all output formats. See [matching rules and supported lockfiles](supported-inputs.md#image-lockfile-correlation).
+
 ### Inspect, compare, and combine
 
 ```sh

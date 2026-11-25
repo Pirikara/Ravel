@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 )
@@ -286,6 +288,10 @@ func inspectInstalledRDescription(data []byte, source, filename string, roots []
 		Version:  version,
 		Context:  "location=/" + path.Dir(filename),
 		Evidence: []model.Evidence{evidence},
+	}
+	if strings.TrimSpace(fields["Repository"].value) == "CRAN" {
+		component.PURL = packageurl.NewPackageURL("cran", "", name, version, nil, "").ToString()
+		component.PURLBasis = "ecosystem_inferred"
 	}
 	return rInstalledRecord{component: component, fields: fields}, true, nil
 }

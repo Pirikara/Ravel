@@ -52,7 +52,7 @@ func CollectInstalledMetadata(data []byte, source, project, metadataPath string)
 	doc := common.NewDocument(source, project, "python-installed", nil)
 	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, PURL: purl(name, version), PURLBasis: "ecosystem_inferred", Context: "location=" + installedMetadataEnvironment(metadataPath), Evidence: []model.Evidence{evidence}})
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
-	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: name})
+	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: name, Scope: id})
 	for _, header := range headers {
 		if header.name == "requires-dist" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "declared_dependencies_unresolved", Name: name})

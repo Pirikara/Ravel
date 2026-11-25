@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
@@ -66,7 +68,11 @@ func CollectInstalledMetadata(data []byte, source, project, filename string) (mo
 	if record.Subdir != "" {
 		context += ";subdir=" + record.Subdir
 	}
-	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: record.Name, Version: record.Version, Context: context, Evidence: []model.Evidence{evidence}})
+	qualifiers := packageurl.Qualifiers{{Key: "build", Value: record.Build}}
+	if record.Subdir != "" {
+		qualifiers = append(qualifiers, packageurl.Qualifier{Key: "subdir", Value: record.Subdir})
+	}
+	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: record.Name, Version: record.Version, PURL: packageurl.NewPackageURL("conda", "", record.Name, record.Version, qualifiers, "").ToString(), PURLBasis: "ecosystem_inferred", Context: context, Evidence: []model.Evidence{evidence}})
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
 	if record.URL != "" {
 		base := record.Name + "-" + record.Version + "-" + record.Build
@@ -83,6 +89,12 @@ func CollectInstalledMetadata(data []byte, source, project, filename string) (mo
 				originEvidence := evidence
 				originEvidence.Pointer = "/url"
 				doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "download_url", SafeURL: clean, Status: "recorded_in_install_metadata", Evidence: originEvidence})
+				channel := strings.TrimSuffix(clean, "/"+filename)
+				if record.Subdir != "" {
+					channel = strings.TrimSuffix(channel, "/"+record.Subdir)
+				}
+				qualifiers = append(qualifiers, packageurl.Qualifier{Key: "channel", Value: channel})
+				doc.Components[0].PURL = packageurl.NewPackageURL("conda", "", record.Name, record.Version, qualifiers, "").ToString()
 				break
 			}
 		}

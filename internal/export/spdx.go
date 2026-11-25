@@ -121,6 +121,7 @@ func SPDX23(doc model.Document) ([]byte, error) {
 		}
 	}
 	out.Packages = append(out.Packages, root)
+	lockAnnotations := imageLockAnnotations(doc)
 	ids := map[string]string{"root": root.ID}
 	for _, c := range doc.Components {
 		if c.ID == "" || c.ID == "root" {
@@ -186,6 +187,12 @@ func SPDX23(doc model.Document) ([]byte, error) {
 				continue
 			}
 			item.Checksums = append(item.Checksums, spdxChecksum{Algorithm: algorithm, Value: strings.ToLower(h.Content)})
+		}
+		for _, annotation := range lockAnnotations[c.ID] {
+			if item.Comment != "" {
+				item.Comment += "; "
+			}
+			item.Comment += annotation.Name + "=" + annotation.Value
 		}
 		out.Packages = append(out.Packages, item)
 	}
