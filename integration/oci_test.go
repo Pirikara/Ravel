@@ -562,7 +562,7 @@ func TestOCIPythonInstalledMetadataOverlay(t *testing.T) {
 	versions := map[string]string{}
 	for _, component := range doc.Components {
 		versions[component.Name] = component.Version
-		if component.Evidence[0].Collector != "python-dist-info" || !strings.Contains(component.Evidence[0].InputPath, "!/"+site) {
+		if component.PURL != "pkg:pypi/"+component.Name+"@"+component.Version || component.PURLBasis != "ecosystem_inferred" || component.Evidence[0].Collector != "python-dist-info" || !strings.Contains(component.Evidence[0].InputPath, "!/"+site) {
 			t.Fatalf("OCI Python evidence incorrect: %#v", component)
 		}
 	}

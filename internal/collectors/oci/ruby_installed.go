@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 )
@@ -65,7 +67,12 @@ func inspectInstalledRubySpec(data []byte, source, project, filename string) (mo
 	if platform != "ruby" {
 		context += ";gem_platform=" + platform
 	}
-	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, Context: context, Evidence: []model.Evidence{evidence}})
+	qualifiers := packageurl.Qualifiers{}
+	if platform != "ruby" {
+		qualifiers = append(qualifiers, packageurl.Qualifier{Key: "platform", Value: platform})
+	}
+	purl := packageurl.NewPackageURL("gem", "", name, version, qualifiers, "").ToString()
+	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, PURL: purl, PURLBasis: "ecosystem_inferred", Context: context, Evidence: []model.Evidence{evidence}})
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
 	common.Finalize(&doc)
 	return doc, nil

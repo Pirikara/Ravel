@@ -46,8 +46,8 @@ func TestOCIInstalledRubyGemsAndOverlay(t *testing.T) {
 			got := map[string]bool{}
 			for _, component := range doc.Components {
 				got[component.Name+"@"+component.Version] = true
-				if component.PURL != "" || len(component.Hashes) != 0 || len(component.Evidence) != 1 || component.Evidence[0].InputDigest == "" || !strings.Contains(component.Context, "image=linux/amd64") {
-					t.Fatalf("installed Ruby gem claimed unsupported provenance: %#v", component)
+				if component.PURL != "pkg:gem/"+component.Name+"@"+component.Version || component.PURLBasis != "ecosystem_inferred" || len(component.Hashes) != 0 || len(component.Evidence) != 1 || component.Evidence[0].InputDigest == "" || !strings.Contains(component.Context, "image=linux/amd64") {
+					t.Fatalf("installed Ruby gem coordinate or evidence incorrect: %#v", component)
 				}
 				if component.Name == "uri" && !strings.Contains(component.Context, "default=true") {
 					t.Fatalf("default gem context missing: %#v", component)
@@ -83,7 +83,7 @@ func TestOCIInstalledRubyPlatformGem(t *testing.T) {
 	image := ociTestImage(t, layout, "linux", "arm64", []ociTestLayer{{entries: []ociTestEntry{{name: name, data: ociTestInstalledRubySpec("native", "1.2.3", "aarch64-linux")}}}})
 	ociTestIndex(t, layout, image)
 	doc, output, code := ociTestScan(t, layout)
-	if code != 0 || len(doc.Components) != 1 || doc.Components[0].Name != "native" || doc.Components[0].Version != "1.2.3" || !strings.Contains(doc.Components[0].Context, "gem_platform=aarch64-linux;image=linux/arm64") {
+	if code != 0 || len(doc.Components) != 1 || doc.Components[0].Name != "native" || doc.Components[0].Version != "1.2.3" || doc.Components[0].PURL != "pkg:gem/native@1.2.3?platform=aarch64-linux" || doc.Components[0].PURLBasis != "ecosystem_inferred" || !strings.Contains(doc.Components[0].Context, "gem_platform=aarch64-linux;image=linux/arm64") {
 		t.Fatalf("platform-specific Ruby gem lost: code=%d output=%s components=%#v", code, output, doc.Components)
 	}
 }

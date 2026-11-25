@@ -18,9 +18,10 @@ func TestCollectPipVendorManifest(t *testing.T) {
 		t.Fatalf("pip vendor manifest inventory incorrect: %#v", doc)
 	}
 	want := map[string]int{"CacheControl@0.14.4": 1, "requests@2.34.2": 2, "certifi@2026.10.19": 3}
+	wantPURL := map[string]string{"CacheControl": "pkg:pypi/cachecontrol@0.14.4", "requests": "pkg:pypi/requests@2.34.2", "certifi": "pkg:pypi/certifi@2026.10.19"}
 	for _, component := range doc.Components {
 		line := want[component.Name+"@"+component.Version]
-		if line == 0 || component.PURL != "" || !strings.Contains(component.Context, "vendor=pip") || len(component.Evidence) != 1 || component.Evidence[0].Line != line || component.Evidence[0].InputPath != source {
+		if line == 0 || component.PURL != wantPURL[component.Name] || component.PURLBasis != "ecosystem_inferred" || !strings.Contains(component.Context, "vendor=pip") || len(component.Evidence) != 1 || component.Evidence[0].Line != line || component.Evidence[0].InputPath != source {
 			t.Fatalf("pip vendor identity or evidence incorrect: %#v", component)
 		}
 	}
