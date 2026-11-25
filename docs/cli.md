@@ -172,6 +172,10 @@ ravel merge --name my-app --format cyclonedx-json \
 
 `explain` accepts a package name, PURL, or component ID. If multiple occurrences share a name, use the component ID. `graph` reads the same Ravel JSON and produces a self-contained HTML graph, Graphviz DOT, or text. Its arrows run from the depender to its dependency; conditional relationships are dashed and retain their conditions and edge kinds. The HTML lists package identities and recorded origins, marks unlinked components, and shows graph coverage. It works offline and does not resolve additional dependencies. Use `--focus` with a unique name, PURL, component ID, or `root`; `--direction dependents` follows incoming relationships, and `--depth N` limits hops (`0` shows only the focus). A full graph is limited to 1,000 nodes and 5,000 edges; HTML is limited to 300 nodes and 1,500 edges. Use a focused graph or DOT for larger scans. `merge` takes at least two Ravel JSON inputs, preserves distinct occurrences, and rejects duplicate input scopes.
 
+`diff` compares package occurrences, dependency edges, recorded origins, development repositories, the declared root application, and repository runtime requirements. Evidence locations and digests alone do not count as changes. JSON includes `rootChange` with `before`/`after` values when the root is added, removed, renamed, or changes version, plus `addedRuntimes` and `removedRuntimes`. Distinct runtime requirements are compared by name, requirement, relation, scope, and policy; identical declarations from multiple evidence files do not create duplicate changes.
+
+Merged occurrence IDs depend on the original occurrence and its manager/project/source scope. Adding, removing, or reordering other inputs preserves existing IDs, including when a merged input gains a nested project. Renaming or moving an input scope remains a scope change. The stable ID scheme replaces the position-based IDs used through beta.26: regenerate older merged baselines with the current version before comparing them with newly merged scans.
+
 ### OpenVEX correlation
 
 ```sh

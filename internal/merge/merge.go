@@ -1,6 +1,7 @@
 package merge
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
@@ -19,6 +20,7 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 	doc.Coverage.Inputs = []model.InputCoverage{}
 	seenScopes := map[string]bool{}
 	seenSources := map[string]bool{}
+	seenIDs := map[string]bool{"root": true}
 	allGraphComplete, allGraphUnknown, allOriginComplete := true, true, true
 	for index, input := range inputs {
 		if input.SchemaVersion != "0.1" {
@@ -70,7 +72,11 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 		}
 		ids := map[string]string{"root": "root"}
 		if input.Root != nil && input.Root.Name != "" {
-			id := "merge:" + common.ID(fmt.Sprintf("%d|%s|root", index, input.Source))
+			id := occurrenceID(input, "root")
+			if seenIDs[id] {
+				return model.Document{}, fmt.Errorf("input %d has a conflicting merged occurrence ID; regenerate merged inputs with the current version", index)
+			}
+			seenIDs[id] = true
 			ids["root"] = id
 			doc.Components = append(doc.Components, model.Component{
 				ID: id, Kind: "application", Name: input.Root.Name, Version: input.Root.Version,
@@ -87,7 +93,11 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			if _, exists := ids[component.ID]; exists {
 				return model.Document{}, fmt.Errorf("input %d has duplicate component ID %q", index, component.ID)
 			}
-			id := "merge:" + common.ID(fmt.Sprintf("%d|%s|%s", index, input.Source, component.ID))
+			id := occurrenceID(input, component.ID)
+			if seenIDs[id] {
+				return model.Document{}, fmt.Errorf("input %d has a conflicting merged occurrence ID; regenerate merged inputs with the current version", index)
+			}
+			seenIDs[id] = true
 			ids[component.ID] = id
 			componentNames[component.ID] = component.Name
 			componentVersions[component.ID] = component.Version
@@ -144,4 +154,13 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 		doc.Coverage.OriginState = "partial"
 	}
 	return doc, nil
+}
+
+// An occurrence belongs to an input scope, not to its position in the merge.
+// Include the same fields used to distinguish input scopes above, so identical
+// packages in different projects/managers remain separate. JSON tuple encoding
+// keeps source paths and names containing delimiters unambiguous.
+func occurrenceID(input model.Document, originalID string) string {
+	seed, _ := json.Marshal([4]string{input.Coverage.Manager, input.Project, input.Source, originalID})
+	return "merge:" + common.ID(string(seed))
 }
