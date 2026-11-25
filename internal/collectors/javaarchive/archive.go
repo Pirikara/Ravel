@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
@@ -93,7 +95,9 @@ func collectArchive(archive *zip.Reader, wholeHash, file, project string) (model
 	}
 	outerRef := "java-archive:" + common.ID("outer|"+file+"|"+wholeHash)
 	outerEvidence := artifactEvidence(file, wholeHash, "/", "java-archive")
-	doc.Components = append(doc.Components, model.Component{ID: outerRef, Kind: "application", Name: outerName, Version: outerVersion, Hashes: []model.Hash{{Alg: "SHA-256", Content: wholeHash}}, Evidence: []model.Evidence{outerEvidence}})
+	outer := model.Component{ID: outerRef, Kind: "application", Name: outerName, Version: outerVersion, Hashes: []model.Hash{{Alg: "SHA-256", Content: wholeHash}}, Evidence: []model.Evidence{outerEvidence}}
+	setCoordinatePURL(&outer, outerCoord)
+	doc.Components = append(doc.Components, outer)
 	if outerCoord != nil {
 		addDevelopment(&doc, archive, *outerCoord, outerRef, file, wholeHash, "")
 	}
@@ -152,7 +156,9 @@ func collectArchive(archive *zip.Reader, wholeHash, file, project string) (model
 		hash := hex.EncodeToString(digest[:])
 		ref := "java-archive:" + common.ID(file+"|"+name+"|"+hash)
 		ev := artifactEvidence(file, wholeHash, "/"+name, "java-archive")
-		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: componentName, Version: version, Hashes: []model.Hash{{Alg: "SHA-256", Content: hash}}, Evidence: []model.Evidence{ev}})
+		component := model.Component{ID: ref, Kind: "package", Name: componentName, Version: version, Hashes: []model.Hash{{Alg: "SHA-256", Content: hash}}, Evidence: []model.Evidence{ev}}
+		setCoordinatePURL(&component, coord)
+		doc.Components = append(doc.Components, component)
 		if coord != nil {
 			addDevelopment(&doc, nested, *coord, ref, file, wholeHash, name+"/")
 		}
@@ -164,6 +170,13 @@ func collectArchive(archive *zip.Reader, wholeHash, file, project string) (model
 	}
 	common.Finalize(&doc)
 	return doc, nil
+}
+
+func setCoordinatePURL(component *model.Component, coord *coordinate) {
+	if coord != nil {
+		component.PURL = packageurl.NewPackageURL("maven", coord.group, coord.artifact, coord.version, nil, "").ToString()
+		component.PURLBasis = "ecosystem_inferred"
+	}
 }
 
 func nestedJARCondition(name string) (string, bool) {

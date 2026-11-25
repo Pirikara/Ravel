@@ -275,6 +275,9 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	rubySpecs := map[string]databaseState{}
 	rDescriptions := map[string]databaseState{}
 	wordpressHeaders := map[string]databaseState{}
+	projectFiles := map[string]imageProjectFile{}
+	projectBytes := 0
+	projectLimited := false
 	rStartupFiles := map[string]databaseState{}
 	javaArchives := map[string]javaArchiveState{}
 	goBinaries := map[string]goBinaryState{}
@@ -300,6 +303,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
+		for name := range projectFiles {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
 		for _, name := range startupPaths {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
@@ -460,6 +471,12 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for _, removed := range change.whiteouts {
+			for name, state := range projectFiles {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					projectBytes -= len(state.data)
+					delete(projectFiles, name)
+				}
+			}
 			for name := range nodePackageLinks {
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 					delete(nodePackageLinks, name)
@@ -580,6 +597,27 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(rubyPlatformConfigs, name)
 				}
 			}
+		}
+		projectLimited = projectLimited || change.projectLimited
+		projectNames := make([]string, 0, len(change.projectFiles))
+		for name := range change.projectFiles {
+			projectNames = append(projectNames, name)
+		}
+		sort.Strings(projectNames)
+		for _, name := range projectNames {
+			state := change.projectFiles[name]
+			projectBytes -= len(projectFiles[name].data)
+			if _, exists := projectFiles[name]; !exists && len(projectFiles) >= maxImageProjectFiles {
+				projectLimited = true
+				continue
+			}
+			if projectBytes+len(state.data) > maxImageProjectTotal {
+				projectLimited = true
+				state.data, state.status = nil, "limited"
+			}
+			projectBytes += len(state.data)
+			state.layer = layer.Digest
+			projectFiles[name] = state
 		}
 		for name, target := range change.nodeLinks {
 			if target == "" {
@@ -926,6 +964,12 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if rubyRuntimeLimited {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ruby_runtime_scan_limited"})
 		}
+		if projectLimited {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_lockfile_scan_limited"})
+		}
+		if err := correlateImageLocks(&doc, projectFiles); err != nil {
+			return model.Document{}, err
+		}
 		common.Finalize(&doc)
 		doc.Coverage.GraphState = "unknown"
 		return doc, nil
@@ -984,7 +1028,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		if err != nil {
 			return model.Document{}, fmt.Errorf("invalid %s database in OCI image: %w", name, err)
 		}
-		if (name == statusPath || name == apkInstalledPath || name == apkInstalledADBPath) && len(database.Components) > 0 {
+		if len(database.Components) > 0 {
 			release, ok := finalOSRelease(osReleases)
 			if ok {
 				for i := range database.Components {
@@ -1142,6 +1186,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		verifyComposerPackageManifests(&installed, name, state.data, composerPackageManifests)
 		doc.Components = append(doc.Components, installed.Components...)
 		doc.Edges = append(doc.Edges, installed.Edges...)
+		doc.Origins = append(doc.Origins, installed.Origins...)
+		doc.Development = append(doc.Development, installed.Development...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 	}
 	dotnetNames := make([]string, 0, len(dotnetDeps))
@@ -1535,6 +1581,16 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_language_packages_unscanned"})
 	for i := range doc.Components {
+		setImageProductPURL(&doc.Components[i])
+	}
+	collectImagePythonDirectURLs(&doc, projectFiles)
+	if projectLimited {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_lockfile_scan_limited"})
+	}
+	if err := correlateImageLocks(&doc, projectFiles); err != nil {
+		return model.Document{}, err
+	}
+	for i := range doc.Components {
 		doc.Components[i].Context += ";image=" + platform
 	}
 	common.Finalize(&doc)
@@ -1725,15 +1781,28 @@ func parseOSRelease(data []byte) (string, string, bool) {
 		values[key] = raw
 	}
 	id, version := values["ID"], values["VERSION_ID"]
-	if (id != "alpine" && id != "debian" && id != "ubuntu") || !osReleaseVersion.MatchString(version) {
+	if !knownOSReleaseID(id) || !osReleaseVersion.MatchString(version) {
 		return "", "", false
 	}
 	return id, version, true
 }
 
+func knownOSReleaseID(id string) bool {
+	switch id {
+	case "alpine", "debian", "ubuntu", "fedora", "rhel", "centos", "rocky", "almalinux", "ol", "amzn", "sles", "opensuse-leap", "opensuse-tumbleweed", "azurelinux", "mariner":
+		return true
+	}
+	return false
+}
+
 func setOSPackagePURL(component *model.Component, database string, release osReleaseIdentity) {
+	isRPM := false
+	for _, name := range rpm.DatabasePaths {
+		isRPM = isRPM || name == database
+	}
 	if database == statusPath && release.id != "debian" && release.id != "ubuntu" ||
 		(database == apkInstalledPath || database == apkInstalledADBPath) && release.id != "alpine" ||
+		isRPM && (release.id == "debian" || release.id == "ubuntu" || release.id == "alpine") ||
 		component.Name == "" || component.Version == "" {
 		return
 	}
@@ -1742,15 +1811,25 @@ func setOSPackagePURL(component *model.Component, database string, release osRel
 		qualifiers = append(qualifiers, packageurl.Qualifier{Key: "arch", Value: component.Platform})
 	}
 	typ := "apk"
+	name, version := strings.ToLower(component.Name), component.Version
 	if database == statusPath {
 		typ = "deb"
 	}
-	component.PURL = packageurl.NewPackageURL(typ, release.id, strings.ToLower(component.Name), component.Version, qualifiers, "").ToString()
+	if isRPM {
+		typ, name = "rpm", component.Name
+		if epoch, remainder, found := strings.Cut(version, ":"); found {
+			qualifiers = append(qualifiers, packageurl.Qualifier{Key: "epoch", Value: epoch})
+			version = remainder
+		}
+	}
+	component.PURL = packageurl.NewPackageURL(typ, release.id, name, version, qualifiers, "").ToString()
 	component.PURLBasis = "ecosystem_inferred"
 	component.Evidence = append(component.Evidence, release.evidence)
 }
 
 type layerChange struct {
+	projectFiles             map[string]imageProjectFile
+	projectLimited           bool
 	files                    map[string]databaseChange
 	osReleases               map[string]osReleaseChange
 	dpkgNodeLists            map[string]dpkgNodeFileListState
@@ -1829,6 +1908,8 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	stream := io.TeeReader(limited, diffHash)
 	reader := tar.NewReader(stream)
 	change := layerChange{files: map[string]databaseChange{}, osReleases: map[string]osReleaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, condaMetadata: map[string]condaMetadataState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, rDescriptions: map[string][]byte{}, wordpressHeaders: map[string][]byte{}, rStartup: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
+	change.projectFiles = map[string]imageProjectFile{}
+	projectBytes := 0
 	seenDatabase := map[string]bool{}
 	seenDPKGLists := map[string]bool{}
 	parentReplaced := map[string]bool{}
@@ -1946,6 +2027,37 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 		}
 		if trackedRelease {
+			continue
+		}
+		if isImageProjectFile(name) {
+			fileLimit := maxImageProjectFileBytes
+			if path.Base(name) == "direct_url.json" {
+				fileLimit = 64 << 10
+			}
+			if relevantLanguagePaths[name] {
+				change.whiteouts = append(change.whiteouts, name)
+			}
+			if _, duplicate := change.projectFiles[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI project file: %s", name)
+			}
+			if len(change.projectFiles) >= maxImageProjectFiles {
+				change.projectLimited = true
+				continue
+			}
+			state := imageProjectFile{}
+			switch {
+			case header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA:
+				state.status = "unsupported"
+			case header.Size < 0 || header.Size > int64(fileLimit) || int64(projectBytes)+header.Size > maxImageProjectTotal:
+				state.status = "limited"
+			default:
+				state.data, err = io.ReadAll(io.LimitReader(reader, int64(fileLimit)+1))
+				if err != nil || len(state.data) != int(header.Size) {
+					return layerChange{}, "", fmt.Errorf("invalid OCI project file: %s", name)
+				}
+				projectBytes += len(state.data)
+			}
+			change.projectFiles[name] = state
 			continue
 		}
 		if header.Typeflag != tar.TypeDir && isDPKGInfoListPath(name) {
@@ -2775,6 +2887,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	for target := range parentReplaced {
 		if seenDatabase[target] {
 			return layerChange{}, "", fmt.Errorf("OCI layer replaces database parent directory and %s together", target)
+		}
+	}
+	for name := range change.projectFiles {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI layer contains project file beneath a non-directory entry: %s", ancestor)
+			}
 		}
 	}
 	for _, metadata := range []map[string][]byte{change.python, change.pipVendor, change.node, change.rubySpecs, change.rDescriptions, change.wordpressHeaders, change.rStartup} {

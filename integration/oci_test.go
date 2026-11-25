@@ -981,7 +981,7 @@ func TestOCINodeInstalledPackageOverlay(t *testing.T) {
 	versions := map[string]string{}
 	for _, component := range doc.Components {
 		versions[component.Name] = component.Version
-		if component.PURL != "" || component.Evidence[0].Collector != "node-package-json" || !strings.Contains(component.Evidence[0].InputPath, "!/"+base) || !strings.Contains(component.Context, "image=linux/amd64") {
+		if component.PURL == "" || component.PURLBasis != "ecosystem_inferred" || component.Evidence[0].Collector != "node-package-json" || !strings.Contains(component.Evidence[0].InputPath, "!/"+base) || !strings.Contains(component.Context, "image=linux/amd64") {
 			t.Fatalf("OCI Node identity or evidence incorrect: %#v", component)
 		}
 	}

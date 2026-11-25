@@ -133,8 +133,8 @@ func TestJavaArchiveCLI(t *testing.T) {
 						if len(component.Hashes) != 1 || component.Hashes[0].Alg != "SHA-256" || len(component.Hashes[0].Content) != 64 {
 							t.Fatalf("archive hash missing: %#v", component)
 						}
-						if component.PURL != "" {
-							t.Fatalf("archive without observed repository was assigned Maven Central PURL: %s", component.PURL)
+						if component.PURL != "" && component.PURLBasis != "ecosystem_inferred" {
+							t.Fatalf("archive PURL lacks inference marker: %s", component.PURL)
 						}
 					}
 					if tc.fixture == "java-boot" {

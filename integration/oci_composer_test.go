@@ -31,7 +31,7 @@ func TestOCIComposerInstalledV2Overlay(t *testing.T) {
 	names := map[string]string{}
 	for _, component := range doc.Components {
 		names[component.ID] = component.Name
-		if component.Evidence[0].Collector != "composer-installed" || !strings.HasPrefix(component.Evidence[0].InputPath, "oci:sha256:") || !strings.Contains(component.Evidence[0].InputPath, "!/"+manifestPath) || component.Context != "registry="+manifestPath+";image=linux/amd64" || component.PURL != "" {
+		if component.Evidence[0].Collector != "composer-installed" || !strings.HasPrefix(component.Evidence[0].InputPath, "oci:sha256:") || !strings.Contains(component.Evidence[0].InputPath, "!/"+manifestPath) || component.Context != "registry="+manifestPath+";image=linux/amd64" || component.PURL != "pkg:composer/"+component.Name+"@"+component.Version || component.PURLBasis != "ecosystem_inferred" {
 			t.Fatalf("OCI Composer identity or provenance incorrect: %#v", component)
 		}
 	}
@@ -319,7 +319,10 @@ func TestOCIComposerInstalledDoesNotExposeMetadataCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(serialized, []byte("secret")) || bytes.Contains(serialized, []byte("example.invalid")) {
+	if bytes.Contains(serialized, []byte("secret")) || bytes.Contains(serialized, []byte("user:")) {
 		t.Fatalf("Composer metadata credentials leaked into SBOM: %s", serialized)
+	}
+	if len(doc.Origins) != 1 || doc.Origins[0].SafeURL != "https://example.invalid/archive.zip" || doc.Origins[0].Status != "recorded_in_install_metadata" {
+		t.Fatalf("sanitized installed source lost: %#v", doc.Origins)
 	}
 }

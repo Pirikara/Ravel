@@ -20,7 +20,7 @@ const (
 	maxRubySpecTotal = 64 << 20
 )
 
-var rubySpecPath = regexp.MustCompile(`^(?:(?:usr/local/lib|usr/lib|var/lib)/ruby/gems/[0-9]+\.[0-9]+\.[0-9]+|usr/local/bundle)/specifications/(?:default/)?[^/]+\.gemspec$`)
+var rubySpecPath = regexp.MustCompile(`^(?:(?:[^/]+/)*(?:ruby/gems|ruby|gems)/[0-9]+\.[0-9]+\.[0-9]+|usr/local/bundle|usr/share/gems)/specifications/(?:default/)?[^/]+\.gemspec$`)
 var rubyStub = regexp.MustCompile(`(?m)^# stub: ([A-Za-z0-9][A-Za-z0-9_.-]{0,127}) ([0-9][A-Za-z0-9_.-]{0,127}) ([A-Za-z0-9_.-]+)(?: [^\r\n]*)?\r?$`)
 var rubySpecConstructor = regexp.MustCompile(`(?m)^Gem::Specification\.new do \|s\|\r?$`)
 var rubyNameAssignment = regexp.MustCompile(`(?m)^[ \t]*s\.name[ \t]*=`)

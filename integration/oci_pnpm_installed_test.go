@@ -27,7 +27,7 @@ func TestOCIPnpmVirtualStoreRequiresReachablePackage(t *testing.T) {
 	if code != 0 || doc.Coverage.Packages != 1 || doc.Coverage.Edges != 1 || doc.Components[0].Name != "ravel-probe" || doc.Components[0].Version != "1.0.0" {
 		t.Fatalf("pnpm installed package inventory incorrect: code=%d output=%s doc=%#v", code, output, doc)
 	}
-	if !strings.HasSuffix(doc.Components[0].Evidence[0].InputPath, "!/"+physical) || doc.Components[0].PURL != "" {
+	if !strings.HasSuffix(doc.Components[0].Evidence[0].InputPath, "!/"+physical) || doc.Components[0].PURL == "" || doc.Components[0].PURLBasis != "ecosystem_inferred" {
 		t.Fatalf("pnpm identity or provenance was guessed: %#v", doc.Components[0])
 	}
 	if !ociPnpmHasIssue(doc, "node_pnpm_store_unlinked") {

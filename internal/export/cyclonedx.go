@@ -72,6 +72,7 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 		Metadata:   map[string]any{"component": root},
 		Components: []component{},
 	}
+	lockAnnotations := imageLockAnnotations(doc)
 	origins := map[string][]model.Origin{}
 	for _, o := range doc.Origins {
 		origins[o.Occurrence] = append(origins[o.Occurrence], o)
@@ -148,6 +149,7 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 			}
 			item.Properties = append(item.Properties, property{Name: "ravel:developmentRepository", Value: source.SafeURL})
 		}
+		item.Properties = append(item.Properties, lockAnnotations[c.ID]...)
 		out.Components = append(out.Components, item)
 	}
 	edges := map[string][]string{}

@@ -90,7 +90,7 @@ The result identifies exact PURL matches and retains the issuer's status and rat
 | What remains uncertain? | A coverage report with specific issues for the scanned scope and information lost in standard-format export. |
 
 Ravel does not turn a lockfile URL into proof of a download. It labels a registry or distribution URL as **declared** unless stronger evidence is available. When the source is unknown, it leaves the claim open.
-When a pnpm, Bun, NuGet, Composer, or Deno npm lock entry identifies an ecosystem package but omits its registry, Ravel emits an ecosystem PURL with `purlBasis: ecosystem_inferred`. Installed Python distributions, pip/setuptools vendored Python packages, and installed Ruby gems in images also receive inferred PURLs; native gems retain their platform qualifier. CycloneDX carries this as `ravel:purlBasis`; SPDX records it in the package comment. The PURL does not verify which registry supplied the package. Ravel retains any declared distribution URL and reports a missing source when no such URL is available. Entries with explicit private distribution URLs and local dependencies are handled separately.
+When a pnpm, Bun, NuGet, Composer, or Deno npm lock entry identifies an ecosystem package but omits its registry, Ravel emits an ecosystem PURL with `purlBasis: ecosystem_inferred`. Installed npm, Python, Ruby, Composer, Conda, and NuGet metadata and Maven coordinates in JARs also receive inferred PURLs. CRAN-tagged installed R packages receive CRAN PURLs. Native gems retain their platform qualifier, Conda packages retain build/subdir and any safely recorded channel, and RPM packages use a matching final OS identity. Verified runtime products use generic PURLs; Go build information supplies module and standard-library coordinates. CycloneDX carries this as `ravel:purlBasis`; SPDX records it in the package comment. The PURL does not verify which registry supplied the package. Ravel retains any declared distribution URL and reports a missing source when no such URL is available. Entries with explicit private distribution URLs and local dependencies are handled separately.
 
 To reproduce this example, clone the repository and scan its Poetry fixture. It shows a declared registry, a dependency, and a remaining graph limit:
 
@@ -112,6 +112,8 @@ depends on: idna@3.10
   evidence: poetry-lock testdata/fixtures/poetry-basic/poetry.lock /package/0
 coverage: graph=partial origin=complete_for_scope
 ```
+
+Image scans also correlate final-layer lockfiles with observed installed packages. This adds declared source information and conditional dependency links without counting development-only or absent lock entries as installed. The output labels these correlations and retains the lockfile evidence. See [image lockfile correlation](docs/supported-inputs.md#image-lockfile-correlation) for supported formats and matching rules.
 
 ## Supported inputs
 

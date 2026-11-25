@@ -40,7 +40,7 @@ func TestOCICondaInstalledMetadata(t *testing.T) {
 		} {
 			component := dotnetComponent(t, doc, tc.name)
 			digest := sha256.Sum256(condaFixture(t, tc.filename))
-			if component.Version != tc.version || component.PURL != "" || !strings.HasPrefix(component.Context, "environment=/opt/conda;build=") || len(component.Evidence) != 1 || component.Evidence[0].InputDigest != "sha256:"+hex.EncodeToString(digest[:]) || !strings.HasSuffix(component.Evidence[0].InputPath, "!/"+prefix+tc.filename) {
+			if component.Version != tc.version || component.PURL == "" || !strings.HasPrefix(component.Context, "environment=/opt/conda;build=") || len(component.Evidence) != 1 || component.Evidence[0].InputDigest != "sha256:"+hex.EncodeToString(digest[:]) || !strings.HasSuffix(component.Evidence[0].InputPath, "!/"+prefix+tc.filename) {
 				t.Fatalf("Conda package evidence incorrect: %#v", component)
 			}
 		}
@@ -68,8 +68,8 @@ func TestOCICondaInstalledMetadata(t *testing.T) {
 				t.Fatalf("CycloneDX Conda package count = %d", len(exported.Components))
 			}
 			for _, component := range exported.Components {
-				if component.PURL != "" {
-					t.Fatalf("Conda PURL without verified origin: %s", component.PURL)
+				if component.PURL == "" {
+					t.Fatalf("Conda inferred PURL missing: %s", component.PURL)
 				}
 			}
 		} else {
@@ -77,8 +77,8 @@ func TestOCICondaInstalledMetadata(t *testing.T) {
 				t.Fatalf("SPDX Conda package count including root = %d", len(exported.Packages))
 			}
 			for _, pkg := range exported.Packages[1:] {
-				if len(pkg.ExternalRefs) != 0 {
-					t.Fatalf("Conda SPDX external reference without verified origin: %s", pkg.Name)
+				if len(pkg.ExternalRefs) != 1 {
+					t.Fatalf("Conda SPDX inferred PURL missing: %s", pkg.Name)
 				}
 			}
 		}
@@ -102,7 +102,7 @@ func TestOCICondaRecordedArchiveURL(t *testing.T) {
 	layout := ociTestLayout(t)
 	ociTestIndex(t, layout, ociTestImage(t, layout, "linux", "arm64", []ociTestLayer{{entries: []ociTestEntry{{name: "opt/conda/conda-meta/" + filename, data: data}}}}))
 	doc, output, code := ociTestScan(t, layout)
-	if code != 0 || len(doc.Origins) != 1 || doc.Origins[0].SafeURL != archiveURL || doc.Origins[0].Status != "recorded_in_install_metadata" || doc.Components[0].PURL != "" {
+	if code != 0 || len(doc.Origins) != 1 || doc.Origins[0].SafeURL != archiveURL || doc.Origins[0].Status != "recorded_in_install_metadata" || doc.Components[0].PURL == "" {
 		t.Fatalf("recorded Conda URL missing or overclaimed: code=%d output=%s doc=%#v", code, output, doc)
 	}
 	cdx, err := exec.Command(executable, "scan", layout, "--format", "cyclonedx-json").Output()

@@ -47,7 +47,7 @@ func TestOCIHTTPDBinaryVerifiedVersion(t *testing.T) {
 			component := doc.Components[0]
 			digest := sha256.Sum256(binaryBytes)
 			wantDigest := hex.EncodeToString(digest[:])
-			if component.Kind != "application" || component.Name != "httpd" || component.Version != test.want || component.PURL != "" || len(component.Hashes) != 1 || component.Hashes[0].Content != wantDigest || len(component.Evidence) != 1 || component.Evidence[0].InputDigest != "sha256:"+wantDigest || !strings.HasSuffix(component.Evidence[0].InputPath, "!/usr/local/apache2/bin/httpd") || !strings.HasPrefix(component.Evidence[0].Pointer, "elf/offset/") || !hasOCICoverageIssue(doc, "httpd_server_origin_unavailable") {
+			if component.Kind != "application" || component.Name != "httpd" || component.Version != test.want || component.PURL != "pkg:generic/"+component.Name+"@"+strings.ReplaceAll(component.Version, "+", "%2B") || component.PURLBasis != "ecosystem_inferred" || len(component.Hashes) != 1 || component.Hashes[0].Content != wantDigest || len(component.Evidence) != 1 || component.Evidence[0].InputDigest != "sha256:"+wantDigest || !strings.HasSuffix(component.Evidence[0].InputPath, "!/usr/local/apache2/bin/httpd") || !strings.HasPrefix(component.Evidence[0].Pointer, "elf/offset/") || !hasOCICoverageIssue(doc, "httpd_server_origin_unavailable") {
 				t.Fatalf("httpd executable evidence incorrect: %#v", doc)
 			}
 		})

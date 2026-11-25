@@ -26,6 +26,16 @@ var (
 // CollectRequirements records stated requirements. A requirements file is not
 // evidence of an installed or resolved transitive graph.
 func CollectRequirements(file, project string) (model.Document, error) {
+	return collectRequirements(file, project, "")
+}
+
+// CollectRequirementsWithin limits recursive includes to a staged image tree.
+// The caller must create the tree without symlinks.
+func CollectRequirementsWithin(file, project, root string) (model.Document, error) {
+	return collectRequirements(file, project, root)
+}
+
+func collectRequirements(file, project, root string) (model.Document, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return model.Document{}, err
@@ -36,20 +46,26 @@ func CollectRequirements(file, project string) (model.Document, error) {
 	doc := common.NewDocument(file, project, "requirements", data)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "transitive_graph_unavailable"})
 	seen := map[string]bool{}
-	if err := collectRequirementsFile(&doc, file, 0, seen); err != nil {
+	if err := collectRequirementsFile(&doc, file, 0, seen, root); err != nil {
 		return model.Document{}, err
 	}
 	common.Finalize(&doc)
 	return doc, nil
 }
 
-func collectRequirementsFile(doc *model.Document, file string, depth int, seen map[string]bool) error {
+func collectRequirementsFile(doc *model.Document, file string, depth int, seen map[string]bool, root string) error {
 	if depth >= 16 {
 		return fmt.Errorf("requirements include depth exceeds 16")
 	}
 	abs, err := filepath.Abs(file)
 	if err != nil {
 		return err
+	}
+	if root != "" {
+		relative, err := filepath.Rel(root, abs)
+		if err != nil || !filepath.IsLocal(relative) {
+			return fmt.Errorf("requirements include escapes staged image tree")
+		}
 	}
 	if seen[abs] {
 		return fmt.Errorf("cyclic or repeated requirements include")
@@ -93,7 +109,7 @@ func collectRequirementsFile(doc *model.Document, file string, depth int, seen m
 		entry := stripRequirementComment(strings.TrimSpace(logical.String()))
 		logical.Reset()
 		if entry != "" {
-			if err := collectRequirementLine(doc, file, data, startLine, entry, depth, seen); err != nil {
+			if err := collectRequirementLine(doc, file, data, startLine, entry, depth, seen, root); err != nil {
 				return err
 			}
 		}
@@ -120,7 +136,7 @@ func stripRequirementComment(line string) string {
 	return line
 }
 
-func collectRequirementLine(doc *model.Document, file string, data []byte, line int, entry string, depth int, seen map[string]bool) error {
+func collectRequirementLine(doc *model.Document, file string, data []byte, line int, entry string, depth int, seen map[string]bool, root string) error {
 	issue := func(code, name string) {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: code, Name: name, Line: line, Scope: file})
 	}
@@ -132,7 +148,7 @@ func collectRequirementLine(doc *model.Document, file string, data []byte, line 
 				issue("unsupported_include", "")
 				return nil
 			}
-			return collectRequirementsFile(doc, filepath.Join(filepath.Dir(file), include), depth+1, seen)
+			return collectRequirementsFile(doc, filepath.Join(filepath.Dir(file), include), depth+1, seen, root)
 		}
 	}
 	if strings.HasPrefix(entry, "-c") || strings.HasPrefix(entry, "--constraint") {

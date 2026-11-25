@@ -12,8 +12,11 @@ import (
 	"sort"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
+	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
 const MaxInstalledJSONBytes = 16 << 20
@@ -28,6 +31,14 @@ type installedPackage struct {
 	Require     map[string]string `json:"require"`
 	Provide     map[string]string `json:"provide"`
 	Replace     map[string]string `json:"replace"`
+	Source      installedSource   `json:"source"`
+	Dist        installedSource   `json:"dist"`
+}
+
+type installedSource struct {
+	Type      string `json:"type"`
+	URL       string `json:"url"`
+	Reference string `json:"reference"`
 }
 
 // IsInstalledManifestPath recognizes Composer's installed-package database
@@ -83,9 +94,35 @@ func CollectInstalled(data []byte, source, project, metadataPath string) (model.
 		}
 		packageEvidence := evidence
 		packageEvidence.Pointer = fmt.Sprintf("%s/%d", packagePath, i)
-		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, Context: "registry=" + metadataPath, Evidence: []model.Evidence{packageEvidence}})
+		vendor, packageName, _ := strings.Cut(name, "/")
+		purl := packageurl.NewPackageURL("composer", vendor, packageName, pkg.Version, nil, "").ToString()
+		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, PURL: purl, PURLBasis: "ecosystem_inferred", Context: "registry=" + metadataPath, Evidence: []model.Evidence{packageEvidence}})
 		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "installed", Evidence: packageEvidence})
-		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: pkg.Name})
+		originsBefore := len(doc.Origins)
+		for _, item := range []struct {
+			kind, pointer string
+			source        installedSource
+		}{{"vcs", "source", pkg.Source}, {"download_url", "dist", pkg.Dist}} {
+			if item.source.URL == "" {
+				continue
+			}
+			clean := safeurl.Clean(item.source.URL)
+			if clean == "" || item.source.Type == "path" {
+				continue
+			}
+			e := packageEvidence
+			e.Pointer += "/" + item.pointer
+			revision := ""
+			if item.kind == "vcs" && commit.MatchString(item.source.Reference) {
+				revision = item.source.Reference
+			}
+			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: item.kind, SafeURL: clean, Revision: revision, Status: "recorded_in_install_metadata", Evidence: e})
+		}
+		if len(doc.Origins) == originsBefore {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "distribution_source_unavailable", Name: pkg.Name})
+		} else {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "installed_distribution_origin_unverified", Name: pkg.Name})
+		}
 	}
 	for i, pkg := range packages {
 		requirementNames := make([]string, 0, len(pkg.Require))
