@@ -10,6 +10,7 @@ import (
 	packageurl "github.com/package-url/packageurl-go"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -24,6 +25,10 @@ type pomDependency struct {
 }
 
 type pomDocument struct {
+	Licenses []struct {
+		Name string `xml:"name"`
+		URL  string `xml:"url"`
+	} `xml:"licenses>license"`
 	XMLName      xml.Name        `xml:"project"`
 	GroupID      string          `xml:"groupId"`
 	ArtifactID   string          `xml:"artifactId"`
@@ -242,7 +247,15 @@ func pomRootIdentity(file string, pom pomDocument, data []byte) *model.ProjectId
 	}
 	evidence := common.Evidence(file, "maven-pom", "/", data)
 	evidence.Method = "manifest-declaration"
-	return &model.ProjectIdentity{Name: group + ":" + artifact, Version: version, Evidence: evidence}
+	var licenses []model.LicenseDeclaration
+	for i, l := range pom.Licenses {
+		e := evidence
+		e.Pointer = fmt.Sprintf("/licenses/license/%d/name", i)
+		licenses = append(licenses, licensing.Declare(l.Name, "license", e)...)
+		e.Pointer = fmt.Sprintf("/licenses/license/%d/url", i)
+		licenses = append(licenses, licensing.Declare(l.URL, "url", e)...)
+	}
+	return &model.ProjectIdentity{Name: group + ":" + artifact, Version: version, Evidence: evidence, Licenses: licenses}
 }
 
 func mavenExactVersion(version string) bool {

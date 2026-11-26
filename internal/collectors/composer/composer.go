@@ -11,6 +11,7 @@ import (
 	packageurl "github.com/package-url/packageurl-go"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -22,6 +23,7 @@ type lockfile struct {
 }
 
 type lockedPackage struct {
+	License json.RawMessage                               `json:"license"`
 	Name    string                                        `json:"name"`
 	Version string                                        `json:"version"`
 	Require map[string]string                             `json:"require"`
@@ -70,6 +72,7 @@ func Collect(file, project string) (model.Document, error) {
 			byName[strings.ToLower(pkg.Name)] = append(byName[strings.ToLower(pkg.Name)], n)
 			ev := common.Evidence(file, "composer-lock", fmt.Sprintf("/packages/%d/%d", group, i), data)
 			component := model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, Evidence: []model.Evidence{ev}}
+			component.Licenses = licensing.JSON(pkg.License, ev, fmt.Sprintf("/%s/%d/license", []string{"packages", "packages-dev"}[group], i), true)
 			if pkg.Source.Type != "path" && pkg.Dist.Type != "path" {
 				component.PURL = packageurl.NewPackageURL("composer", strings.ToLower(parts[0]), strings.ToLower(parts[1]), pkg.Version, nil, "").ToString()
 				component.PURLBasis = "ecosystem_inferred"

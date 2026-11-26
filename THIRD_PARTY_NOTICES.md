@@ -11,6 +11,12 @@ The source repository also includes selected test fixtures from
 `testdata/groundtruth/deepbits/LICENSE`. They are test data, not part of the
 release binary.
 
+The binary embeds SPDX license and exception identifier spellings from
+[`spdx/license-list-data` v3.29.0](https://github.com/spdx/license-list-data/tree/v3.29.0).
+Only identifiers are included, for offline validation of declared expressions;
+license texts and license-detection implementations are not included. The
+pinned data sources are documented in `internal/licensing/README.md`.
+
 ## github.com/klauspost/compress v1.20.3 (zstd)
 
 Copyright (c) 2012 The Go Authors. All rights reserved.

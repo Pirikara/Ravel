@@ -16,6 +16,7 @@ import (
 	_ "modernc.org/sqlite" // Register the SQLite driver used by go-rpmdb.
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -151,6 +152,9 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 			}
 		}
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: entry.Name, Version: version, Platform: entry.Arch, Context: "status=installed", Evidence: []model.Evidence{evidence}})
+		licenseEvidence := evidence
+		licenseEvidence.Pointer = "RPMTAG_LICENSE"
+		doc.Components[len(doc.Components)-1].Licenses = licensing.Declare(entry.License, "license", licenseEvidence)
 		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "installed", Evidence: evidence})
 		requirementCount += len(entry.Requires)
 		if requirementCount > maxRequirements {

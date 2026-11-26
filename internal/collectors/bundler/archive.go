@@ -124,6 +124,9 @@ func CollectArchive(file, project string) (model.Document, error) {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "invalid_archive_metadata"})
 		} else {
 			component.Kind, component.Name, component.Version, component.Platform = "package", name, version, platform
+			licenseEvidence := ev
+			licenseEvidence.Pointer = "/" + metadataPath
+			component.Licenses = archiveLicenses(metadata, licenseEvidence)
 			if hasDependencies {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "declared_dependencies_unresolved"})
 			}

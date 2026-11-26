@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -25,7 +26,12 @@ const (
 type nuspec struct {
 	XMLName  xml.Name `xml:"package"`
 	Metadata struct {
-		ID         string `xml:"id"`
+		ID      string `xml:"id"`
+		License struct {
+			Type  string `xml:"type,attr"`
+			Value string `xml:",chardata"`
+		} `xml:"license"`
+		LicenseURL string `xml:"licenseUrl"`
 		Version    string `xml:"version"`
 		Repository struct {
 			Type string `xml:"type,attr"`
@@ -104,6 +110,18 @@ func CollectArchive(file, project string) (model.Document, error) {
 		version := strings.TrimSpace(spec.Metadata.Version)
 		if id != "" && version != "" && !strings.ContainsAny(id+version, " \t\r\n") {
 			component.Kind, component.Name, component.Version = "package", id, version
+			licenseEvidence := ev
+			licenseEvidence.Pointer = "/" + descriptor.Name + "/metadata/license"
+			kind := "notice"
+			switch spec.Metadata.License.Type {
+			case "expression":
+				kind = "expression"
+			case "file":
+				kind = "file"
+			}
+			component.Licenses = licensing.Declare(strings.TrimSpace(spec.Metadata.License.Value), kind, licenseEvidence)
+			licenseEvidence.Pointer = "/" + descriptor.Name + "/metadata/licenseUrl"
+			component.Licenses = append(component.Licenses, licensing.Declare(spec.Metadata.LicenseURL, "url", licenseEvidence)...)
 		} else {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_archive_identity"})
 		}

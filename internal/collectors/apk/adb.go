@@ -104,6 +104,11 @@ func parseInstalledADB(data []byte) ([]installedPackage, error) {
 		if err != nil {
 			return nil, err
 		}
+		// APK package-info schema field 0x06 is the declared license.
+		license, err := packageData.blobString(adbField(info, 6))
+		if err != nil {
+			return nil, err
+		}
 		if !packageName.MatchString(name) || version == "" || strings.ContainsAny(version, " \t\r\n\x00") || !architecture.MatchString(arch) {
 			return nil, fmt.Errorf("invalid APK v3 package %d identity", i)
 		}
@@ -115,7 +120,7 @@ func parseInstalledADB(data []byte) ([]installedPackage, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid APK v3 package %d provides: %w", i, err)
 		}
-		packages = append(packages, installedPackage{name: name, version: version, arch: arch, depends: strings.Join(depends, " "), provides: strings.Join(provides, " ")})
+		packages = append(packages, installedPackage{name: name, version: version, arch: arch, license: license, depends: strings.Join(depends, " "), provides: strings.Join(provides, " ")})
 	}
 	return packages, nil
 }

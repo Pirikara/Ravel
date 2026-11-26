@@ -1421,7 +1421,7 @@ func verifySemantics(t *testing.T, fixture string, doc model.Document, bomData [
 		}
 	case "yarn-generated-4":
 		alpha, beta := find("@ravel/alpha", "1.0.0"), find("@ravel/beta", "2.0.0")
-		if !connected("root", alpha) || !connected(alpha, beta) || len(doc.Sources) != 2 {
+		if !connected("root", alpha) || !connected(alpha, beta) || len(doc.Sources) != 3 || doc.Root == nil || doc.Root.Name != "ravel-yarn-root" || doc.Root.Version != "1.0.0" {
 			t.Fatalf("Yarn 4 workspace versions or graph wrong: %#v", doc)
 		}
 	case "poetry-shared-extra":

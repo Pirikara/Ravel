@@ -25,10 +25,21 @@ type Component struct {
 	PURL     string `json:"purl,omitempty"`
 	// PURLBasis records an inferred coordinate or one qualified by source
 	// metadata. It does not assert independently verified artifact provenance.
-	PURLBasis string     `json:"purlBasis,omitempty"`
-	Hashes    []Hash     `json:"hashes,omitempty"`
-	Patches   []Patch    `json:"patches,omitempty"`
-	Evidence  []Evidence `json:"evidence"`
+	PURLBasis string               `json:"purlBasis,omitempty"`
+	Hashes    []Hash               `json:"hashes,omitempty"`
+	Patches   []Patch              `json:"patches,omitempty"`
+	Evidence  []Evidence           `json:"evidence"`
+	Licenses  []LicenseDeclaration `json:"licenses,omitempty"`
+}
+
+// LicenseDeclaration records package metadata, not a license conclusion or a
+// classification of the package's files. Expression is populated only for a
+// recognized SPDX expression; Value retains the declaration (URLs are cleaned).
+type LicenseDeclaration struct {
+	Value      string     `json:"value"`
+	Kind       string     `json:"kind"`
+	Expression string     `json:"expression,omitempty"`
+	Evidence   []Evidence `json:"evidence"`
 }
 
 // Patch describes a project-local modification declared for a package. Hashes
@@ -81,9 +92,10 @@ type RuntimeRequirement struct {
 // ProjectIdentity is the root application declared by a project manifest.
 // It is separate from Project, which names the scan scope or output document.
 type ProjectIdentity struct {
-	Name     string   `json:"name"`
-	Version  string   `json:"version,omitempty"`
-	Evidence Evidence `json:"evidence"`
+	Name     string               `json:"name"`
+	Version  string               `json:"version,omitempty"`
+	Evidence Evidence             `json:"evidence"`
+	Licenses []LicenseDeclaration `json:"licenses,omitempty"`
 }
 
 // GitProvenance describes the checked-out revision around a repository scan.

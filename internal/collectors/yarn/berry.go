@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -83,6 +84,17 @@ func collectBerry(file, project string, data []byte) (model.Document, error) {
 		queue = append(queue, nodes...)
 	} else if len(queue) > 1 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ambiguous_dependency", Name: "Yarn project root"})
+	}
+	if len(queue) == 1 && queue[0].root {
+		manifestPath := filepath.Join(filepath.Dir(file), "package.json")
+		if manifestData, err := os.ReadFile(manifestPath); err == nil {
+			var m struct{ Name, Version string }
+			if json.Unmarshal(manifestData, &m) == nil && m.Name == queue[0].name {
+				e := common.Evidence(manifestPath, "yarn-manifest", "", manifestData)
+				doc.Root = &model.ProjectIdentity{Name: m.Name, Version: m.Version, Evidence: e, Licenses: licensing.JSONFields(manifestData, e)}
+				doc.Sources = append(doc.Sources, manifestPath)
+			}
+		}
 	}
 	seen := map[string]bool{}
 	for len(queue) > 0 {
@@ -205,6 +217,7 @@ func loadBerryWorkspaceVersion(doc *model.Document, lockfile string, node berryN
 		return
 	}
 	component.Version = manifest.Version
+	component.Licenses = licensing.JSONFields(data, common.Evidence(realManifest, "yarn-workspace-manifest", "", data))
 	component.Evidence = append(component.Evidence, common.Evidence(realManifest, "yarn-workspace-manifest", "/version", data))
 }
 

@@ -15,6 +15,7 @@ import (
 	rpmutils "github.com/sassoftware/go-rpmutils"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -74,6 +75,11 @@ func CollectArchive(file, project string) (model.Document, error) {
 	ref := "rpm-archive:" + common.ID(digest)
 	doc := common.NewDocument(file, project, "rpm-archive", nil)
 	doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: identity.Name, Version: version, Platform: identity.Arch, Hashes: []model.Hash{{Alg: "SHA-256", Content: digest}}, Evidence: []model.Evidence{ev}})
+	if license, err := archive.Header.GetString(rpmutils.LICENSE); err == nil {
+		licenseEvidence := ev
+		licenseEvidence.Pointer = "RPMTAG_LICENSE"
+		doc.Components[0].Licenses = licensing.Declare(license, "license", licenseEvidence)
+	}
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "observed", Evidence: ev})
 	doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", Status: "confirmed", Evidence: ev})
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "artifact_graph_partial"}, model.Issue{Code: "distribution_source_unavailable", Name: identity.Name})

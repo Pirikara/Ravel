@@ -103,6 +103,9 @@ func CollectWheel(file, project string) (model.Document, error) {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "invalid_archive_metadata"})
 		} else {
 			component.Kind, component.Name, component.Version = "package", name, version
+			licenseEvidence := ev
+			licenseEvidence.Pointer = "/" + folder + "/METADATA"
+			component.Licenses = metadataLicenses(headers, licenseEvidence)
 			for _, h := range headers {
 				if h.name == "requires-dist" {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "declared_dependencies_unresolved"})

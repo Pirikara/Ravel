@@ -249,7 +249,12 @@ func parseImageLocks(files map[string]imageProjectFile, project string) ([]image
 		if manager == "" || files[name].status != "" {
 			continue
 		}
-		parsed, err := collectImageLock(manager, filepath.Join(root, filepath.FromSlash(name)), project, root)
+		// Validate at the read boundary too, independently of the staging loop.
+		relative := filepath.FromSlash(name)
+		if !filepath.IsLocal(relative) || path.Clean(name) != name || strings.ContainsAny(name, "\\\x00") {
+			return nil, nil, errors.New("invalid image project path")
+		}
+		parsed, err := collectImageLock(manager, filepath.Join(root, relative), project, root)
 		if err != nil {
 			issues = append(issues, model.Issue{Code: "image_lockfile_invalid", Name: name})
 			continue
@@ -280,6 +285,19 @@ func parseImageLocks(files map[string]imageProjectFile, project string) ([]image
 		for i := range parsed.Components {
 			for j := range parsed.Components[i].Evidence {
 				rewrite(&parsed.Components[i].Evidence[j])
+			}
+			for j := range parsed.Components[i].Licenses {
+				for k := range parsed.Components[i].Licenses[j].Evidence {
+					rewrite(&parsed.Components[i].Licenses[j].Evidence[k])
+				}
+			}
+		}
+		if parsed.Root != nil {
+			rewrite(&parsed.Root.Evidence)
+			for i := range parsed.Root.Licenses {
+				for j := range parsed.Root.Licenses[i].Evidence {
+					rewrite(&parsed.Root.Licenses[i].Evidence[j])
+				}
 			}
 		}
 		for i := range parsed.Edges {

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -125,6 +126,7 @@ func CollectInstalledPackage(data []byte, source, project, metadataPath string) 
 			break
 		}
 	}
+	doc.Components[0].Licenses = licensing.JSONFields(data, evidence)
 	common.Finalize(&doc)
 	return doc, nil
 }

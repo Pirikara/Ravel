@@ -28,6 +28,9 @@ func TestAPKConvertedV3DatabaseAndEvidence(t *testing.T) {
 		if component.Platform != "aarch64" || component.PURL != "" || component.Evidence[0].Collector != "apk-installed-adb" || component.Evidence[0].Line != 0 || !strings.HasSuffix(component.Evidence[0].InputPath, "installed.adb") {
 			t.Fatalf("APK v3 identity or evidence overstated: %#v", component)
 		}
+		if len(component.Licenses) != 1 || component.Licenses[0].Value == "" {
+			t.Fatalf("APK v3 license lost: %s", component.Name)
+		}
 	}
 	if dirDoc, output, code := scanAPK(t, fixture); code != 0 || dirDoc.Coverage.Packages != 16 {
 		t.Fatalf("APK v3 rootfs scan failed: code=%d output=%s", code, output)
@@ -46,6 +49,18 @@ func TestAPKConvertedV3DatabaseAndEvidence(t *testing.T) {
 	v2Doc, output, code := scanAPK(t, v2Path)
 	if code != 0 {
 		t.Fatalf("APK v2 reference scan failed: code=%d output=%s", code, output)
+	}
+	licenses := map[string]string{}
+	for _, c := range v2Doc.Components {
+		if len(c.Licenses) != 1 {
+			t.Fatalf("APK v2 reference license missing: %s", c.Name)
+		}
+		licenses[c.Name] = c.Licenses[0].Value
+	}
+	for _, c := range doc.Components {
+		if c.Licenses[0].Value != licenses[c.Name] {
+			t.Fatalf("APK v3 license differs from converted v2 source for %s", c.Name)
+		}
 	}
 	canonical := func(document model.Document) (map[string]bool, map[string]bool) {
 		packages := map[string]bool{}

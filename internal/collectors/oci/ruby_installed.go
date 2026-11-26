@@ -10,6 +10,7 @@ import (
 
 	packageurl "github.com/package-url/packageurl-go"
 
+	"github.com/Pirikara/Ravel/internal/collectors/bundler"
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 )
@@ -73,6 +74,11 @@ func inspectInstalledRubySpec(data []byte, source, project, filename string) (mo
 	}
 	purl := packageurl.NewPackageURL("gem", "", name, version, qualifiers, "").ToString()
 	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: version, PURL: purl, PURLBasis: "ecosystem_inferred", Context: context, Evidence: []model.Evidence{evidence}})
+	licenses, unresolved := bundler.DeclaredLicenses(data, "s", evidence)
+	doc.Components[0].Licenses = licenses
+	if unresolved {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "license_declaration_unresolved", Name: name})
+	}
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
 	common.Finalize(&doc)
 	return doc, nil

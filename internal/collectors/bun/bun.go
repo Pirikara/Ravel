@@ -15,6 +15,7 @@ import (
 	"github.com/tailscale/hujson"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -198,7 +199,7 @@ func Collect(file, project string) (model.Document, error) {
 			manifestErr := json.Unmarshal(manifestData, &manifest)
 			if manifestErr == nil && manifest.Name != "" {
 				doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
-					Evidence: common.Evidence(manifestPath, "bun-manifest", "/name", manifestData)}
+					Evidence: common.Evidence(manifestPath, "bun-manifest", "/name", manifestData), Licenses: licensing.JSONFields(manifestData, common.Evidence(manifestPath, "bun-manifest", "", manifestData))}
 			}
 			if manifestErr != nil ||
 				!maps.Equal(manifest.Dependencies, root.Dependencies) ||

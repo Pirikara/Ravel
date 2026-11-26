@@ -54,6 +54,30 @@ func TestCollectMetadataSourcesAndConditions(t *testing.T) {
 	}
 }
 
+func TestResolverLicenseDeclarations(t *testing.T) {
+	data := strings.Replace(metadataSample, `"name":"app"`, `"name":"app","license":"MIT","license_file":"LICENSE"`, 1)
+	data = strings.Replace(data, `"name":"alpha"`, `"name":"alpha","license":"MIT OR Apache-2.0"`, 1)
+	doc, err := collectMetadata("Cargo.toml", "app", []byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Root == nil || len(doc.Root.Licenses) != 2 {
+		t.Fatalf("root declarations missing: %+v", doc.Root)
+	}
+	found := false
+	for _, c := range doc.Components {
+		if c.Name == "alpha" {
+			found = true
+			if len(c.Licenses) != 1 || c.Licenses[0].Expression != "MIT OR Apache-2.0" || c.Licenses[0].Evidence[0].Pointer != "/packages/1/license" {
+				t.Fatal(c.Licenses)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing alpha")
+	}
+}
+
 func TestCollectMetadataRejectsCorruption(t *testing.T) {
 	for _, input := range []string{
 		strings.Replace(metadataSample, `"version":1`, `"version":2`, 1),

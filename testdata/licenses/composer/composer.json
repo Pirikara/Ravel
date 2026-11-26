@@ -1,0 +1,7 @@
+{
+  "require": {
+    "example/choice": "1.0.0",
+    "example/custom": "1.0.0",
+    "example/single": "1.0.0"
+  }
+}

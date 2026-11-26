@@ -10,6 +10,7 @@ import (
 
 	packageurl "github.com/package-url/packageurl-go"
 
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -138,6 +139,12 @@ func HexSHA256(raw string) []model.Hash {
 }
 
 func Finalize(doc *model.Document) {
+	for i := range doc.Components {
+		doc.Components[i].Licenses = licensing.Normalize(doc.Components[i].Licenses)
+	}
+	if doc.Root != nil {
+		doc.Root.Licenses = licensing.Normalize(doc.Root.Licenses)
+	}
 	qualifyOriginPURLs(doc)
 	for _, origin := range doc.Origins {
 		if origin.Kind != "vcs" || origin.SafeURL == "" {
