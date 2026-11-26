@@ -249,7 +249,12 @@ func parseImageLocks(files map[string]imageProjectFile, project string) ([]image
 		if manager == "" || files[name].status != "" {
 			continue
 		}
-		parsed, err := collectImageLock(manager, filepath.Join(root, filepath.FromSlash(name)), project, root)
+		// Validate at the read boundary too, independently of the staging loop.
+		relative := filepath.FromSlash(name)
+		if !filepath.IsLocal(relative) || path.Clean(name) != name || strings.ContainsAny(name, "\\\x00") {
+			return nil, nil, errors.New("invalid image project path")
+		}
+		parsed, err := collectImageLock(manager, filepath.Join(root, relative), project, root)
 		if err != nil {
 			issues = append(issues, model.Issue{Code: "image_lockfile_invalid", Name: name})
 			continue
