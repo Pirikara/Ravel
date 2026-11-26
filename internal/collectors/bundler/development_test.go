@@ -1,9 +1,10 @@
 package bundler
 
 import (
+	"testing"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
-	"testing"
 )
 
 func TestLiteralGemspecDevelopment(t *testing.T) {
@@ -22,6 +23,20 @@ func TestLiteralGemspecDevelopment(t *testing.T) {
 		{`s.metadata = { "source_code_uri" => compute_url() }`, "", 0, true},
 		{`s.metadata["source_code_uri"] = "https://#{host}/project"`, "", 0, true},
 		{`other.metadata = { "source_code_uri" => "https://code.example.test/project" }`, "", 0, false},
+		{`s.metadata = { 'changelog_uri' => "https://example.test/v#{s.version}", 'source_code_uri' => 'https://code.example.test/project' }`, "declared", 1, false},
+		{`s.metadata = { 'unrelated' => lookup([1, 2], { nested: true }), 'source_code_uri' => 'https://code.example.test/project' }`, "declared", 1, false},
+		{`s.metadata = { 'source_code_uri' => 'https://code.example.test/project', 'source_code_uri' => computed() }`, "", 0, true},
+		{`s.metadata = { 'source_code_uri' => 'https://code.example.test/project' }.merge(other)`, "", 0, true},
+		{`s.metadata = { 'source_code_uri' => %q{https://code.example.test/project}, 'unrelated' => true }`, "declared", 1, false},
+		{`s.homepage = %q{https://github.com/owner/project}`, "inferred_from_homepage", 1, false},
+		{`s.homepage = %Q{https://github.com/owner/project}`, "", 0, false},
+		{`s.homepage = %q|https://github.com/owner/project|.freeze`, "inferred_from_homepage", 1, false},
+		{"s.homepage = 'https://github.com/owner/project'\ns.metadata['source_code_uri'] = s.homepage", "declared", 1, false},
+		{"s.homepage = 'https://github.com/owner/project'\ns.metadata = { source_code_uri: s.homepage }", "declared", 1, false},
+		{"s.homepage = 'https://github.com/owner/project'\ns.metadata['source_code_uri'] = s.homepage + '/other'", "inferred_from_homepage", 1, true},
+		{"s.homepage = 'https://github.com/owner/project'\ns.homepage = computed()\ns.metadata['source_code_uri'] = s.homepage", "inferred_from_homepage", 1, true},
+		{`s.metadata = { 'unrelated' => <<TEXT, 'source_code_uri' => 'https://code.example.test/project' }`, "", 0, true},
+		{`s.metadata = { 'unrelated' => "#{lookup('x,y')}", 'source_code_uri' => 'https://code.example.test/project' }`, "", 0, true},
 	} {
 		doc := common.NewDocument("sample.gemspec", "sample", "gemspec", nil)
 		CollectDevelopment(&doc, "pkg", []byte(test.source), "s", model.Evidence{InputPath: "sample.gemspec", InputDigest: "sha256:sample"})

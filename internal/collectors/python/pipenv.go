@@ -182,6 +182,7 @@ func CollectPipenv(file, project string) (model.Document, error) {
 		}
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
 	}
+	collectProjectDevelopment(&doc, file)
 	common.Finalize(&doc)
 	return doc, nil
 }

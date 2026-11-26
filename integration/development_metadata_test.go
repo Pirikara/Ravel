@@ -126,6 +126,62 @@ func TestRootDevelopmentMetadataAndMerge(t *testing.T) {
 	assertDevelopmentExports(t, combined)
 }
 
+func TestRealProjectDevelopmentRegressions(t *testing.T) {
+	for _, sample := range []string{"ruby-mixed", "ruby-reference"} {
+		t.Run(sample, func(t *testing.T) {
+			doc := scanDevelopmentSample(t, filepath.Join("..", "testdata", "development", sample, "source.gemspec"))
+			if len(doc.Components) != 1 || doc.Components[0].Version != "1.2.3" || len(doc.Development) != 1 || doc.Development[0].Status != "declared" {
+				t.Fatal(doc.Components, doc.Development)
+			}
+			assertDevelopmentExports(t, doc)
+		})
+	}
+	var documents []model.Document
+	for _, sample := range []struct{ fixture, file, manifest string }{
+		{"uv-basic", "uv.lock", "python-project"},
+		{"poetry-basic", "poetry.lock", "python-poetry"},
+		{"pdm-basic", "pdm.lock", "python-project"},
+		{"pylock-basic", "pylock.toml", "python-project"},
+		{"pipenv-basic", "Pipfile.lock", "python-project"},
+		{"requirements-url", "requirements.txt", "python-project"},
+	} {
+		t.Run(sample.fixture, func(t *testing.T) {
+			root := t.TempDir()
+			lock, err := os.ReadFile(filepath.Join("..", "testdata", "fixtures", sample.fixture, sample.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, sample.file), lock, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), developmentFixture(t, sample.manifest+"/pyproject.toml"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			doc := scanDevelopmentSample(t, filepath.Join(root, sample.file))
+			if len(doc.Development) != 1 || doc.Development[0].Status != "declared" || doc.Development[0].SafeURL != "https://code.example.test/demo" {
+				t.Fatal(doc.Development, doc.Coverage.Issues)
+			}
+			if sample.fixture == "uv-basic" {
+				if !strings.HasPrefix(doc.Development[0].Occurrence, "uv-main:") || doc.Root != nil {
+					t.Fatal("UV application duplicated", doc)
+				}
+			} else if doc.Root == nil || doc.Root.Name != "demo" || doc.Development[0].Occurrence != "root" {
+				t.Fatal("application metadata lost", doc.Root, doc.Development)
+			}
+			assertDevelopmentExports(t, doc)
+			documents = append(documents, doc)
+		})
+	}
+	combined, err := merge.Documents("projects", documents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(combined.Development) != 6 {
+		t.Fatal(combined.Development)
+	}
+	assertDevelopmentExports(t, combined)
+}
+
 func TestOCIDevelopmentMetadataPropagation(t *testing.T) {
 	layout := ociTestLayout(t)
 	image := ociTestImage(t, layout, "linux", "arm64", []ociTestLayer{{entries: []ociTestEntry{

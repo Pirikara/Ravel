@@ -1,0 +1,9 @@
+[tool.poetry]
+name = "demo"
+version = "0.1.0"
+repository = "https://code.example.test/demo"
+homepage = "https://docs.example.test/demo"
+
+[tool.poetry.dependencies]
+python = ">=3.11"
+requests = "^2.32"

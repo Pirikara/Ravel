@@ -10,7 +10,8 @@ Collection uses the supplied metadata without contacting those repositories.
 | npm installed packages and archives | `package.json` `repository`, as a string or object; object `directory` for a monorepo subdirectory |
 | npm, Bun, pnpm, Yarn projects | The adjacent named root application's `package.json`; Yarn Berry workspace package manifests |
 | Python installed distributions, setuptools bundled metadata, and wheels | Source-labelled `Project-URL` entries; repository-shaped `Homepage` / legacy `Home-page` fallback |
-| Ruby source/installed gemspecs | Literal `metadata["source_code_uri"]` assignments or literal metadata hashes; repository-shaped literal `homepage` fallback |
+| Python projects scanned through uv, Poetry, PDM, pylock, Pipenv, or requirements | Adjacent `pyproject.toml`: source-labelled `project.urls`, or legacy `tool.poetry.repository`; repository-shaped homepage fallback |
+| Ruby source/installed gemspecs | Literal `metadata["source_code_uri"]` assignments or metadata hash entries; a direct reference to a uniquely declared literal `homepage`; repository-shaped literal `homepage` fallback |
 | Ruby gem archives | `metadata.source_code_uri`; repository-shaped `homepage` fallback |
 | Cargo | Literal root `package.repository`; root and dependency `repository` values from explicit Cargo resolver output |
 | Maven | The root POM's `scm.url`, `scm.connection`, and `scm.developerConnection` |
@@ -25,6 +26,19 @@ Credentials and URL query parameters are removed before storage.
 Python source labels follow the well-known `source`, `repository`, `sourcecode`,
 and `github` labels, with case, ASCII punctuation, and whitespace normalized.
 Documentation and issue-tracker labels are not source declarations.
+
+Python project metadata belongs to the application, not its installed or locked
+dependencies. uv metadata is attached to its existing application component;
+other manifest readers retain the named root identity. A mismatched uv application
+name or static version is reported instead of attaching the URL to another
+identity. PEP 621 metadata takes precedence over legacy Poetry fields. Dynamic
+URL and version fields are not evaluated.
+
+Ruby readers accept ordinary quoted strings and bounded non-interpolating `%q`
+strings. An unrelated computed value in a metadata hash does not discard a
+literal source URL. Computed source URLs remain unresolved, and a source URL
+referencing `spec.homepage` is declared only when that homepage has one literal
+assignment. Source gemspec constructors may be assigned to a local variable.
 
 When no usable explicit source is available, Python and Ruby can retain a
 homepage as a candidate if it has the two-segment repository shape of GitHub,
@@ -50,7 +64,8 @@ digest, or evidence-only changes do not change the repository's semantic identit
 
 ## Limits
 
-Ruby code is not evaluated. Computed metadata values remain unresolved. Static
+Ruby code is not evaluated. Computed metadata values and unsupported Ruby syntax
+remain unresolved. Python build hooks and dynamic metadata are not executed. Static
 Cargo workspace inheritance and inherited Maven parent SCM values are not
 resolved by these manifest readers. Inputs that contain no repository metadata
 cannot supply it; a registry lookup is not performed to fill the gap.
