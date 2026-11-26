@@ -162,6 +162,31 @@ func TestOCIDevelopmentMetadataPropagation(t *testing.T) {
 	}
 }
 
+func TestGemArchiveDevelopmentMetadata(t *testing.T) {
+	for _, test := range []struct{ name, extra, homepage, url, status string }{
+		{"homepage", "", "https://github.com/owner/source", "https://github.com/owner/source", "inferred_from_homepage"},
+		{"explicit", "metadata:\n  source_code_uri: https://code.example.test/ruby/source\n", "https://github.com/owner/source", "https://code.example.test/ruby/source", "declared"},
+		{"website", "", "https://project.example.test/source", "", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			metadata := strings.Replace(string(developmentFixture(t, "ruby/metadata")), "https://github.com/owner/source", test.homepage, 1) + test.extra
+			file := writeGemTestArchive(t, []gemTestEntry{{"metadata", []byte(metadata)}, {"data.tar.gz", gemTestContents(t)}})
+			doc := scanDevelopmentSample(t, file)
+			if len(doc.Components) != 1 || doc.Components[0].Kind != "package" {
+				t.Fatal(doc.Components)
+			}
+			if test.url == "" {
+				if len(doc.Development) != 0 {
+					t.Fatal(doc.Development)
+				}
+			} else if len(doc.Development) != 1 || doc.Development[0].SafeURL != test.url || doc.Development[0].Status != test.status {
+				t.Fatal(doc.Development)
+			}
+			assertDevelopmentExports(t, doc)
+		})
+	}
+}
+
 func assertDevelopmentExports(t *testing.T, doc model.Document) {
 	t.Helper()
 	for _, source := range doc.Development {
