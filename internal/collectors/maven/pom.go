@@ -25,6 +25,11 @@ type pomDependency struct {
 }
 
 type pomDocument struct {
+	SCM struct {
+		URL                 string `xml:"url"`
+		Connection          string `xml:"connection"`
+		DeveloperConnection string `xml:"developerConnection"`
+	} `xml:"scm"`
 	Licenses []struct {
 		Name string `xml:"name"`
 		URL  string `xml:"url"`
@@ -80,6 +85,16 @@ func collectSinglePOM(file, project string) (model.Document, error) {
 	}
 	doc := common.NewDocument(file, project, "maven", data)
 	doc.Root = pomRootIdentity(file, pom, data)
+	if doc.Root != nil {
+		for _, source := range []struct{ field, value string }{{"url", pom.SCM.URL}, {"connection", pom.SCM.Connection}, {"developerConnection", pom.SCM.DeveloperConnection}} {
+			value := strings.TrimSpace(source.value)
+			for _, prefix := range []string{"scm:git:", "scm:hg:", "scm:svn:"} {
+				value = strings.TrimPrefix(value, prefix)
+			}
+			e := common.Evidence(file, "maven-pom", "/scm/"+source.field, data)
+			common.AddDevelopment(&doc, "root", value, "declared", e)
+		}
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "transitive_graph_unavailable"})
 	if len(pom.Modules) > 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "multi_module_scope_root", Name: file})

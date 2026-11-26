@@ -123,6 +123,11 @@ func SPDX23(doc model.Document) ([]byte, error) {
 			root.Comment += " ref=" + strconv.Quote(provenance.RequestedRef)
 		}
 	}
+	for _, source := range doc.Development {
+		if source.Occurrence == "root" {
+			applySPDXDevelopment(&root, []model.Development{source})
+		}
+	}
 	out.Packages = append(out.Packages, root)
 	lockAnnotations := imageLockAnnotations(doc)
 	origins := map[string][]model.Origin{}
@@ -177,13 +182,9 @@ func SPDX23(doc model.Document) ([]byte, error) {
 			}
 		}
 		for _, source := range doc.Development {
-			if source.Occurrence != c.ID {
-				continue
+			if source.Occurrence == c.ID {
+				applySPDXDevelopment(&item, []model.Development{source})
 			}
-			if item.Comment != "" {
-				item.Comment += "; "
-			}
-			item.Comment += "Declared development repository: " + source.SafeURL
 		}
 		if c.PURL != "" {
 			item.ExternalRefs = []spdxExternalRef{{Category: "PACKAGE-MANAGER", Type: "purl", Locator: c.PURL}}

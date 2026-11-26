@@ -119,7 +119,7 @@ func CollectArchive(file, project string) (model.Document, error) {
 	case dataCount == 0 || invalidData:
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "invalid_archive_metadata"})
 	default:
-		name, version, platform, source, hasDependencies, ok := parseGemMetadata(metadata)
+		name, version, platform, source, homepage, hasDependencies, ok := parseGemMetadata(metadata)
 		if !ok {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "invalid_archive_metadata"})
 		} else {
@@ -129,6 +129,13 @@ func CollectArchive(file, project string) (model.Document, error) {
 			component.Licenses = archiveLicenses(metadata, licenseEvidence)
 			if hasDependencies {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "declared_dependencies_unresolved"})
+			}
+			if source == "" {
+				if candidate := common.RepositoryHomepage(homepage); candidate != "" {
+					devEvidence := ev
+					devEvidence.Pointer = "/" + metadataPath + "/homepage"
+					common.AddDevelopment(&doc, component.ID, candidate, "inferred_from_homepage", devEvidence)
+				}
 			}
 			if source != "" {
 				clean := safeurl.Clean(source)
@@ -182,19 +189,19 @@ func validateGemData(input io.Reader) error {
 	return nil
 }
 
-func parseGemMetadata(data []byte) (name, version, platform, source string, hasDependencies, ok bool) {
+func parseGemMetadata(data []byte) (name, version, platform, source, homepage string, hasDependencies, ok bool) {
 	var document yaml.Node
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	if err := decoder.Decode(&document); err != nil || len(document.Content) != 1 {
-		return "", "", "", "", false, false
+		return "", "", "", "", "", false, false
 	}
 	var extra yaml.Node
 	if err := decoder.Decode(&extra); err != io.EOF {
-		return "", "", "", "", false, false
+		return "", "", "", "", "", false, false
 	}
 	spec := document.Content[0]
 	if spec.Kind != yaml.MappingNode || spec.Tag != "!ruby/object:Gem::Specification" {
-		return "", "", "", "", false, false
+		return "", "", "", "", "", false, false
 	}
 	name = gemScalar(gemField(spec, "name"))
 	versionNode := gemField(spec, "version")
@@ -206,28 +213,29 @@ func parseGemMetadata(data []byte) (name, version, platform, source string, hasD
 		}
 	}
 	if name == "" || version == "" || len(name) > 256 || len(version) > 128 || strings.ContainsAny(name+version, " \\/:\t\r\n") || strings.TrimSpace(name) != name || strings.TrimSpace(version) != version {
-		return "", "", "", "", false, false
+		return "", "", "", "", "", false, false
 	}
 	platform = gemScalar(gemField(spec, "platform"))
 	if platform == "ruby" {
 		platform = ""
 	}
 	if strings.ContainsAny(platform, " \t\r\n") {
-		return "", "", "", "", false, false
+		return "", "", "", "", "", false, false
 	}
 	if dependencies := gemField(spec, "dependencies"); dependencies != nil {
 		if dependencies.Kind != yaml.SequenceNode {
-			return "", "", "", "", false, false
+			return "", "", "", "", "", false, false
 		}
 		hasDependencies = len(dependencies.Content) > 0
 	}
 	if values := gemField(spec, "metadata"); values != nil {
 		if values.Kind != yaml.MappingNode {
-			return "", "", "", "", false, false
+			return "", "", "", "", "", false, false
 		}
 		source = gemScalar(gemField(values, "source_code_uri"))
 	}
-	return name, version, platform, source, hasDependencies, true
+	homepage = gemScalar(gemField(spec, "homepage"))
+	return name, version, platform, source, homepage, hasDependencies, true
 }
 
 func gemField(mapping *yaml.Node, key string) *yaml.Node {

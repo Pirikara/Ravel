@@ -1,0 +1,1 @@
+<project><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>source-sample</artifactId><version>1.2.3</version><scm><url>https://code.example.test/maven/source</url><connection>scm:git:https://code.example.test/maven/source.git</connection></scm></project>

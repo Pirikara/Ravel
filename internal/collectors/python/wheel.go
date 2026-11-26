@@ -14,7 +14,6 @@ import (
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
-	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
 const maxWheelBytes = 512 << 20
@@ -112,25 +111,7 @@ func CollectWheel(file, project string) (model.Document, error) {
 					break
 				}
 			}
-			seen := map[string]bool{}
-			for _, h := range headers {
-				if h.name != "project-url" {
-					continue
-				}
-				label, rawURL, found := strings.Cut(h.value, ",")
-				if !found || !wheelSourceLabel(label) {
-					continue
-				}
-				clean := safeurl.Clean(strings.TrimSpace(rawURL))
-				if clean == "" {
-					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_development_source", Name: name})
-				} else if !seen[clean] {
-					seen[clean] = true
-					devEvidence := ev
-					devEvidence.Pointer = "/" + folder + "/METADATA"
-					doc.Development = append(doc.Development, model.Development{Occurrence: component.ID, SafeURL: clean, Status: "declared", Evidence: devEvidence})
-				}
-			}
+			metadataDevelopment(&doc, component.ID, headers, licenseEvidence)
 		}
 	}
 	if component.Kind == "package" {
@@ -199,15 +180,19 @@ func wheelVersionToken(raw string) string {
 	return strings.ToLower(strings.ReplaceAll(raw, "-", "_"))
 }
 
-func wheelSourceLabel(label string) bool {
+func normalizedProjectLabel(label string) string {
 	var normalized strings.Builder
 	for _, r := range strings.ToLower(label) {
-		if r < 128 && (unicode.IsPunct(r) || unicode.IsSpace(r)) {
+		if r < 128 && (unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsSpace(r)) {
 			continue
 		}
 		normalized.WriteRune(r)
 	}
-	switch normalized.String() {
+	return normalized.String()
+}
+
+func wheelSourceLabel(label string) bool {
+	switch normalizedProjectLabel(label) {
 	case "source", "repository", "sourcecode", "github":
 		return true
 	default:

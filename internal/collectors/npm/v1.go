@@ -153,6 +153,7 @@ func collectV1(file, project string, data []byte) (model.Document, error) {
 				priorRoot := doc.Root
 				doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
 					Evidence: common.Evidence(manifestPath, "npm-manifest", "/name", manifestData), Licenses: licensing.JSONFields(manifestData, common.Evidence(manifestPath, "npm-manifest", "", manifestData))}
+				common.CollectNodeDevelopment(&doc, "root", manifestData, common.Evidence(manifestPath, "npm-manifest", "", manifestData))
 				if priorRoot != nil && priorRoot.Name == doc.Root.Name && priorRoot.Version == doc.Root.Version {
 					doc.Root.Licenses = append(doc.Root.Licenses, priorRoot.Licenses...)
 				}

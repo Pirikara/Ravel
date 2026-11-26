@@ -170,6 +170,9 @@ func collectMetadata(manifest, project string, data []byte) (model.Document, err
 		licenses = append(licenses, licensing.Declare(pkg.LicenseFile, "file", e)...)
 		if node.ID == rootID {
 			doc.Root = &model.ProjectIdentity{Name: pkg.Name, Version: pkg.Version, Evidence: ev, Licenses: licenses}
+			e := ev
+			e.Pointer = fmt.Sprintf("/packages/%d/repository", packageIndices[node.ID])
+			common.AddDevelopment(&doc, "root", pkg.Repository, "declared", e)
 		}
 		if node.ID != rootID {
 			component := model.Component{Licenses: licenses, ID: ids[node.ID], Kind: "package", Name: pkg.Name, Version: pkg.Version, Context: "target=host-tuple,features=default", Evidence: []model.Evidence{ev}}
@@ -193,14 +196,9 @@ func collectMetadata(manifest, project string, data []byte) (model.Document, err
 			default:
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: pkg.Name})
 			}
-			if pkg.Repository != "" {
-				clean := safeurl.Clean(pkg.Repository)
-				if clean != "" {
-					doc.Development = append(doc.Development, model.Development{Occurrence: component.ID, SafeURL: clean, Status: "declared", Evidence: ev})
-				} else {
-					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: pkg.Name})
-				}
-			}
+			e := ev
+			e.Pointer = fmt.Sprintf("/packages/%d/repository", packageIndices[node.ID])
+			common.AddDevelopment(&doc, component.ID, pkg.Repository, "declared", e)
 		}
 		if len(node.Deps) == 0 && len(node.Dependencies) > 0 {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "cargo_dep_kinds_unavailable", Name: pkg.Name})

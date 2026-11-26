@@ -57,11 +57,6 @@ func Losses(doc model.Document, format string) []Loss {
 			evidence++
 		}
 	}
-	for _, source := range doc.Development {
-		if source.Evidence.Collector != "" {
-			evidence++
-		}
-	}
 	for _, runtime := range doc.Runtimes {
 		if runtime.Evidence.Collector != "" {
 			evidence++
@@ -102,12 +97,6 @@ func Losses(doc model.Document, format string) []Loss {
 		}
 		add("origin_statuses_omitted", originStatus)
 	}
-	developmentStatus := 0
-	for _, source := range doc.Development {
-		if source.Status != "" {
-			developmentStatus++
-		}
-	}
-	add("development_statuses_omitted", developmentStatus)
+
 	return losses
 }

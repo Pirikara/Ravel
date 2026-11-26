@@ -130,7 +130,9 @@ func CollectArchive(file, project string) (model.Document, error) {
 			if clean == "" {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: component.Name})
 			} else {
-				doc.Development = append(doc.Development, model.Development{Occurrence: component.ID, SafeURL: clean, Status: "declared", Evidence: ev})
+				developmentEvidence := ev
+				developmentEvidence.Pointer = "/" + descriptor.Name + "/metadata/repository/@url"
+				doc.Development = append(doc.Development, model.Development{Occurrence: component.ID, SafeURL: clean, Status: "declared", Evidence: developmentEvidence})
 			}
 		}
 	}

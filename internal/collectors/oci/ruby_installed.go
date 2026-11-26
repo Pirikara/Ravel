@@ -80,6 +80,7 @@ func inspectInstalledRubySpec(data []byte, source, project, filename string) (mo
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "license_declaration_unresolved", Name: name})
 	}
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
+	bundler.CollectDevelopment(&doc, id, data, "s", evidence)
 	common.Finalize(&doc)
 	return doc, nil
 }

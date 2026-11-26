@@ -15,7 +15,6 @@ import (
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
-	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
 const maxNpmTarballBytes = 512 << 20
@@ -124,17 +123,9 @@ func CollectArchive(file, project string) (model.Document, error) {
 			if len(pkg.Dependencies)+len(pkg.OptionalDependencies)+len(pkg.PeerDependencies) > 0 {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "declared_dependencies_unresolved"})
 			}
-			repository := archiveRepository(pkg.Repository)
-			if repository != "" {
-				clean := safeurl.Clean(repository)
-				if clean == "" {
-					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_development_source", Name: pkg.Name})
-				} else {
-					devEvidence := ev
-					devEvidence.Pointer = "/package/package.json/repository"
-					doc.Development = append(doc.Development, model.Development{Occurrence: component.ID, SafeURL: clean, Status: "declared", Evidence: devEvidence})
-				}
-			}
+			devEvidence := ev
+			devEvidence.Pointer = "/package/package.json"
+			common.CollectNodeDevelopment(&doc, component.ID, manifest, devEvidence)
 		}
 	}
 	if component.Kind == "package" {
@@ -144,20 +135,6 @@ func CollectArchive(file, project string) (model.Document, error) {
 	doc.Origins = append(doc.Origins, model.Origin{Occurrence: component.ID, Kind: "local", Status: "confirmed", Evidence: ev})
 	common.Finalize(&doc)
 	return doc, nil
-}
-
-func archiveRepository(raw json.RawMessage) string {
-	var repository string
-	if json.Unmarshal(raw, &repository) != nil {
-		var object struct {
-			URL string `json:"url"`
-		}
-		if json.Unmarshal(raw, &object) != nil {
-			return ""
-		}
-		repository = object.URL
-	}
-	return strings.TrimPrefix(repository, "git+")
 }
 
 func validArchiveNpmName(name string) bool {

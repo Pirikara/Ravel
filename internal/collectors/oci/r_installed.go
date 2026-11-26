@@ -435,3 +435,19 @@ func compareRVersions(a, b string) (int, bool) {
 	}
 	return 0, true
 }
+
+func recordRDevelopment(doc *model.Document, record rInstalledRecord) {
+	field := record.fields["URL"]
+	for _, entry := range strings.Split(field.value, ",") {
+		parts := strings.Fields(entry)
+		if len(parts) == 0 {
+			continue
+		}
+		if candidate := common.RepositoryHomepage(parts[0]); candidate != "" {
+			e := record.component.Evidence[0]
+			e.Pointer = "URL"
+			e.Line = field.line
+			common.AddDevelopment(doc, record.component.ID, candidate, "inferred_from_project_url", e)
+		}
+	}
+}

@@ -183,7 +183,7 @@ func runtimeKey(runtime model.RuntimeRequirement) string {
 }
 
 func developmentKey(source model.Development) string {
-	return strings.Join([]string{source.Occurrence, source.SafeURL, source.Status}, "\x00")
+	return strings.Join([]string{source.Occurrence, source.SafeURL, source.Status, source.Directory}, "\x00")
 }
 
 func sameComponent(a, b model.Component) bool {

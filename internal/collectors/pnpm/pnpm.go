@@ -126,6 +126,7 @@ func Collect(file, project string) (model.Document, error) {
 		if manifestLoaded && manifest.Name != "" {
 			doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
 				Evidence: common.Evidence(manifestPath, "pnpm-manifest", "/name", manifestData), Licenses: licensing.JSONFields(manifestData, common.Evidence(manifestPath, "pnpm-manifest", "", manifestData))}
+			common.CollectNodeDevelopment(&doc, "root", manifestData, common.Evidence(manifestPath, "pnpm-manifest", "", manifestData))
 		}
 	}
 	if len(documents) > 1 {

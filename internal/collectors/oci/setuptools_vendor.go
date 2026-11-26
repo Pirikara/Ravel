@@ -46,8 +46,26 @@ func collectSetuptoolsVendor(data []byte, source, project, filename, setuptoolsI
 	component.Context = "location=/" + vendorDir + ";vendor=setuptools"
 	component.Evidence[0].Collector = "python-vendor-dist-info"
 	component.Evidence[0].Method = "vendored-metadata"
+	for i := range component.Licenses {
+		for j := range component.Licenses[i].Evidence {
+			component.Licenses[i].Evidence[j].Collector = "python-vendor-dist-info"
+			component.Licenses[i].Evidence[j].Method = "vendored-metadata"
+		}
+	}
 	doc := common.NewDocument(source, project, "setuptools-vendor", nil)
 	doc.Components = append(doc.Components, component)
+	for _, repository := range installed.Development {
+		repository.Occurrence = component.ID
+		repository.Evidence.Collector = "python-vendor-dist-info"
+		repository.Evidence.Method = "vendored-metadata"
+		doc.Development = append(doc.Development, repository)
+	}
+	for _, issue := range installed.Coverage.Issues {
+		if strings.Contains(issue.Code, "development") {
+			issue.Scope = component.ID
+			doc.Coverage.Issues = append(doc.Coverage.Issues, issue)
+		}
+	}
 	from, kind := setuptoolsID, "embedded"
 	if from == "" {
 		from, kind = "root", "installed"
