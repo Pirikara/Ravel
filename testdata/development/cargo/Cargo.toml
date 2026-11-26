@@ -1,0 +1,4 @@
+[package]
+name = "source-sample"
+version = "1.2.3"
+repository = "https://code.example.test/rust/source"

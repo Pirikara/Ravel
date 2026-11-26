@@ -73,6 +73,7 @@ func CollectGemspec(file, project string) (model.Document, error) {
 			doc.Sources = append(doc.Sources, versionFile)
 		}
 	}
+	CollectDevelopment(&doc, component.ID, data, string(block[1]), evidence)
 	doc.Components = append(doc.Components, component)
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: component.ID, Kind: "direct", Evidence: evidence})
 	doc.Origins = append(doc.Origins, model.Origin{Occurrence: component.ID, Kind: "local", LocalPath: filepath.Dir(file), Status: "declared", Evidence: evidence})

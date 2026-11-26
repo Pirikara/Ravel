@@ -1134,6 +1134,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			continue
 		}
 		doc.Components = append(doc.Components, vendorDoc.Components...)
+		doc.Development = append(doc.Development, vendorDoc.Development...)
 		doc.Edges = append(doc.Edges, vendorDoc.Edges...)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, vendorDoc.Coverage.Issues...)
 	}
@@ -1291,6 +1292,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 		}
 		rubyInstalled = true
 		rubyRecords = append(rubyRecords, rubyInstalledRecord{component: installed.Components[0], metadata: state.data, metadataPath: name})
+		doc.Development = append(doc.Development, installed.Development...)
+		doc.Coverage.Issues = append(doc.Coverage.Issues, installed.Coverage.Issues...)
 		doc.Components = append(doc.Components, installed.Components...)
 		doc.Edges = append(doc.Edges, installed.Edges...)
 	}
@@ -1362,6 +1365,7 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 				}
 			}
 		}
+		recordRDevelopment(&doc, record)
 		rRecords = append(rRecords, record)
 		doc.Components = append(doc.Components, record.component)
 		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: record.component.ID, Kind: "installed", Evidence: record.component.Evidence[0]})

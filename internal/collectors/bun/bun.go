@@ -200,6 +200,7 @@ func Collect(file, project string) (model.Document, error) {
 			if manifestErr == nil && manifest.Name != "" {
 				doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
 					Evidence: common.Evidence(manifestPath, "bun-manifest", "/name", manifestData), Licenses: licensing.JSONFields(manifestData, common.Evidence(manifestPath, "bun-manifest", "", manifestData))}
+				common.CollectNodeDevelopment(&doc, "root", manifestData, common.Evidence(manifestPath, "bun-manifest", "", manifestData))
 			}
 			if manifestErr != nil ||
 				!maps.Equal(manifest.Dependencies, root.Dependencies) ||

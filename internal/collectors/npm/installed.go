@@ -127,6 +127,7 @@ func CollectInstalledPackage(data []byte, source, project, metadataPath string) 
 		}
 	}
 	doc.Components[0].Licenses = licensing.JSONFields(data, evidence)
+	common.CollectNodeDevelopment(&doc, id, data, evidence)
 	common.Finalize(&doc)
 	return doc, nil
 }

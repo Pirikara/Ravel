@@ -8,7 +8,7 @@
 
 Ravel is a command-line SBOM generator for project lockfiles, package archives, installed systems, and container images. It produces CycloneDX or SPDX, and lets you trace package and dependency claims back to the input that supports them.
 
-A package name is only part of the story. Ravel also records declared registries and distribution URLs when the input provides them, keeps development repositories separate from download sources, and reports what it could not establish.
+A package name is only part of the story. Ravel also records declared registries and distribution URLs when the input provides them, keeps [development repositories](docs/development-repositories.md) separate from download sources, and reports what it could not establish.
 
 ## Install
 

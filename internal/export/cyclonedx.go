@@ -70,6 +70,13 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 		}
 		root.Properties = append(root.Properties, property{Name: "ravel:gitProvenance", Value: string(value)})
 	}
+	rootDevelopment := []model.Development{}
+	for _, source := range doc.Development {
+		if source.Occurrence == "root" {
+			rootDevelopment = append(rootDevelopment, source)
+		}
+	}
+	applyCycloneDXDevelopment(&root, rootDevelopment, nil)
 	out := bom{
 		BomFormat: "CycloneDX", SpecVersion: "1.7", Version: 1,
 		Metadata:   map[string]any{"component": root},
@@ -147,13 +154,7 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 				item.Properties = append(item.Properties, property{Name: "ravel:sdk", Value: o.Target})
 			}
 		}
-		for _, source := range development[c.ID] {
-			if !seenVCS[source.SafeURL] {
-				item.ExternalReferences = append(item.ExternalReferences, reference{Type: "vcs", URL: source.SafeURL})
-				seenVCS[source.SafeURL] = true
-			}
-			item.Properties = append(item.Properties, property{Name: "ravel:developmentRepository", Value: source.SafeURL})
-		}
+		applyCycloneDXDevelopment(&item, development[c.ID], seenVCS)
 		item.Properties = append(item.Properties, lockAnnotations[c.ID]...)
 		out.Components = append(out.Components, item)
 	}

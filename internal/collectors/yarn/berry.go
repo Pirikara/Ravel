@@ -92,6 +92,7 @@ func collectBerry(file, project string, data []byte) (model.Document, error) {
 			if json.Unmarshal(manifestData, &m) == nil && m.Name == queue[0].name {
 				e := common.Evidence(manifestPath, "yarn-manifest", "", manifestData)
 				doc.Root = &model.ProjectIdentity{Name: m.Name, Version: m.Version, Evidence: e, Licenses: licensing.JSONFields(manifestData, e)}
+				common.CollectNodeDevelopment(&doc, "root", manifestData, e)
 				doc.Sources = append(doc.Sources, manifestPath)
 			}
 		}
@@ -217,6 +218,7 @@ func loadBerryWorkspaceVersion(doc *model.Document, lockfile string, node berryN
 		return
 	}
 	component.Version = manifest.Version
+	common.CollectNodeDevelopment(doc, component.ID, data, common.Evidence(realManifest, "yarn-workspace-manifest", "", data))
 	component.Licenses = licensing.JSONFields(data, common.Evidence(realManifest, "yarn-workspace-manifest", "", data))
 	component.Evidence = append(component.Evidence, common.Evidence(realManifest, "yarn-workspace-manifest", "/version", data))
 }

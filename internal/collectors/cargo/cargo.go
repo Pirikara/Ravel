@@ -33,6 +33,7 @@ type manifest struct {
 		Name        string `toml:"name"`
 		License     any    `toml:"license"`
 		LicenseFile any    `toml:"license-file"`
+		Repository  any    `toml:"repository"`
 		Version     string `toml:"version"`
 	} `toml:"package"`
 	Dependencies      map[string]any `toml:"dependencies"`
@@ -79,6 +80,11 @@ func Collect(file, project string) (model.Document, error) {
 		}
 	}
 	if doc.Root != nil {
+		if repository, ok := m.Package.Repository.(string); ok {
+			e := doc.Root.Evidence
+			e.Pointer = "/package/repository"
+			common.AddDevelopment(&doc, "root", repository, "declared", e)
+		}
 		if value, ok := m.Package.License.(string); ok {
 			e := doc.Root.Evidence
 			e.Pointer = "/package/license"

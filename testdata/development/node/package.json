@@ -1,0 +1,11 @@
+{
+  "name": "source-sample",
+  "version": "1.2.3",
+  "repository": {
+    "type": "git",
+    "url": "git+https://user:secret@code.example.test/team/source.git?token=secret",
+    "directory": "packages/source"
+  },
+  "homepage": "https://docs.example.test/source",
+  "license": "MIT"
+}

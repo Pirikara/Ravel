@@ -76,6 +76,7 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 		if manifest.Name != "" {
 			doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
 				Evidence: common.Evidence(filepath.Join(filepath.Dir(file), "package.json"), "yarn-manifest", "/name", manifestData), Licenses: licensing.JSONFields(manifestData, common.Evidence(filepath.Join(filepath.Dir(file), "package.json"), "yarn-manifest", "", manifestData))}
+			common.CollectNodeDevelopment(&doc, "root", manifestData, common.Evidence(filepath.Join(filepath.Dir(file), "package.json"), "yarn-manifest", "", manifestData))
 		}
 	}
 	if manifestErr != nil {

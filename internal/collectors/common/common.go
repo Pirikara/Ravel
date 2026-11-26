@@ -319,7 +319,22 @@ func Finalize(doc *model.Document) {
 		if a.Occurrence != b.Occurrence {
 			return a.Occurrence < b.Occurrence
 		}
-		return a.SafeURL < b.SafeURL
+		if a.SafeURL != b.SafeURL {
+			return a.SafeURL < b.SafeURL
+		}
+		if a.Directory != b.Directory {
+			return a.Directory < b.Directory
+		}
+		if a.Status != b.Status {
+			return a.Status < b.Status
+		}
+		if a.Evidence.InputPath != b.Evidence.InputPath {
+			return a.Evidence.InputPath < b.Evidence.InputPath
+		}
+		if a.Evidence.Pointer != b.Evidence.Pointer {
+			return a.Evidence.Pointer < b.Evidence.Pointer
+		}
+		return a.Evidence.Line < b.Evidence.Line
 	})
 	sort.Slice(doc.Coverage.Issues, func(i, j int) bool {
 		a, b := doc.Coverage.Issues[i], doc.Coverage.Issues[j]

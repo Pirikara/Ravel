@@ -75,6 +75,7 @@ type Development struct {
 	Occurrence string   `json:"occurrence"`
 	SafeURL    string   `json:"safeUrl"`
 	Status     string   `json:"status"`
+	Directory  string   `json:"directory,omitempty"`
 	Evidence   Evidence `json:"evidence"`
 }
 
