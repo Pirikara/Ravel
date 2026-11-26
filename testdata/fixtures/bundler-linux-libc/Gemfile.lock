@@ -1,0 +1,17 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    native (1.2.3-aarch64-linux-gnu)
+    native (1.2.3-aarch64-linux-musl)
+    pre (2.0.0-pre)
+
+PLATFORMS
+  aarch64-linux
+  ruby
+
+DEPENDENCIES
+  native
+  pre
+
+BUNDLED WITH
+   2.6.0

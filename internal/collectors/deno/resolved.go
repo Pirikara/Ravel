@@ -60,10 +60,8 @@ func collectResolved(file, project string, fetch remoteFetcher) (model.Document,
 	if err := json.Unmarshal(data, &lock); err != nil {
 		return doc, err
 	}
-	if lock.Version == "3" {
-		if err := normalizeV3(&lock); err != nil {
-			return doc, err
-		}
+	if err := normalizeLock(&lock, data); err != nil {
+		return doc, err
 	}
 	items, byName := indexLockedPackages(lock)
 	imports, scopes := resolvedImportMap(filepath.Dir(file))

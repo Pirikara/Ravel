@@ -1,0 +1,6 @@
+{
+  "name": "app",
+  "version": "2.3.4",
+  "repository": "https://code.example.test/workspaces/app",
+  "dependencies": {"app-library": "^2.0.0"}
+}

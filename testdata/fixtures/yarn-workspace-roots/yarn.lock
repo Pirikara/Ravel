@@ -1,0 +1,28 @@
+__metadata:
+  version: 8
+
+"workspace-collection@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "workspace-collection@workspace:."
+  dependencies:
+    root-tool: "npm:^1.0.0"
+  linkType: soft
+
+"app@workspace:packages/app":
+  version: 0.0.0-use.local
+  resolution: "app@workspace:packages/app"
+  dependencies:
+    app-library: "npm:^2.0.0"
+  linkType: soft
+
+"root-tool@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "root-tool@npm:1.0.0"
+
+"app-library@npm:^2.0.0":
+  version: 2.1.0
+  resolution: "app-library@npm:2.1.0"
+
+"unused@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "unused@npm:3.0.0"

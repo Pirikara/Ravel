@@ -20,7 +20,8 @@ type lockfile struct {
 	Packages   json.RawMessage         `json:"packages"`
 	Specifiers map[string]string       `json:"specifiers"`
 	JSR        map[string]packageEntry `json:"jsr"`
-	NPM        map[string]packageEntry `json:"npm"`
+	RawNPM     json.RawMessage         `json:"npm"`
+	NPM        map[string]packageEntry `json:"-"`
 	Remote     map[string]string       `json:"remote"`
 	Workspace  struct {
 		Dependencies []string `json:"dependencies"`
@@ -74,12 +75,8 @@ func Collect(file, project string) (model.Document, error) {
 	if err := json.Unmarshal(data, &lock); err != nil {
 		return model.Document{}, fmt.Errorf("invalid deno.lock: %w", err)
 	}
-	if lock.Version == "3" {
-		if err := normalizeV3(&lock); err != nil {
-			return model.Document{}, err
-		}
-	} else if lock.Version != "4" && lock.Version != "5" {
-		return model.Document{}, fmt.Errorf("unsupported deno.lock version %q", lock.Version)
+	if err := normalizeLock(&lock, data); err != nil {
+		return model.Document{}, err
 	}
 	doc := common.NewDocument(file, project, "deno", data)
 	base := filepath.Dir(file)
@@ -282,6 +279,49 @@ func Collect(file, project string) (model.Document, error) {
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph"})
 	common.Finalize(&doc)
 	return doc, nil
+}
+
+func normalizeLock(lock *lockfile, data []byte) error {
+	switch lock.Version {
+	case "2":
+		return normalizeV2(lock, data)
+	case "3":
+		return normalizeV3(lock)
+	case "4", "5":
+		if len(lock.RawNPM) != 0 {
+			if err := json.Unmarshal(lock.RawNPM, &lock.NPM); err != nil {
+				return fmt.Errorf("invalid deno.lock npm: %w", err)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported deno.lock version %q", lock.Version)
+	}
+}
+
+// Version 2 keeps npm's specifiers and package records in a nested npm object.
+// It predates JSR. Preserve the remote records and reuse the legacy graph reader.
+func normalizeV2(lock *lockfile, data []byte) error {
+	var legacy struct {
+		NPM struct {
+			Specifiers map[string]string         `json:"specifiers"`
+			Packages   map[string]v3PackageEntry `json:"packages"`
+		} `json:"npm"`
+	}
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return fmt.Errorf("invalid deno.lock v2 npm: %w", err)
+	}
+	lock.Specifiers = make(map[string]string, len(legacy.NPM.Specifiers))
+	for spec, pin := range legacy.NPM.Specifiers {
+		name, version, ok := splitNameVersion(pin)
+		if !ok || name == "" {
+			return fmt.Errorf("invalid deno.lock v2 pin %q", pin)
+		}
+		lock.Specifiers["npm:"+spec] = version
+	}
+	lock.NPM = normalizeV3Entries(legacy.NPM.Packages)
+	lock.JSR = nil
+	return nil
 }
 
 // Version 3 nests package records and records pinned specifiers with their
