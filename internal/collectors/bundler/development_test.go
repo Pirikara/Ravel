@@ -21,6 +21,7 @@ func TestLiteralGemspecDevelopment(t *testing.T) {
 		{`s.homepage = "https://github.com/owner/project".freeze`, "inferred_from_homepage", 1, false},
 		{`s.homepage = "https://docs.example.test/project"`, "", 0, false},
 		{`s.metadata = { "source_code_uri" => compute_url() }`, "", 0, true},
+		{`s.metadata = { "source_code_uri" => "" }`, "", 0, false},
 		{`s.metadata["source_code_uri"] = "https://#{host}/project"`, "", 0, true},
 		{`other.metadata = { "source_code_uri" => "https://code.example.test/project" }`, "", 0, false},
 		{`s.metadata = { 'changelog_uri' => "https://example.test/v#{s.version}", 'source_code_uri' => 'https://code.example.test/project' }`, "declared", 1, false},

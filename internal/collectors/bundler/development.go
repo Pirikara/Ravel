@@ -11,6 +11,11 @@ import (
 
 var rubySimpleInterpolation = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.:]*$`)
 
+type rubyMetadataLiteral struct {
+	value    string
+	resolved bool
+}
+
 // CollectDevelopment reads literal gemspec declarations without running Ruby.
 func CollectDevelopment(doc *model.Document, occurrence string, data []byte, variable string, evidence model.Evidence) {
 	prefix := regexp.QuoteMeta(variable)
@@ -31,14 +36,14 @@ func CollectDevelopment(doc *model.Document, occurrence string, data []byte, var
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "development_source_unresolved", Scope: occurrence})
 			continue
 		}
-		if value, present := values["source_code_uri"]; present && value == "" {
+		if value, present := values["source_code_uri"]; present && !value.resolved {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "development_source_unresolved", Scope: occurrence})
-		} else if value != "" {
+		} else if value.value != "" {
 			e := evidence
 			e.Pointer = "Gem::Specification/metadata/source_code_uri"
 			e.Line = bytes.Count(data[:match[0]], []byte("\n")) + 1
 			before := len(doc.Development)
-			common.AddDevelopment(doc, occurrence, value, "declared", e)
+			common.AddDevelopment(doc, occurrence, value.value, "declared", e)
 			explicit = explicit || len(doc.Development) > before
 		}
 	}
@@ -149,13 +154,13 @@ func rubyMetadataSpace(input string) string {
 	}
 }
 
-func literalMetadataHash(input, variable, homepage string) (map[string]string, bool) {
+func literalMetadataHash(input, variable, homepage string) (map[string]rubyMetadataLiteral, bool) {
 	input = rubyMetadataSpace(input)
 	if !strings.HasPrefix(input, "{") {
 		return nil, false
 	}
 	input = input[1:]
-	values := map[string]string{}
+	values := map[string]rubyMetadataLiteral{}
 	for count := 0; count < 256; count++ {
 		input = rubyMetadataSpace(input)
 		if strings.HasPrefix(input, "}") {
@@ -192,10 +197,7 @@ func literalMetadataHash(input, variable, homepage string) (map[string]string, b
 			return nil, false
 		}
 		value, tail, literal := rubyMetadataValue(expression, variable, homepage)
-		if !literal || !rubyEndOfStatement(tail) {
-			value = ""
-		}
-		values[key] = value
+		values[key] = rubyMetadataLiteral{value: value, resolved: literal && rubyEndOfStatement(tail)}
 		input = rubyMetadataSpace(remaining)
 		if strings.HasPrefix(input, ",") {
 			input = input[1:]
