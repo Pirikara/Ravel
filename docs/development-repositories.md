@@ -67,8 +67,10 @@ digest, or evidence-only changes do not change the repository's semantic identit
 Ruby code is not evaluated. Computed metadata values and unsupported Ruby syntax
 remain unresolved. Python build hooks and dynamic metadata are not executed. Static
 Cargo workspace inheritance and inherited Maven parent SCM values are not
-resolved by these manifest readers. Inputs that contain no repository metadata
-cannot supply it; a registry lookup is not performed to fill the gap.
+resolved by these manifest readers. These static readers do not query registries
+for missing URLs. The separate `ravel enrich` command can obtain supported
+registry metadata; PyPI enrichment requires a declared index and a matching
+release artifact SHA-256 before attaching project-supplied source metadata.
 
 All links describe declarations or candidates. They do not certify that the
 repository is authoritative, that the installed bytes came from it, or that a
