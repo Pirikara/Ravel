@@ -1,0 +1,6 @@
+{
+  "name": "workspace-collection",
+  "private": true,
+  "workspaces": {"packages": ["packages/*"]},
+  "devDependencies": {"root-tool": "^1.0.0"}
+}

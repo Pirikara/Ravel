@@ -1,0 +1,12 @@
+{
+  "version": "2",
+  "remote": {},
+  "npm": {
+    "specifiers": {"primary@^1.0.0": "primary@1.2.3"},
+    "packages": {
+      "primary@1.2.3": {"dependencies": {"renamed": "leaf@2.0.0"}},
+      "leaf@2.0.0": {"dependencies": {}},
+      "unused@3.0.0": {"dependencies": {}}
+    }
+  }
+}

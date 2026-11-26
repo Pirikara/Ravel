@@ -219,6 +219,38 @@ func TestRemoteSourceCannotAddPackageAfterIntegrityMismatch(t *testing.T) {
 	}
 }
 
+func TestRemoteSourceResolvesVersionTwoPackagePin(t *testing.T) {
+	const raw = "https://cdn.example.org/mod.ts"
+	const source = `import "npm:@example/lib@^1.0.0";`
+	file := writeRemoteFixture(t, map[string]string{raw: source}, `import "`+raw+`";`, "")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock map[string]any
+	if err := json.Unmarshal(data, &lock); err != nil {
+		t.Fatal(err)
+	}
+	lock["version"] = "2"
+	lock["npm"] = map[string]any{
+		"specifiers": map[string]string{"@example/lib@^1.0.0": "@example/lib@1.2.3"},
+		"packages":   map[string]any{"@example/lib@1.2.3": map[string]any{"dependencies": map[string]string{}}},
+	}
+	data, err = json.Marshal(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := collectResolved(file, "fixture", func(_ context.Context, spec string) ([]byte, string, error) {
+		return []byte(source), spec, nil
+	})
+	if err != nil || len(doc.Components) != 2 || len(doc.Edges) != 2 || hasIssue(doc, "remote_import_unresolved", raw) {
+		t.Fatalf("v2 pin not resolved: %v %#v", err, doc)
+	}
+}
+
 func TestRemoteSourceResolvesVersionThreePackagePin(t *testing.T) {
 	const raw = "https://cdn.example.org/mod.ts"
 	const source = `import "jsr:@example/lib@^1.0.0";`

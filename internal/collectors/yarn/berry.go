@@ -97,6 +97,14 @@ func collectBerry(file, project string, data []byte) (model.Document, error) {
 			}
 		}
 	}
+	// Workspaces are applications in their own right. Their membership does
+	// not require a dependency from the monorepo root's package.json. Include
+	// each locked workspace and its closure without inventing root dependencies.
+	for _, node := range nodes {
+		if !node.root && strings.HasPrefix(node.resolution, node.name+"@workspace:") {
+			queue = append(queue, node)
+		}
+	}
 	seen := map[string]bool{}
 	for len(queue) > 0 {
 		node := queue[0]
