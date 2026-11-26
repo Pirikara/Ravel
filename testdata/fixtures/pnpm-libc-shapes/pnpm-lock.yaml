@@ -1,0 +1,22 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    optionalDependencies:
+      native-glibc:
+        specifier: 1.0.0
+        version: 1.0.0
+      native-musl:
+        specifier: 1.0.0
+        version: 1.0.0
+packages:
+  native-glibc@1.0.0:
+    os: [linux]
+    cpu: [x64]
+    libc: glibc
+  native-musl@1.0.0:
+    os: [linux]
+    cpu: [arm64]
+    libc: [musl]
+snapshots:
+  native-glibc@1.0.0: {}
+  native-musl@1.0.0: {}

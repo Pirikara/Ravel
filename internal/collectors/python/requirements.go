@@ -49,6 +49,7 @@ func collectRequirements(file, project, root string) (model.Document, error) {
 	if err := collectRequirementsFile(&doc, file, 0, seen, root); err != nil {
 		return model.Document{}, err
 	}
+	collectProjectDevelopment(&doc, file)
 	common.Finalize(&doc)
 	return doc, nil
 }

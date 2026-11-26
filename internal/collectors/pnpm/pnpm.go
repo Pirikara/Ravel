@@ -48,9 +48,32 @@ type packageEntry struct {
 	} `yaml:"resolution"`
 	OS                   []string          `yaml:"os"`
 	CPU                  []string          `yaml:"cpu"`
-	Libc                 []string          `yaml:"libc"`
+	Libc                 stringOrStrings   `yaml:"libc"`
 	Dependencies         map[string]string `yaml:"dependencies"`
 	OptionalDependencies map[string]string `yaml:"optionalDependencies"`
+}
+
+// pnpm lockfiles contain both libc: glibc and libc: [glibc]. Keep both
+// representations without silently coercing booleans, numbers, or mappings.
+type stringOrStrings []string
+
+func (values *stringOrStrings) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" {
+		*values = []string{node.Value}
+		return nil
+	}
+	if node.Kind != yaml.SequenceNode {
+		return fmt.Errorf("expected a string or string array for libc")
+	}
+	result := make([]string, 0, len(node.Content))
+	for _, item := range node.Content {
+		if item.Kind != yaml.ScalarNode || item.Tag != "!!str" {
+			return fmt.Errorf("expected strings in libc array")
+		}
+		result = append(result, item.Value)
+	}
+	*values = result
+	return nil
 }
 
 type snapshot struct {

@@ -183,6 +183,7 @@ func CollectUV(file, project string) (model.Document, error) {
 		}
 	}
 	addGraph(&doc, nodes, file, data, "uv-lock", globalCondition)
+	collectProjectDevelopment(&doc, file)
 	common.Finalize(&doc)
 	return doc, nil
 }
@@ -277,6 +278,7 @@ func CollectPylock(file, project string) (model.Document, error) {
 		}
 	}
 	addGraph(&doc, nodes, file, data, "pylock", globalCondition)
+	collectProjectDevelopment(&doc, file)
 	common.Finalize(&doc)
 	return doc, nil
 }

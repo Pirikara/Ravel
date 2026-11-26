@@ -1,0 +1,9 @@
+[project]
+name = "demo"
+version = "0.1.0"
+dynamic = ["readme"]
+
+[project.urls]
+Homepage = "https://docs.example.test/demo"
+"Source Code" = "https://code.example.test/demo"
+Issues = "https://code.example.test/demo/issues"

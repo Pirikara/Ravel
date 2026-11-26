@@ -11,7 +11,7 @@ import (
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
-var gemspecBlock = regexp.MustCompile(`(?m)^\s*Gem::Specification\.new\s+do\s+\|([A-Za-z_][A-Za-z0-9_]*)\|`)
+var gemspecBlock = regexp.MustCompile(`(?m)^[ \t]*(?:[A-Za-z_][A-Za-z0-9_]*[ \t]*=[ \t]*)?Gem::Specification\.new[ \t]+do[ \t]+\|([A-Za-z_][A-Za-z0-9_]*)\|`)
 var gemspecVersionConstant = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_:]*::VERSION\b`)
 var gemspecVersionLiteral = regexp.MustCompile(`^[0-9][0-9A-Za-z.+_-]{0,127}$`)
 var rubyVersionAssignment = regexp.MustCompile(`(?m)^\s*VERSION\s*=\s*(.+)$`)

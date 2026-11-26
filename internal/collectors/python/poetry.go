@@ -207,6 +207,7 @@ func CollectPoetry(file, project string) (model.Document, error) {
 		// incorrect root edges even when package-to-package edges are intact.
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
 	}
+	collectProjectDevelopment(&doc, file)
 	common.Finalize(&doc)
 	return doc, nil
 }
