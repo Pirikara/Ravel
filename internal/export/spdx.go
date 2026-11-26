@@ -36,6 +36,7 @@ type spdxPackage struct {
 	FilesAnalyzed    bool              `json:"filesAnalyzed"`
 	LicenseConcluded string            `json:"licenseConcluded"`
 	LicenseDeclared  string            `json:"licenseDeclared"`
+	LicenseComments  string            `json:"licenseComments,omitempty"`
 	CopyrightText    string            `json:"copyrightText"`
 	ExternalRefs     []spdxExternalRef `json:"externalRefs,omitempty"`
 	Checksums        []spdxChecksum    `json:"checksums,omitempty"`
@@ -91,6 +92,7 @@ func SPDX23(doc model.Document) ([]byte, error) {
 	if doc.Root != nil && doc.Root.Name != "" {
 		root.Name = doc.Root.Name
 		root.Version = doc.Root.Version
+		applySPDXLicenses(&root, doc.Root.Licenses)
 	}
 	for _, runtime := range doc.Runtimes {
 		if root.Comment != "" {
@@ -145,6 +147,7 @@ func SPDX23(doc model.Document) ([]byte, error) {
 			purpose = "APPLICATION"
 		}
 		item := spdxPackage{ID: id, Name: c.Name, Version: c.Version, Purpose: purpose, DownloadLocation: "NOASSERTION", LicenseConcluded: "NOASSERTION", LicenseDeclared: "NOASSERTION", CopyrightText: "NOASSERTION"}
+		applySPDXLicenses(&item, c.Licenses)
 		item.SourceInfo = packageSourceInfo(origins[c.ID])
 		item.DownloadLocation = packageDownloadLocation(origins[c.ID])
 		if c.Context != "" {

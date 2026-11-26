@@ -19,14 +19,15 @@ type reference struct {
 }
 
 type component struct {
-	Type               string       `json:"type"`
-	BomRef             string       `json:"bom-ref"`
-	Name               string       `json:"name"`
-	Version            string       `json:"version,omitempty"`
-	PURL               string       `json:"purl,omitempty"`
-	Hashes             []model.Hash `json:"hashes,omitempty"`
-	Properties         []property   `json:"properties,omitempty"`
-	ExternalReferences []reference  `json:"externalReferences,omitempty"`
+	Type               string          `json:"type"`
+	BomRef             string          `json:"bom-ref"`
+	Name               string          `json:"name"`
+	Version            string          `json:"version,omitempty"`
+	PURL               string          `json:"purl,omitempty"`
+	Hashes             []model.Hash    `json:"hashes,omitempty"`
+	Properties         []property      `json:"properties,omitempty"`
+	ExternalReferences []reference     `json:"externalReferences,omitempty"`
+	Licenses           []licenseChoice `json:"licenses,omitempty"`
 }
 
 type dependency struct {
@@ -48,6 +49,7 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 	if doc.Root != nil && doc.Root.Name != "" {
 		root.Name = doc.Root.Name
 		root.Version = doc.Root.Version
+		applyCycloneDXLicenses(&root, doc.Root.Licenses)
 	}
 	for _, runtime := range doc.Runtimes {
 		value, err := json.Marshal(struct {
@@ -90,6 +92,7 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 			kind = "application"
 		}
 		item := component{Type: kind, BomRef: c.ID, Name: c.Name, Version: c.Version, PURL: c.PURL, Hashes: c.Hashes}
+		applyCycloneDXLicenses(&item, c.Licenses)
 		if c.PURLBasis != "" {
 			item.Properties = append(item.Properties, property{Name: "ravel:purlBasis", Value: c.PURLBasis})
 		}

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -167,7 +168,12 @@ func sameRoot(a, b *model.ProjectIdentity) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return a.Name == b.Name && a.Version == b.Version
+	if a.Name != b.Name || a.Version != b.Version {
+		return false
+	}
+	left, _ := json.Marshal(licensing.Semantic(a.Licenses))
+	right, _ := json.Marshal(licensing.Semantic(b.Licenses))
+	return string(left) == string(right)
 }
 
 func runtimeKey(runtime model.RuntimeRequirement) string {
@@ -182,6 +188,7 @@ func developmentKey(source model.Development) string {
 
 func sameComponent(a, b model.Component) bool {
 	a.Evidence, b.Evidence = nil, nil
+	a.Licenses, b.Licenses = licensing.Semantic(a.Licenses), licensing.Semantic(b.Licenses)
 	left, _ := json.Marshal(a)
 	right, _ := json.Marshal(b)
 	return string(left) == string(right)

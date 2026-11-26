@@ -1,0 +1,9 @@
+--- !ruby/object:Gem::Specification
+name: licensed
+version: !ruby/object:Gem::Version
+  version: 1.0.0
+platform: ruby
+licenses:
+- MIT
+- BSD-2-Clause
+dependencies: []

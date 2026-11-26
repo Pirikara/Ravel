@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -28,11 +29,13 @@ type metadataOutput struct {
 	Version          int      `json:"version"`
 	WorkspaceMembers []string `json:"workspace_members"`
 	Packages         []struct {
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		Version    string `json:"version"`
-		Source     string `json:"source"`
-		Repository string `json:"repository"`
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Version     string `json:"version"`
+		Source      string `json:"source"`
+		Repository  string `json:"repository"`
+		License     string `json:"license"`
+		LicenseFile string `json:"license_file"`
 	} `json:"packages"`
 	Resolve *struct {
 		Root  string `json:"root"`
@@ -119,15 +122,17 @@ func collectMetadata(manifest, project string, data []byte) (model.Document, err
 	if metadata.Version != 1 || metadata.Resolve == nil || len(metadata.Resolve.Nodes) == 0 || len(metadata.Resolve.Nodes) > 100000 {
 		return model.Document{}, errors.New("unsupported Cargo metadata version or empty graph")
 	}
-	packages := map[string]struct{ Name, Version, Source, Repository string }{}
-	for _, pkg := range metadata.Packages {
+	packages := map[string]struct{ Name, Version, Source, Repository, License, LicenseFile string }{}
+	packageIndices := map[string]int{}
+	for packageIndex, pkg := range metadata.Packages {
+		packageIndices[pkg.ID] = packageIndex
 		if pkg.ID == "" || pkg.Name == "" || pkg.Version == "" {
 			return model.Document{}, errors.New("Cargo metadata package missing identity")
 		}
 		if _, exists := packages[pkg.ID]; exists {
 			return model.Document{}, errors.New("duplicate Cargo metadata package ID")
 		}
-		packages[pkg.ID] = struct{ Name, Version, Source, Repository string }{pkg.Name, pkg.Version, pkg.Source, pkg.Repository}
+		packages[pkg.ID] = struct{ Name, Version, Source, Repository, License, LicenseFile string }{pkg.Name, pkg.Version, pkg.Source, pkg.Repository, pkg.License, pkg.LicenseFile}
 	}
 	rootID := metadata.Resolve.Root
 	if rootID == "" && len(metadata.WorkspaceMembers) == 0 {
@@ -158,8 +163,16 @@ func collectMetadata(manifest, project string, data []byte) (model.Document, err
 		pkg := packages[node.ID]
 		ev := common.Evidence(input, "cargo-metadata", fmt.Sprintf("/resolve/nodes/%d", i), data)
 		ev.Method = "resolver-output"
+		e := ev
+		e.Pointer = fmt.Sprintf("/packages/%d/license", packageIndices[node.ID])
+		licenses := licensing.Declare(pkg.License, "expression", e)
+		e.Pointer = fmt.Sprintf("/packages/%d/license_file", packageIndices[node.ID])
+		licenses = append(licenses, licensing.Declare(pkg.LicenseFile, "file", e)...)
+		if node.ID == rootID {
+			doc.Root = &model.ProjectIdentity{Name: pkg.Name, Version: pkg.Version, Evidence: ev, Licenses: licenses}
+		}
 		if node.ID != rootID {
-			component := model.Component{ID: ids[node.ID], Kind: "package", Name: pkg.Name, Version: pkg.Version, Context: "target=host-tuple,features=default", Evidence: []model.Evidence{ev}}
+			component := model.Component{Licenses: licenses, ID: ids[node.ID], Kind: "package", Name: pkg.Name, Version: pkg.Version, Context: "target=host-tuple,features=default", Evidence: []model.Evidence{ev}}
 			if pkg.Source == "" {
 				component.Kind = "application"
 			} else {

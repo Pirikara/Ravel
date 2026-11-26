@@ -10,6 +10,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -29,8 +30,10 @@ type lockedPackage struct {
 
 type manifest struct {
 	Package struct {
-		Name    string `toml:"name"`
-		Version string `toml:"version"`
+		Name        string `toml:"name"`
+		License     any    `toml:"license"`
+		LicenseFile any    `toml:"license-file"`
+		Version     string `toml:"version"`
 	} `toml:"package"`
 	Dependencies      map[string]any `toml:"dependencies"`
 	DevDependencies   map[string]any `toml:"dev-dependencies"`
@@ -73,6 +76,18 @@ func Collect(file, project string) (model.Document, error) {
 		if rootName != "" {
 			doc.Root = &model.ProjectIdentity{Name: rootName, Version: rootVersion,
 				Evidence: common.Evidence(filepath.Join(filepath.Dir(file), "Cargo.toml"), "cargo-manifest", "/package/name", manifestData)}
+		}
+	}
+	if doc.Root != nil {
+		if value, ok := m.Package.License.(string); ok {
+			e := doc.Root.Evidence
+			e.Pointer = "/package/license"
+			doc.Root.Licenses = licensing.Declare(value, "expression", e)
+		}
+		if value, ok := m.Package.LicenseFile.(string); ok {
+			e := doc.Root.Evidence
+			e.Pointer = "/package/license-file"
+			doc.Root.Licenses = append(doc.Root.Licenses, licensing.Declare(value, "file", e)...)
 		}
 	}
 	if rootName == "" {

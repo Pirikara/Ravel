@@ -15,6 +15,7 @@ import (
 	packageurl "github.com/package-url/packageurl-go"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -289,6 +290,10 @@ func inspectInstalledRDescription(data []byte, source, filename string, roots []
 		Context:  "location=/" + path.Dir(filename),
 		Evidence: []model.Evidence{evidence},
 	}
+	licenseEvidence := evidence
+	licenseEvidence.Pointer = "License"
+	licenseEvidence.Line = fields["License"].line
+	component.Licenses = licensing.Declare(fields["License"].value, "license", licenseEvidence)
 	if strings.TrimSpace(fields["Repository"].value) == "CRAN" {
 		component.PURL = packageurl.NewPackageURL("cran", "", name, version, nil, "").ToString()
 		component.PURLBasis = "ecosystem_inferred"

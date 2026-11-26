@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: licensed
+Version: 1.2.3
+License-Expression: MIT AND BSD-2-Clause
+License-File: LICENSE
+Classifier: License :: OSI Approved :: MIT License
+

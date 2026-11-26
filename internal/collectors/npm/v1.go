@@ -11,6 +11,7 @@ import (
 	semver "github.com/Masterminds/semver/v3"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -21,6 +22,8 @@ type v1Lock struct {
 }
 
 type v1Package struct {
+	License      json.RawMessage      `json:"license"`
+	Licenses     json.RawMessage      `json:"licenses"`
 	Version      string               `json:"version"`
 	Resolved     string               `json:"resolved"`
 	Integrity    string               `json:"integrity"`
@@ -59,7 +62,7 @@ func collectV1(file, project string, data []byte) (model.Document, error) {
 	doc := common.NewDocument(file, project, "npm", data)
 	if lock.Name != "" {
 		doc.Root = &model.ProjectIdentity{Name: lock.Name, Version: lock.Version,
-			Evidence: common.Evidence(file, "npm-lock-v1", "/name", data)}
+			Evidence: common.Evidence(file, "npm-lock-v1", "/name", data), Licenses: licensing.JSONFields(data, common.Evidence(file, "npm-lock-v1", "", data))}
 	}
 	entries := map[string]v1Item{}
 	var walk func(map[string]v1Package, string, string, int)
@@ -80,7 +83,7 @@ func collectV1(file, project string, data []byte) (model.Document, error) {
 			ev := common.Evidence(file, "npm-lock-v1", packagePointer, data)
 			component := model.Component{
 				ID: ref, Kind: "package", Name: name, Version: version,
-				Hashes: common.Integrity(meta.Integrity), Evidence: []model.Evidence{ev},
+				Hashes: common.Integrity(meta.Integrity), Evidence: []model.Evidence{ev}, Licenses: append(licensing.JSON(meta.License, ev, packagePointer+"/license", false), licensing.JSON(meta.Licenses, ev, packagePointer+"/licenses", false)...),
 			}
 			if version != "" && common.DefaultNpmRegistry(meta.Resolved) {
 				component.PURL = common.NpmPURL(name, version)
@@ -147,8 +150,12 @@ func collectV1(file, project string, data []byte) (model.Document, error) {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
 		} else {
 			if manifest.Name != "" {
+				priorRoot := doc.Root
 				doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
-					Evidence: common.Evidence(manifestPath, "npm-manifest", "/name", manifestData)}
+					Evidence: common.Evidence(manifestPath, "npm-manifest", "/name", manifestData), Licenses: licensing.JSONFields(manifestData, common.Evidence(manifestPath, "npm-manifest", "", manifestData))}
+				if priorRoot != nil && priorRoot.Name == doc.Root.Name && priorRoot.Version == doc.Root.Version {
+					doc.Root.Licenses = append(doc.Root.Licenses, priorRoot.Licenses...)
+				}
 			}
 			if lock.Name != "" && manifest.Name != "" && lock.Name != manifest.Name ||
 				lock.Version != "" && manifest.Version != "" && lock.Version != manifest.Version {

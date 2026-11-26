@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -124,7 +125,7 @@ func Collect(file, project string) (model.Document, error) {
 		}
 		if manifestLoaded && manifest.Name != "" {
 			doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
-				Evidence: common.Evidence(manifestPath, "pnpm-manifest", "/name", manifestData)}
+				Evidence: common.Evidence(manifestPath, "pnpm-manifest", "/name", manifestData), Licenses: licensing.JSONFields(manifestData, common.Evidence(manifestPath, "pnpm-manifest", "", manifestData))}
 		}
 	}
 	if len(documents) > 1 {

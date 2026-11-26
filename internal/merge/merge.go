@@ -81,6 +81,7 @@ func Documents(project string, inputs []model.Document) (model.Document, error) 
 			doc.Components = append(doc.Components, model.Component{
 				ID: id, Kind: "application", Name: input.Root.Name, Version: input.Root.Version,
 				Evidence: []model.Evidence{input.Root.Evidence},
+				Licenses: input.Root.Licenses,
 			})
 			doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "direct", Evidence: input.Root.Evidence})
 		}

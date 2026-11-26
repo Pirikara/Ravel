@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	packageurl "github.com/package-url/packageurl-go"
 )
@@ -151,6 +152,8 @@ func imageLockSignature(lock imageLockDocument, c model.Component) string {
 	// Distribution hashes distinguish alternative artifacts, but are never
 	// copied to installed bytes merely because names and versions match.
 	parts := []string{c.PURL, c.Platform, c.Context}
+	licenses, _ := json.Marshal(licensing.Semantic(c.Licenses))
+	parts = append(parts, "licenses="+string(licenses))
 	for _, h := range c.Hashes {
 		parts = append(parts, h.Alg+"="+h.Content)
 	}
@@ -371,6 +374,9 @@ func correlateImageLocks(doc *model.Document, files map[string]imageProjectFile)
 		}
 		// A public-looking PURL in a lock is still only inferred for these
 		// installed bytes; never promote the registry or transfer lock hashes.
+		if len(installed.Licenses) == 0 {
+			installed.Licenses = licensing.Normalize(c.Licenses)
+		}
 		if installed.PURL == "" && c.PURL != "" && c.Version == installed.Version {
 			installed.PURL, installed.PURLBasis = c.PURL, "ecosystem_inferred"
 		}

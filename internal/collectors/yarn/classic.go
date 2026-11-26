@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -74,7 +75,7 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 		}
 		if manifest.Name != "" {
 			doc.Root = &model.ProjectIdentity{Name: manifest.Name, Version: manifest.Version,
-				Evidence: common.Evidence(filepath.Join(filepath.Dir(file), "package.json"), "yarn-manifest", "/name", manifestData)}
+				Evidence: common.Evidence(filepath.Join(filepath.Dir(file), "package.json"), "yarn-manifest", "/name", manifestData), Licenses: licensing.JSONFields(manifestData, common.Evidence(filepath.Join(filepath.Dir(file), "package.json"), "yarn-manifest", "", manifestData))}
 		}
 	}
 	if manifestErr != nil {

@@ -12,6 +12,7 @@ import (
 	packageurl "github.com/package-url/packageurl-go"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -23,6 +24,7 @@ var packageVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+!~-]{0,127}$`)
 var packageSubdir = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 type installedMetadata struct {
+	License string   `json:"license"`
 	Name    string   `json:"name"`
 	Version string   `json:"version"`
 	Build   string   `json:"build"`
@@ -73,6 +75,9 @@ func CollectInstalledMetadata(data []byte, source, project, filename string) (mo
 		qualifiers = append(qualifiers, packageurl.Qualifier{Key: "subdir", Value: record.Subdir})
 	}
 	doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: record.Name, Version: record.Version, PURL: packageurl.NewPackageURL("conda", "", record.Name, record.Version, qualifiers, "").ToString(), PURLBasis: "ecosystem_inferred", Context: context, Evidence: []model.Evidence{evidence}})
+	licenseEvidence := evidence
+	licenseEvidence.Pointer = "/license"
+	doc.Components[0].Licenses = licensing.Declare(record.License, "license", licenseEvidence)
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: id, Kind: "installed", Evidence: evidence})
 	if record.URL != "" {
 		base := record.Name + "-" + record.Version + "-" + record.Build

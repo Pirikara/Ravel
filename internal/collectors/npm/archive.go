@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -117,6 +118,9 @@ func CollectArchive(file, project string) (model.Document, error) {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "invalid_archive_metadata"})
 		} else {
 			component.Kind, component.Name, component.Version = "package", pkg.Name, pkg.Version
+			licenseEvidence := ev
+			licenseEvidence.Pointer = "/package/package.json"
+			component.Licenses = licensing.JSONFields(manifest, licenseEvidence)
 			if len(pkg.Dependencies)+len(pkg.OptionalDependencies)+len(pkg.PeerDependencies) > 0 {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "declared_dependencies_unresolved"})
 			}

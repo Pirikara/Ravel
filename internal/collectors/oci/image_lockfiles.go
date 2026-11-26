@@ -281,6 +281,19 @@ func parseImageLocks(files map[string]imageProjectFile, project string) ([]image
 			for j := range parsed.Components[i].Evidence {
 				rewrite(&parsed.Components[i].Evidence[j])
 			}
+			for j := range parsed.Components[i].Licenses {
+				for k := range parsed.Components[i].Licenses[j].Evidence {
+					rewrite(&parsed.Components[i].Licenses[j].Evidence[k])
+				}
+			}
+		}
+		if parsed.Root != nil {
+			rewrite(&parsed.Root.Evidence)
+			for i := range parsed.Root.Licenses {
+				for j := range parsed.Root.Licenses[i].Evidence {
+					rewrite(&parsed.Root.Licenses[i].Evidence[j])
+				}
+			}
 		}
 		for i := range parsed.Edges {
 			rewrite(&parsed.Edges[i].Evidence)

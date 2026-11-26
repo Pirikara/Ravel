@@ -1,0 +1,5 @@
+version = 4
+
+[[package]]
+name = "licensed-app"
+version = "1.0.0"

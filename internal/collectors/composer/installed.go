@@ -15,6 +15,7 @@ import (
 	packageurl "github.com/package-url/packageurl-go"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -25,6 +26,7 @@ const maxInstalledPackages = 5000
 var installedPackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type installedPackage struct {
+	License     json.RawMessage   `json:"license"`
 	Name        string            `json:"name"`
 	Version     string            `json:"version"`
 	InstallPath string            `json:"install-path"`
@@ -96,7 +98,7 @@ func CollectInstalled(data []byte, source, project, metadataPath string) (model.
 		packageEvidence.Pointer = fmt.Sprintf("%s/%d", packagePath, i)
 		vendor, packageName, _ := strings.Cut(name, "/")
 		purl := packageurl.NewPackageURL("composer", vendor, packageName, pkg.Version, nil, "").ToString()
-		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, PURL: purl, PURLBasis: "ecosystem_inferred", Context: "registry=" + metadataPath, Evidence: []model.Evidence{packageEvidence}})
+		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, PURL: purl, PURLBasis: "ecosystem_inferred", Context: "registry=" + metadataPath, Evidence: []model.Evidence{packageEvidence}, Licenses: licensing.JSON(pkg.License, packageEvidence, packageEvidence.Pointer+"/license", true)})
 		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "installed", Evidence: packageEvidence})
 		originsBefore := len(doc.Origins)
 		for _, item := range []struct {

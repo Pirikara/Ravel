@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -26,6 +27,8 @@ var (
 
 type installedPackage struct {
 	name, version, arch string
+	license             string
+	licenseLine         int
 	depends, provides   string
 	broken              bool
 	line, dependsLine   int
@@ -97,6 +100,9 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 		seen[key] = true
 		p.ref = "apk:" + common.ID(key+"\x00"+p.version)
 		doc.Components = append(doc.Components, model.Component{ID: p.ref, Kind: "package", Name: p.name, Version: p.version, Platform: p.arch, Context: "status=installed", Evidence: []model.Evidence{evidence(p.line)}})
+		licenseEvidence := evidence(p.licenseLine)
+		licenseEvidence.Pointer = "L"
+		doc.Components[len(doc.Components)-1].Licenses = licensing.Declare(p.license, "license", licenseEvidence)
 		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: p.ref, Kind: "installed", Evidence: evidence(p.line)})
 		byName[p.name] = append(byName[p.name], i)
 		if p.broken {
@@ -223,6 +229,12 @@ func parseInstalled(data []byte) ([]installedPackage, error) {
 			case 'A':
 				current.arch = value
 			}
+		case 'L':
+			if seen[field] {
+				return nil, fmt.Errorf("duplicate APK license at line %d", line)
+			}
+			seen[field] = true
+			current.license, current.licenseLine = value, line
 		case 'D':
 			current.depends += " " + value
 			if current.dependsLine == 0 {

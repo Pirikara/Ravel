@@ -1,0 +1,10 @@
+P:licensed
+V:1.0-r0
+A:x86_64
+L:MIT OR BSD-2-Clause
+
+P:custom
+V:1.0-r0
+A:x86_64
+L:Custom terms
+

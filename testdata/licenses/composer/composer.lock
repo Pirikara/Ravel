@@ -1,0 +1,28 @@
+{
+  "packages": [
+    {
+      "name": "example/choice",
+      "version": "1.0.0",
+      "license": [
+        "MIT",
+        "Apache-2.0"
+      ]
+    },
+    {
+      "name": "example/custom",
+      "version": "1.0.0",
+      "license": [
+        "MIT",
+        "Private terms"
+      ]
+    },
+    {
+      "name": "example/single",
+      "version": "1.0.0",
+      "license": [
+        "BSD-3-Clause"
+      ]
+    }
+  ],
+  "packages-dev": []
+}

@@ -59,6 +59,11 @@ func CollectGemspec(file, project string) (model.Document, error) {
 	evidence.Method = "source-analysis"
 	doc := common.NewDocument(file, project, "gemspec", data)
 	component := model.Component{ID: "gemspec:" + common.ID(file+"\x00"+name), Kind: "package", Name: name, Version: version, Evidence: []model.Evidence{evidence}}
+	licenses, unresolved := DeclaredLicenses(data, string(block[1]), evidence)
+	component.Licenses = licenses
+	if unresolved {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "license_declaration_unresolved", Name: name})
+	}
 	if versionFile != "" {
 		versionData, err := os.ReadFile(versionFile)
 		if err == nil {

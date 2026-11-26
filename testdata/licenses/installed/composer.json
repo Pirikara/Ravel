@@ -1,0 +1,12 @@
+{
+  "packages": [
+    {
+      "name": "example/installed",
+      "version": "1.0.0",
+      "license": [
+        "MIT",
+        "BSD-2-Clause"
+      ]
+    }
+  ]
+}

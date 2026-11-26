@@ -1,0 +1,5 @@
+[package]
+name = "licensed-app"
+version = "1.0.0"
+license = "MIT OR Apache-2.0"
+license-file = "LICENSE"

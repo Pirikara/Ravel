@@ -1,0 +1,18 @@
+{
+  "name": "licensed-app",
+  "version": "1.0.0",
+  "license": "MIT",
+  "dependencies": {
+    "standard": "1.0.0",
+    "expression": "1.0.0",
+    "exception": "1.0.0",
+    "legacy-object": "1.0.0",
+    "legacy-array": "1.0.0",
+    "custom": "1.0.0",
+    "custom-ref": "1.0.0",
+    "unlicensed": "1.0.0",
+    "long-notice": "1.0.0",
+    "url": "1.0.0",
+    "empty": "1.0.0"
+  }
+}
