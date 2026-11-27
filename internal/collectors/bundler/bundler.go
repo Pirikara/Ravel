@@ -18,6 +18,7 @@ import (
 
 var specLine = regexp.MustCompile(`^ {4}([^ ()]+) \(([^()]+)\)$`)
 var revisionPattern = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
+var artifactPlatform = regexp.MustCompile(`^(?:[A-Za-z0-9_]+-)?(?:aix|cygwin|darwin|freebsd|java|jruby|dalvik|dotnet|linux|mingw32|mingw|mswin32|mswin64|netbsdelf|openbsd|solaris|wasi|macruby)[0-9.]*(?:[-_][A-Za-z0-9_.]+)*$`)
 
 type block struct {
 	kind     string
@@ -156,15 +157,15 @@ func Collect(path, project string) (model.Document, error) {
 	doc.Coverage.Platforms = platforms
 	for _, item := range entries {
 		// The spec record encodes version-platform independently of the host
-		// PLATFORMS section. Bundler's lock grammar uses the first hyphen
-		// as that separator; gem prereleases use dots in the version field.
+		// PLATFORMS section. For recognizable artifact suffixes, the first
+		// hyphen separates the version. Preserve legacy prerelease strings
+		// whose suffix is not a platform instead of inventing a platform.
 		version, platform, present := strings.Cut(item.component.Version, "-")
-		if present && version != "" && platform != "" {
+		if present && version != "" && artifactPlatform.MatchString(platform) {
 			item.component.Version = version
 			item.component.Platform = platform
 			item.component.PURL = "pkg:gem/" + url.PathEscape(item.component.Name) + "@" + common.PURLVersion(version) + "?platform=" + url.QueryEscape(platform)
 		}
-
 	}
 	byName := map[string][]*entry{}
 	for _, item := range entries {
