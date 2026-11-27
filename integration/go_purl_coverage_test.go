@@ -97,3 +97,41 @@ func TestOCIGoBinaryPreservesExistingMixedCasePURL(t *testing.T) {
 		}
 	}
 }
+
+func TestGoPURLCoverageStrictMode(t *testing.T) {
+	for _, module := range []string{"example.com/SourceApp", "example.com/sourceapp"} {
+		t.Run(module, func(t *testing.T) {
+			dir := t.TempDir()
+			input, output := filepath.Join(dir, "go.mod"), filepath.Join(dir, "sbom.json")
+			if err := os.WriteFile(input, []byte("module "+module+"\n\ngo 1.25\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(executable, "scan", input, "--strict", "--format", "ravel-json", "--output", output)
+			_, err := cmd.CombinedOutput()
+			wantIssue := module == "example.com/SourceApp"
+			if wantIssue {
+				exit, ok := err.(*exec.ExitError)
+				if !ok || exit.ExitCode() != 3 {
+					t.Fatalf("strict mode did not report incomplete PURL coverage: %v", err)
+				}
+			} else if err != nil {
+				t.Fatal("lowercase root failed strict mode", err)
+			}
+			data, err := os.ReadFile(output)
+			if err != nil {
+				t.Fatal("strict mode lost the SBOM", err)
+			}
+			var doc model.Document
+			if err := json.Unmarshal(data, &doc); err != nil {
+				t.Fatal(err)
+			}
+			wantCount := 0
+			if wantIssue {
+				wantCount = 1
+			}
+			if len(doc.Coverage.Issues) != wantCount || wantIssue && doc.Coverage.Issues[0].Code != "go_module_purl_unavailable" {
+				t.Fatal("strict mode failed for an unrelated coverage issue", doc.Coverage)
+			}
+		})
+	}
+}
