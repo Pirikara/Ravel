@@ -201,6 +201,7 @@ func Collect(file, project string) (model.Document, error) {
 		addEdges("root", "", "direct", root.Dependencies)
 		addEdges("root", "", "direct_dev", root.DevDependencies)
 		addEdges("root", "", "optional", root.OptionalDependencies)
+		addEdges("root", "", "peer_requirement", root.PeerDependencies)
 	}
 	for _, entry := range entries {
 		addEdges(entry.ref, entry.location, "depends_on", entry.data.Dependencies)

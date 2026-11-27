@@ -13,6 +13,7 @@ func TestOccurrenceGraphRegressions(t *testing.T) {
 	}{
 		{"npm-workspace-graph", "package-lock.json", 5},
 		{"pnpm-alias-occurrences", "pnpm-lock.yaml", 6},
+		{"pnpm-local-directory", "pnpm-lock.yaml", 2},
 		{"uv-dev-groups", "uv.lock", 5},
 		{"yarn-workspace-roots", "yarn.lock", 3},
 		{"yarn-classic-bare-alias", "yarn.lock", 2},
@@ -28,6 +29,11 @@ func TestOccurrenceGraphRegressions(t *testing.T) {
 				names[c.ID] = c.Name
 				if c.Name == "real" {
 					realIDs = append(realIDs, c.ID)
+				}
+				if sample.fixture == "pnpm-local-directory" && c.Name == "local-app" {
+					if c.Kind != "application" || c.Version != "1.2.3" || c.PURL != "" || len(c.Evidence) != 2 {
+						t.Fatal(c)
+					}
 				}
 				if sample.fixture == "yarn-workspace-roots" {
 					for _, e := range c.Evidence {
@@ -74,6 +80,10 @@ func TestOccurrenceGraphRegressions(t *testing.T) {
 			case "pnpm-alias-occurrences":
 				if !seen["real->helper"] || !seen["real->binary"] {
 					t.Fatal(doc.Edges)
+				}
+			case "pnpm-local-directory":
+				if !seen["local-app->leaf"] || len(doc.Development) != 1 {
+					t.Fatal(doc.Edges, doc.Development)
 				}
 			case "uv-dev-groups":
 				for _, edge := range []string{"group-app->pytest", "group-app->sphinx", "group-app->pillow"} {
