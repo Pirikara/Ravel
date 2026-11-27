@@ -1,6 +1,6 @@
 # Ground-truth checks
 
-Ravel has three complementary checks for package detection accuracy:
+Ravel has complementary checks for package detection accuracy:
 
 1. The checked-in [DeepBits fixtures](../testdata/groundtruth/deepbits/README.md) run in the integration suite. They compare package name/version multisets, 101 Composer dependency edges, and declared origins where the reference provides them.
 2. `scripts/groundtruth_bbp.py` checks five fixed, local BBP snapshots against their package-manager lock records: npm, Cargo, Composer, NuGet, and SwiftPM. The snapshots and generated results stay under the ignored `comparison/` directory.
@@ -30,3 +30,26 @@ The .NET monitor image has no shell, so the script streams `/app` from a stopped
 Python 3.11 or newer is required for the BBP script. Its source of truth is each snapshot's lockfile. The script counts repeated package placements separately, excludes the root project from external package counts, and compares NuGet IDs without case. It checks origin URLs only where the lock records them. NuGet's `packages.lock.json` has no registry URL to verify. All URLs from a lockfile are **declared**, not evidence of a completed download.
 
 The checks answer a narrow question: whether Ravel faithfully emits the package identities, selected edges, and source claims supported by these inputs. They do not measure recall for a complete repository or built image, validate license data, or prove that a declared dependency was installed. A broader precision/recall estimate needs independently observed install or build inventories and annotated negative cases for each input scope. Counts from Syft or Trivy are useful discrepancy leads, but are not ground truth.
+
+
+## Upstream regression conditions
+
+The original fixtures exercised by [`TestUpstreamRegressionConditions`](../integration/upstream_regression_test.go) cover opaque pnpm archive identities, registry-prefixed keys, overlapping importers, multi-document locks, Python version forks and package-level resolution context, bundled npm dependencies, incomplete Yarn records, and whitespace-only Bundler dependency lines. `TestPeerOccurrenceOutputDeterministic` checks stable output while preserving separate peer occurrences.
+
+These cases were written independently after reviewing [Trivy parser tests](https://github.com/aquasecurity/trivy/tree/6ec0da294/pkg/dependency/parser) and [Syft cataloger tests](https://github.com/anchore/syft/tree/12f0e2d8/syft/pkg/cataloger). They do not copy their implementations or fixture files. The input declarations define the expected identities and edges. A tool's choice to merge peer occurrences or assign a registry coordinate to a local project is not automatically adopted as ground truth.
+
+A package's `resolution-markers` are retained as declared fork context, including alternative markers and conditions on incoming and outgoing edges. These annotations do not evaluate an installation environment or prove that a package was installed. A registry-prefixed pnpm key retains the host identity; a non-default host without a full declared location stays unresolved instead of becoming an implicit default-registry claim.
+
+## Shared benchmark resources
+
+Several existing projects provide complementary inputs and evaluation methods:
+
+| Resource | Useful for | Reference boundary |
+| --- | --- | --- |
+| [DeepBits SBOM benchmark](https://github.com/DeepBitsTechnology/sbom-benchmark) | Handcrafted metadata inputs and reference data across languages; a pinned subset is already included above | Distinguish observed install records from lockfile-based references |
+| [sbomify SBOM benchmarks](https://github.com/sbomify/sbom-benchmarks) | Repeatable multi-tool, multi-language execution and SBOM quality reports | Review each target's setup, optional baseline, tool configuration, and scoring; a quality score alone does not establish detection accuracy |
+| [Nokia SBOM-QA](https://github.com/nokia-steward/SBOM-QA) | Real-project comparisons and validation workflows | Its reference SBOMs come from GitHub Dependency Graph; that reference has its own coverage limits |
+| [Interlynk SBOM Benchmark](https://github.com/interlynk-io/sbombenchmark.dev) | Cross-tool SBOM examples and quality assessment | Generated SBOM examples are not independent proof of the complete installed inventory |
+| [eBay SBOM Scorecard](https://github.com/eBay/sbom-scorecard) | Specification, generation metadata, and package-field checks | Measures properties of an SBOM, not an independently observed package inventory |
+
+Use these resources with source-reviewed regression cases. Keep execution, metadata completeness, detection accuracy, and dependency-graph fidelity as separate measurements.

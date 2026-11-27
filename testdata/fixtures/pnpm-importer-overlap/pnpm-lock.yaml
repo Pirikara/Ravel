@@ -1,0 +1,34 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      seed: {specifier: '1', version: 1.0.0}
+packages:
+  seed@1.0.0: {}
+snapshots:
+  seed@1.0.0: {}
+---
+lockfileVersion: '9.0'
+importers:
+  apps/first:
+    dependencies:
+      core: {specifier: '1', version: '1.0.0(peer@1.0.0)'}
+  apps/second:
+    dependencies:
+      core: {specifier: '2', version: '2.0.0(peer@2.0.0)'}
+    devDependencies:
+      tool: {specifier: '3', version: 3.0.0}
+packages:
+  core@1.0.0: {}
+  core@2.0.0: {}
+  peer@1.0.0: {}
+  peer@2.0.0: {}
+  tool@3.0.0: {}
+snapshots:
+  core@1.0.0(peer@1.0.0):
+    dependencies: {peer: 1.0.0}
+  core@2.0.0(peer@2.0.0):
+    dependencies: {peer: 2.0.0}
+  peer@1.0.0: {}
+  peer@2.0.0: {}
+  tool@3.0.0: {}

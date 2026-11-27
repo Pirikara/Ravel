@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,6 +43,7 @@ type imported struct {
 }
 
 type packageEntry struct {
+	Name       string `yaml:"name"`
 	Version    string `yaml:"version"`
 	Resolution struct {
 		Integrity string `yaml:"integrity"`
@@ -54,6 +56,30 @@ type packageEntry struct {
 	Libc                 stringOrStrings   `yaml:"libc"`
 	Dependencies         map[string]string `yaml:"dependencies"`
 	OptionalDependencies map[string]string `yaml:"optionalDependencies"`
+}
+
+func (entry *packageEntry) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			field, value := node.Content[i].Value, node.Content[i+1]
+			if field != "name" && field != "version" {
+				continue
+			}
+			if value.Kind == yaml.AliasNode && value.Alias != nil {
+				value = value.Alias
+			}
+			if value.Kind != yaml.ScalarNode || value.Tag != "!!str" && value.Tag != "!!null" {
+				return fmt.Errorf("package metadata %s must be a string", field)
+			}
+		}
+	}
+	type plainEntry packageEntry
+	var decoded plainEntry
+	if err := node.Decode(&decoded); err != nil {
+		return err
+	}
+	*entry = packageEntry(decoded)
+	return nil
 }
 
 // pnpm lockfiles contain both libc: glibc and libc: [glibc]. Keep both
@@ -212,6 +238,13 @@ func Collect(file, project string) (model.Document, error) {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "manifest_freshness_unverified"})
 			}
 		}
+		registryAliases := map[string][]occurrence{}
+		for key, occ := range byKey {
+			if _, _, host, ok := splitRegistryPackage(strings.SplitN(key, "(", 2)[0]); ok && occ.ref != "" {
+				alias := strings.TrimPrefix(key, host+"/")
+				registryAliases[alias] = append(registryAliases[alias], occ)
+			}
+		}
 		resolve := func(name, version string) occurrence {
 			// Alias references can contain the full target locator directly,
 			// including its peer context, rather than a bare version.
@@ -224,6 +257,12 @@ func Collect(file, project string) (model.Document, error) {
 			}
 			if occ, ok := byKey[key]; ok {
 				return occ
+			}
+			if matches := registryAliases[key]; len(matches) == 1 {
+				return matches[0]
+			} else if len(matches) > 1 {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ambiguous_dependency", Name: name})
+				return occurrence{}
 			}
 			if strings.HasPrefix(version, "link:") || strings.HasPrefix(version, "workspace:") {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "local workspace dependency"})
@@ -274,68 +313,144 @@ func Collect(file, project string) (model.Document, error) {
 }
 
 func addPackage(doc *model.Document, file string, data []byte, documentIndex int, key, base string, pkg packageEntry, snap snapshot) occurrence {
-	name, version, ok := splitPackage(base)
-	local := false
-	if !ok {
-		at := strings.LastIndex(base, "@")
-		if at > 0 && packageName.MatchString(base[:at]) && strings.HasPrefix(base[at+1:], "file:") &&
-			pkg.Resolution.Type == "directory" && pkg.Resolution.Directory == strings.TrimPrefix(base[at+1:], "file:") {
-			name, version, ok, local = base[:at], "", true, true
-		}
-	}
-	if !ok {
-		if remoteName, location, remote := splitNamedHTTP(base); remote {
-			name, version, ok = remoteName, pkg.Version, true
-			if !packageVersion.MatchString(version) {
-				version = ""
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "version_unresolved", Name: name})
-			}
-			if pkg.Resolution.Tarball == "" {
-				pkg.Resolution.Tarball = location
-			}
-		}
-	}
+	identity, ok := identifyPackage(base, pkg)
 	if !ok {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "invalid package key"})
 		return occurrence{}
 	}
+	name, version := identity.name, identity.version
 	ref := "pnpm:" + common.ID(fmt.Sprintf("%d|%s", documentIndex, key))
 	ev := common.Evidence(file, "pnpm-lock", fmt.Sprintf("/documents/%d/packages/%s", documentIndex, key), data)
 	platform := strings.Join(append(append(append([]string{}, pkg.OS...), pkg.CPU...), pkg.Libc...), "/")
 	component := model.Component{ID: ref, Kind: "package", Name: name, Version: version, Platform: platform, Hashes: common.Integrity(pkg.Resolution.Integrity), Evidence: []model.Evidence{ev}}
-	if local {
+	if identity.directory {
 		component.Kind = "application"
-		if !collectLocalIdentity(doc, file, pkg.Resolution.Directory, &component) {
+		if component.Version == "" && !collectLocalIdentity(doc, file, identity.localPath, &component) {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "local_package_identity_unresolved", Name: name})
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "version_unresolved", Name: name})
 		}
-		doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: pkg.Resolution.Directory, Status: "declared", Evidence: ev})
-	} else if common.DefaultNpmRegistry(pkg.Resolution.Tarball) {
+		doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: identity.localPath, Status: "declared", Evidence: ev})
+	} else if identity.localPath != "" {
+		doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: identity.localPath, Status: "declared", Evidence: ev})
+	} else if common.DefaultNpmRegistry(identity.tarball) {
 		component.PURL = common.NpmPURL(name, version)
-	} else if pkg.Resolution.Tarball == "" {
+	} else if identity.tarball == "" && (identity.registryHost == "" || strings.EqualFold(identity.registryHost, "registry.npmjs.org")) {
 		component.PURL = common.NpmPURL(name, version)
 		component.PURLBasis = "ecosystem_inferred"
 	}
+	if component.Version == "" && !identity.directory {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "version_unresolved", Name: name})
+	}
 	doc.Components = append(doc.Components, component)
+	if identity.registryHost != "" {
+		origin := model.Origin{Occurrence: ref, Kind: "registry_identity", Target: identity.registryHost, Status: "declared", Evidence: ev}
+		if strings.EqualFold(identity.registryHost, "registry.npmjs.org") && identity.tarball == "" {
+			origin.SafeURL, origin.Status = "https://registry.npmjs.org", "inferred_from_registry_key"
+		} else if identity.tarball == "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "registry_url_unresolved", Name: name})
+		}
+		doc.Origins = append(doc.Origins, origin)
+	}
 	condition := ""
 	if platform != "" {
 		condition = "platform=" + platform
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: name})
 	}
-	if local {
+	if identity.localPath != "" {
 		return occurrence{ref: ref, key: key, condition: condition, snapshot: snap}
 	}
-	if pkg.Resolution.Tarball != "" {
-		clean := safeurl.Clean(pkg.Resolution.Tarball)
+	if identity.tarball != "" {
+		clean := safeurl.Clean(identity.tarball)
 		if clean == "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: name})
 		} else {
 			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "download_url", SafeURL: clean, Status: "declared", Evidence: ev})
 		}
-	} else {
+	} else if identity.registryHost == "" {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: name})
 	}
 	return occurrence{ref: ref, key: key, condition: condition, snapshot: snap}
+}
+
+type lockedIdentity struct {
+	name, version, tarball, localPath, registryHost string
+	directory                                       bool
+}
+
+func identifyPackage(base string, pkg packageEntry) (lockedIdentity, bool) {
+	name, version, ok := splitPackage(base)
+	identity := lockedIdentity{name: name, version: version, tarball: pkg.Resolution.Tarball}
+	if !ok {
+		identity.name, identity.version, identity.registryHost, ok = splitRegistryPackage(base)
+	}
+	if !ok {
+		name, location, named := splitNamedLocation(base, "file:")
+		if !named && strings.HasPrefix(base, "file:") {
+			name, location, named = pkg.Name, strings.TrimPrefix(base, "file:"), true
+		}
+		if named && packageName.MatchString(name) {
+			if location == "" || pkg.Resolution.Type == "directory" && pkg.Resolution.Directory != location {
+				return lockedIdentity{}, false
+			}
+			identity.name, identity.version, identity.localPath = name, pkg.Version, location
+			identity.directory = pkg.Resolution.Type == "directory" && pkg.Resolution.Directory == location
+			ok = true
+		}
+	}
+	if !ok {
+		if name, location, named := splitNamedHTTP(base); named {
+			identity.name, identity.version, ok = name, pkg.Version, true
+			if identity.tarball == "" {
+				identity.tarball = location
+			}
+		}
+	}
+	if !ok && packageName.MatchString(pkg.Name) {
+		if identity.tarball == "" && isHTTP(base) {
+			identity.tarball = base
+		}
+		if isHTTP(identity.tarball) || strings.HasPrefix(identity.tarball, "file:") {
+			identity.name, identity.version, ok = pkg.Name, pkg.Version, true
+		}
+	}
+	if !ok {
+		return lockedIdentity{}, false
+	}
+	if !packageVersion.MatchString(identity.version) {
+		identity.version = ""
+	}
+	if strings.HasPrefix(identity.tarball, "file:") {
+		identity.localPath = strings.TrimPrefix(identity.tarball, "file:")
+	}
+	return identity, true
+}
+
+func splitNamedLocation(key, prefix string) (string, string, bool) {
+	if len(key) < 2 {
+		return "", "", false
+	}
+	at := strings.Index(key[1:], "@") + 1
+	if at <= 0 || !packageName.MatchString(key[:at]) || !strings.HasPrefix(key[at+1:], prefix) {
+		return "", "", false
+	}
+	return key[:at], strings.TrimPrefix(key[at+1:], prefix), true
+}
+
+func splitRegistryPackage(key string) (string, string, string, bool) {
+	host, rest, found := strings.Cut(key, "/")
+	if !found || strings.HasSuffix(host, ":") || strings.ContainsAny(host, "@\\?#\x00\r\n\t ") {
+		return "", "", "", false
+	}
+	parsed, err := url.Parse("https://" + host)
+	if err != nil || parsed.User != nil || strings.Trim(parsed.Hostname(), ".") == "" || parsed.Path != "" {
+		return "", "", "", false
+	}
+	name, version, ok := splitPackage(rest)
+	return name, version, host, ok
+}
+
+func isHTTP(location string) bool {
+	return (strings.HasPrefix(location, "https://") || strings.HasPrefix(location, "http://")) && safeurl.Clean(location) != ""
 }
 
 func collectLocalIdentity(doc *model.Document, lockfile, directory string, component *model.Component) bool {

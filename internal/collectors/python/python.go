@@ -40,16 +40,17 @@ type artifact struct {
 }
 
 type uvPackage struct {
-	Name         string                  `toml:"name"`
-	Version      string                  `toml:"version"`
-	Source       uvSource                `toml:"source"`
-	Marker       string                  `toml:"marker"`
-	Dependencies []dependency            `toml:"dependencies"`
-	Optional     map[string][]dependency `toml:"optional-dependencies"`
-	Groups       map[string][]dependency `toml:"dependency-groups"`
-	Dev          map[string][]dependency `toml:"dev-dependencies"`
-	Sdist        artifact                `toml:"sdist"`
-	Wheels       []artifact              `toml:"wheels"`
+	Name              string                  `toml:"name"`
+	Version           string                  `toml:"version"`
+	Source            uvSource                `toml:"source"`
+	Marker            string                  `toml:"marker"`
+	ResolutionMarkers []string                `toml:"resolution-markers"`
+	Dependencies      []dependency            `toml:"dependencies"`
+	Optional          map[string][]dependency `toml:"optional-dependencies"`
+	Groups            map[string][]dependency `toml:"dependency-groups"`
+	Dev               map[string][]dependency `toml:"dev-dependencies"`
+	Sdist             artifact                `toml:"sdist"`
+	Wheels            []artifact              `toml:"wheels"`
 }
 
 type uvLock struct {
@@ -86,6 +87,7 @@ type pyLock struct {
 
 type node struct {
 	ref, name, version, marker, source string
+	resolution                         string
 	deps                               []dependency
 	optional                           map[string][]dependency
 	groups                             map[string][]dependency
@@ -117,6 +119,15 @@ func defaultPyPIIndex(raw string) bool {
 	return clean == "https://pypi.org/simple" || clean == "https://pypi.python.org/simple"
 }
 
+// Each marker list describes alternative forks. Keep the disjunction grouped
+// when combining it with dependency and package conditions; do not select a host.
+func resolutionCondition(label string, markers []string) string {
+	if len(markers) == 0 {
+		return ""
+	}
+	return label + "=(" + strings.Join(markers, " || ") + ")"
+}
+
 func CollectUV(file, project string) (model.Document, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -132,7 +143,7 @@ func CollectUV(file, project string) (model.Document, error) {
 	doc := common.NewDocument(file, project, "uv", data)
 	globalCondition := ""
 	if len(lock.ResolutionMarkers) > 0 {
-		globalCondition = "resolution=" + strings.Join(lock.ResolutionMarkers, " || ")
+		globalCondition = resolutionCondition("resolution", lock.ResolutionMarkers)
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: "resolution markers"})
 	}
 	nodes := make([]node, 0, len(lock.Packages))
@@ -152,15 +163,19 @@ func CollectUV(file, project string) (model.Document, error) {
 		for name, deps := range pkg.Dev {
 			groups[name] = append(groups[name], deps...)
 		}
-		nodes = append(nodes, node{ref: ref, name: normalized(pkg.Name), version: pkg.Version, marker: pkg.Marker, source: uvSourceKey(pkg.Source), deps: pkg.Dependencies, optional: pkg.Optional, groups: groups, root: root})
+		resolution := resolutionCondition("resolution-package", pkg.ResolutionMarkers)
+		if resolution != "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: pkg.Name})
+		}
+		nodes = append(nodes, node{ref: ref, name: normalized(pkg.Name), version: pkg.Version, marker: pkg.Marker, resolution: resolution, source: uvSourceKey(pkg.Source), deps: pkg.Dependencies, optional: pkg.Optional, groups: groups, root: root})
 		ev := common.Evidence(file, "uv-lock", fmt.Sprintf("/package/%d", i), data)
 		if root {
-			doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "application", Name: pkg.Name, Version: pkg.Version, Evidence: []model.Evidence{ev}})
-			doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "project", Evidence: ev})
+			doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "application", Name: pkg.Name, Version: pkg.Version, Context: resolution, Evidence: []model.Evidence{ev}})
+			doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "project", Condition: strings.Join(nonempty(pkg.Marker, resolution), " && "), Evidence: ev})
 			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: ".", Status: "declared", Evidence: ev})
 			continue
 		}
-		component := model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, Evidence: []model.Evidence{ev}}
+		component := model.Component{ID: ref, Kind: "package", Name: pkg.Name, Version: pkg.Version, Context: resolution, Evidence: []model.Evidence{ev}}
 		if defaultPyPIIndex(pkg.Source.Registry) {
 			component.PURL = purl(pkg.Name, pkg.Version)
 		}
@@ -396,7 +411,7 @@ func addGraph(doc *model.Document, nodes []node, file string, data []byte, colle
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: code, Name: dep.Name})
 					continue
 				}
-				condition := strings.Join(nonempty(globalCondition, n.marker, dep.Marker, filtered[0].marker, category), " && ")
+				condition := strings.Join(nonempty(globalCondition, n.marker, n.resolution, dep.Marker, filtered[0].marker, filtered[0].resolution, category), " && ")
 				if condition != "" {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: dep.Name})
 				}
