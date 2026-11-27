@@ -59,6 +59,7 @@ func CollectManifest(file, project string) (model.Document, error) {
 		identity := ""
 		if item.Replace == nil {
 			identity = common.GoModulePURL(path, version)
+			common.RecordGoPURLLimitation(&doc, path, identity, ev)
 		}
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: path, Version: version, PURL: identity, Evidence: []model.Evidence{ev}})
 		addResolvedOrigin(&doc, ref, item, ev)

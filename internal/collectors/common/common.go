@@ -76,6 +76,20 @@ func GoMainModulePURL(path string) string {
 	return "pkg:golang/" + strings.Join(parts, "/")
 }
 
+// RecordGoPURLLimitation makes the mixed-case Go PURL restriction visible
+// without lowercasing a module identity or changing inventory/graph coverage.
+// Call only for modules eligible for a Go PURL, never for replacements whose
+// original module coordinate deliberately has no PURL.
+func RecordGoPURLLimitation(doc *model.Document, modulePath, purl string, evidence model.Evidence) {
+	if purl != "" || modulePath == strings.ToLower(modulePath) {
+		return
+	}
+	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{
+		Code: "go_module_purl_unavailable", Name: modulePath,
+		Scope: evidence.InputPath, Line: evidence.Line,
+	})
+}
+
 func DefaultNpmRegistry(raw string) bool {
 	if raw == "registry.npmjs.org" || raw == "registry.yarnpkg.com" {
 		return true

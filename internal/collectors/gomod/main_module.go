@@ -20,9 +20,11 @@ func addMainModule(doc *model.Document, manifest *modfile.File, file string, dat
 	ref := "go-main:" + common.ID(path)
 	evidence := common.Evidence(file, "go-manifest", "/module", data)
 	evidence.Method = "manifest-analysis"
+	identity := common.GoMainModulePURL(path)
+	common.RecordGoPURLLimitation(doc, path, identity, evidence)
 	doc.Components = append(doc.Components, model.Component{
 		ID: ref, Kind: "application", Name: path,
-		PURL: common.GoMainModulePURL(path), Evidence: []model.Evidence{evidence},
+		PURL: identity, Evidence: []model.Evidence{evidence},
 	})
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: ref, Kind: "project", Evidence: evidence})
 	return ref, nil

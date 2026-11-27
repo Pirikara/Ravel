@@ -1,0 +1,14 @@
+# example.com/Acme/Lib v1.0.0
+## explicit; go 1.25
+example.com/Acme/Lib
+# example.net/library v1.0.0
+## explicit; go 1.25
+example.net/library
+# example.com/LOCAL v1.0.0 => ./local
+## explicit; go 1.25
+example.com/LOCAL
+# example.com/Fork v1.0.0 => fork.example/Actual v1.1.0
+## explicit; go 1.25
+example.com/Fork
+# example.com/LOCAL => ./local
+# example.com/Fork => fork.example/Actual v1.1.0
