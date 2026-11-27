@@ -155,29 +155,16 @@ func Collect(path, project string) (model.Document, error) {
 	}
 	doc.Coverage.Platforms = platforms
 	for _, item := range entries {
-		matchedPlatform := ""
-		for _, platform := range platforms {
-			variants := []string{platform}
-			// Bundler can list the generic Linux platform while locking
-			// artifacts whose gem platform also identifies their libc.
-			if strings.HasSuffix(platform, "-linux") {
-				variants = append(variants, platform+"-gnu", platform+"-musl")
-			}
-			// A libc-specific host can also select a generic Linux artifact.
-			if strings.HasSuffix(platform, "-linux-gnu") || strings.HasSuffix(platform, "-linux-musl") {
-				variants = append(variants, strings.TrimSuffix(strings.TrimSuffix(platform, "-gnu"), "-musl"))
-			}
-			for _, variant := range variants {
-				if len(variant) > len(matchedPlatform) && strings.HasSuffix(item.component.Version, "-"+variant) {
-					matchedPlatform = variant
-				}
-			}
+		// The spec record encodes version-platform independently of the host
+		// PLATFORMS section. Bundler's lock grammar uses the first hyphen
+		// as that separator; gem prereleases use dots in the version field.
+		version, platform, present := strings.Cut(item.component.Version, "-")
+		if present && version != "" && platform != "" {
+			item.component.Version = version
+			item.component.Platform = platform
+			item.component.PURL = "pkg:gem/" + url.PathEscape(item.component.Name) + "@" + common.PURLVersion(version) + "?platform=" + url.QueryEscape(platform)
 		}
-		if matchedPlatform != "" {
-			item.component.Version = strings.TrimSuffix(item.component.Version, "-"+matchedPlatform)
-			item.component.Platform = matchedPlatform
-			item.component.PURL = "pkg:gem/" + url.PathEscape(item.component.Name) + "@" + common.PURLVersion(item.component.Version) + "?platform=" + url.QueryEscape(matchedPlatform)
-		}
+
 	}
 	byName := map[string][]*entry{}
 	for _, item := range entries {

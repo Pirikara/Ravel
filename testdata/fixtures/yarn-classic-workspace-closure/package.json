@@ -1,0 +1,1 @@
+{"name":"collection","private":true,"workspaces":{"packages":["packages/*","tools/**/app"]},"dependencies":{"local-core":"^2.0.0"},"devDependencies":{"root-tool":"^1.0.0"}}

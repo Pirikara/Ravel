@@ -1,0 +1,22 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    native-arm (1.2.3-arm64-darwin)
+    native-universal (2.3.4-universal-darwin)
+    native-bsd (3.4.5-x86_64-freebsd-14)
+    native-linux (4.5.6-x86_64-linux-musl)
+    pure-prerelease (5.6.7.pre.2)
+
+PLATFORMS
+  arm64-darwin-24
+  x86_64-linux-gnu
+
+DEPENDENCIES
+  native-arm
+  native-universal
+  native-bsd
+  native-linux
+  pure-prerelease
+
+BUNDLED WITH
+   4.0.0

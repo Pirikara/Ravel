@@ -1,0 +1,14 @@
+{
+  "name": "client",
+  "version": "1.0.0",
+  "repository": "example/client",
+  "license": "MIT",
+  "dependencies": {
+    "local-core": "^1.0.0",
+    "client-lib": "^3.0.0"
+  },
+  "optionalDependencies": {
+    "optional-lib": "^4.0.0"
+  },
+  "private": "true"
+}
