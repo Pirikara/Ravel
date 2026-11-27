@@ -2,6 +2,7 @@ package export
 
 import (
 	"encoding/json"
+	"slices"
 	"sort"
 
 	"github.com/Pirikara/Ravel/internal/model"
@@ -175,6 +176,9 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 			continue
 		}
 		sort.Strings(children)
+		// Native edges retain declaration roles and evidence. CycloneDX's
+		// dependsOn is a set of targets, so multiple roles share one entry.
+		children = slices.Compact(children)
 		if children == nil {
 			children = []string{}
 		}
