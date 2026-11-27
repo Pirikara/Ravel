@@ -1,0 +1,2 @@
+# Whitespace-only dependency records are intentional regression data.
+Gemfile.lock whitespace=-blank-at-eol
