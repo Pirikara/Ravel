@@ -1,0 +1,20 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      parse-tokens:
+        specifier: 1.2.3
+        version: 1.2.3
+      '@demo/theme-tokens':
+        specifier: 1.2.3
+        version: 1.2.3
+packages:
+  parse-tokens@1.2.3:
+    resolution:
+      tarball: https://registry.npmjs.org/parse-tokens/-/parse-tokens-1.2.3.tgz
+  '@demo/theme-tokens@1.2.3':
+    resolution:
+      tarball: https://registry.example.test/api/npm/team/@demo/theme-tokens/-/@demo/theme-tokens-1.2.3.tgz
+snapshots:
+  parse-tokens@1.2.3: {}
+  '@demo/theme-tokens@1.2.3': {}

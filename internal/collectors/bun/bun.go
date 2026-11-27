@@ -134,7 +134,7 @@ func Collect(file, project string) (model.Document, error) {
 		}
 		doc.Components = append(doc.Components, component)
 		entries[key] = item{ref: ref, key: key, name: name, version: version, selector: selector, platform: component.Platform, metaPointer: metaPointer, meta: meta}
-		addOrigin(&doc, ref, selector, source, ev)
+		addOrigin(&doc, ref, name, version, selector, source, ev)
 	}
 	seen := map[string]bool{}
 	addEdges := func(from, location, pointer string, deps map[string]string, kind string) {
@@ -319,16 +319,11 @@ func splitIdentifier(s string) (string, string, bool) {
 	return s[:separator], s[separator+1:], true
 }
 
-func addOrigin(doc *model.Document, ref, version, source string, ev model.Evidence) {
+func addOrigin(doc *model.Document, ref, name, packageVersion, version, source string, ev model.Evidence) {
 	if source == "" && (strings.HasPrefix(version, "git+") || strings.HasPrefix(version, "git://") || strings.HasPrefix(version, "ssh://") || strings.HasPrefix(version, "https://") || strings.HasPrefix(version, "http://")) {
 		source = version
 	}
 	if source != "" {
-		clean := safeurl.Clean(strings.TrimPrefix(source, "git+"))
-		if clean == "" {
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: ref})
-			return
-		}
 		kind := "download_url"
 		revision := ""
 		if strings.HasPrefix(source, "git+") || strings.HasPrefix(source, "git://") || strings.HasPrefix(source, "ssh://") {
@@ -336,6 +331,14 @@ func addOrigin(doc *model.Document, ref, version, source string, ev model.Eviden
 			if parsed, err := url.Parse(strings.TrimPrefix(source, "git+")); err == nil && bunGitCommit.MatchString(parsed.Fragment) {
 				revision = strings.ToLower(parsed.Fragment)
 			}
+		}
+		clean := safeurl.Clean(strings.TrimPrefix(source, "git+"))
+		if clean == "" && kind == "download_url" {
+			clean = safeurl.CleanNpmArtifact(source, name, packageVersion)
+		}
+		if clean == "" {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: ref})
+			return
 		}
 		doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: kind, SafeURL: clean, Revision: revision, Status: "declared", Evidence: ev})
 		return

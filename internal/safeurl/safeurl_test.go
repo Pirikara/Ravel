@@ -64,6 +64,25 @@ func TestCleanCondaArtifact(t *testing.T) {
 	}
 }
 
+func TestCleanNpmArtifact(t *testing.T) {
+	for _, tc := range []struct{ raw, name, version, want string }{
+		{"https://registry.yarnpkg.com/parse-tokens/-/parse-tokens-1.2.3.tgz#checksum", "parse-tokens", "1.2.3", "https://registry.yarnpkg.com/parse-tokens/-/parse-tokens-1.2.3.tgz"},
+		{"https://registry.example.test/api/npm/@demo/theme-tokens/-/theme-tokens-1.2.3.tgz?key=hidden", "@demo/theme-tokens", "1.2.3", "https://registry.example.test/api/npm/@demo/theme-tokens/-/theme-tokens-1.2.3.tgz"},
+		{"https://registry.example.test/api/npm/@demo/theme-tokens/-/@demo/theme-tokens-1.2.3.tgz", "@demo/theme-tokens", "1.2.3", "https://registry.example.test/api/npm/@demo/theme-tokens/-/@demo/theme-tokens-1.2.3.tgz"},
+		{"https://registry.example.test/token/private/parse-tokens/-/parse-tokens-1.2.3.tgz", "parse-tokens", "1.2.3", ""},
+		{"https://registry.example.test/parse-tokens/-/parse-tokens-9.9.9.tgz", "parse-tokens", "1.2.3", ""},
+		{"https://registry.example.test/parse-tokens/-/parse-tokens-1.2.3.tgz", "another", "1.2.3", ""},
+		{"https://user:secret@registry.example.test/parse-tokens/-/parse-tokens-1.2.3.tgz", "parse-tokens", "1.2.3", ""},
+		{"http://registry.example.test/parse-tokens/-/parse-tokens-1.2.3.tgz", "parse-tokens", "1.2.3", ""},
+		{"https://registry.example.test/../parse-tokens/-/parse-tokens-1.2.3.tgz", "parse-tokens", "1.2.3", ""},
+		{"https://registry.example.test/parse-tokens/-/parse-tokens-1.2.3.tgz", "parse-tokens", "../1.2.3", ""},
+	} {
+		if got := safeurl.CleanNpmArtifact(tc.raw, tc.name, tc.version); got != tc.want {
+			t.Errorf("CleanNpmArtifact(%q, %q, %q) = %q, want %q", tc.raw, tc.name, tc.version, got, tc.want)
+		}
+	}
+}
+
 func TestGitHubActionsRepositoryURL(t *testing.T) {
 	for _, tc := range []struct {
 		url  string

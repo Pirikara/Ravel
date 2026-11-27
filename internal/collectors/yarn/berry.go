@@ -165,14 +165,17 @@ func emitBerryComponent(doc *model.Document, file string, data []byte, node berr
 		if source == "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: node.name})
 		} else {
+			kind := "download_url"
+			if strings.Contains(node.resolution, "@git+") {
+				kind = "vcs"
+			}
 			clean := safeurl.Clean(source)
+			if clean == "" && kind == "download_url" {
+				clean = safeurl.CleanNpmArtifact(source, node.name, node.entry.Version)
+			}
 			if clean == "" {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: node.name})
 			} else {
-				kind := "download_url"
-				if strings.Contains(node.resolution, "@git+") {
-					kind = "vcs"
-				}
 				doc.Origins = append(doc.Origins, model.Origin{Occurrence: node.ref, Kind: kind, SafeURL: clean, Status: "declared", Evidence: ev})
 			}
 		}

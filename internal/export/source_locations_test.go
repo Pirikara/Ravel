@@ -54,12 +54,12 @@ func TestStandardSourcesRetainAmbiguityWithoutCredentials(t *testing.T) {
 
 func TestVCSDownloadLocationRequiresRecordedRevision(t *testing.T) {
 	origins := []model.Origin{{Kind: "vcs", VCSType: "hg", SafeURL: "https://hg.example.test/project", Status: "declared"}}
-	if got := packageDownloadLocation(origins); got != "NOASSERTION" {
+	if got := packageDownloadLocation(origins, model.Component{}); got != "NOASSERTION" {
 		t.Fatal(got)
 	}
 	origins[0].Revision = "abcdef1234567"
 	origins[0].Target = "subdirectory=packages/demo"
-	if got := packageDownloadLocation(origins); got != "hg+https://hg.example.test/project@abcdef1234567#packages/demo" {
+	if got := packageDownloadLocation(origins, model.Component{}); got != "hg+https://hg.example.test/project@abcdef1234567#packages/demo" {
 		t.Fatal(got)
 	}
 }

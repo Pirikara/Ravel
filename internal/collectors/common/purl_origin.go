@@ -224,7 +224,7 @@ func qualifyOriginPURLs(doc *model.Document) {
 		local := false
 		unrepresentedVCS := false
 		for _, o := range origins {
-			clean := safeurl.Clean(o.SafeURL)
+			clean := CleanOriginURL(o, *c)
 			switch o.Kind {
 			case "declared_registry", "registry_identity":
 				if clean != "" {
@@ -313,11 +313,11 @@ func qualifyOriginPURLs(doc *model.Document) {
 
 // UniqueSourceLocations returns stable, sanitized direct download locations.
 // Registry bases are not exact package download URLs.
-func UniqueSourceLocations(origins []model.Origin) []string {
+func UniqueSourceLocations(origins []model.Origin, component model.Component) []string {
 	set := map[string]bool{}
 	for _, o := range origins {
 		if o.Kind == "download_url" {
-			if value := safeurl.Clean(o.SafeURL); value != "" {
+			if value := CleanOriginURL(o, component); value != "" {
 				set[value] = true
 			}
 		}
@@ -328,4 +328,26 @@ func UniqueSourceLocations(origins []model.Origin) []string {
 	}
 	sort.Strings(values)
 	return values
+}
+
+// CleanOriginURL keeps package-shaped npm download paths through both source
+// qualification and standard exports. Other origins retain the generic rules.
+func CleanOriginURL(o model.Origin, component model.Component) string {
+	if o.Kind == "download_url" {
+		npm := strings.HasPrefix(component.PURL, "pkg:npm/")
+		for _, e := range component.Evidence {
+			switch e.Collector {
+			case "npm-lock", "npm-lock-v1", "node-package-json", "npm-archive", "pnpm-lock", "yarn-classic", "yarn-berry", "bun-lock":
+				npm = true
+			}
+		}
+		if npm {
+			name := component.Name
+			if actual, ok := strings.CutPrefix(component.Context, "alias-of:"); ok {
+				name = actual
+			}
+			return safeurl.CleanNpmArtifact(o.SafeURL, name, component.Version)
+		}
+	}
+	return safeurl.Clean(o.SafeURL)
 }

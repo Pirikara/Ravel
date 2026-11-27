@@ -360,7 +360,7 @@ func addPackage(doc *model.Document, file string, data []byte, documentIndex int
 		return occurrence{ref: ref, key: key, condition: condition, snapshot: snap}
 	}
 	if identity.tarball != "" {
-		clean := safeurl.Clean(identity.tarball)
+		clean := safeurl.CleanNpmArtifact(identity.tarball, name, version)
 		if clean == "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: name})
 		} else {

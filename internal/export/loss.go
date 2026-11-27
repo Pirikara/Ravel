@@ -89,8 +89,12 @@ func Losses(doc model.Document, format string) []Loss {
 		add("unsupported_hashes_omitted", hashes)
 	} else {
 		originStatus := 0
+		components := map[string]model.Component{}
+		for _, c := range doc.Components {
+			components[c.ID] = c
+		}
 		for _, origin := range doc.Origins {
-			_, hasReference := originReference(origin)
+			_, hasReference := originReference(origin, components[origin.Occurrence])
 			if origin.Status != "" && !isAnnotatedImageOrigin(origin) && !hasReference {
 				originStatus++
 			}

@@ -7,12 +7,11 @@ import (
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
-	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
-func sourceDescription(o model.Origin) string {
+func sourceDescription(o model.Origin, component model.Component) string {
 	parts := []string{"Source kind: " + o.Kind}
-	if clean := safeurl.Clean(o.SafeURL); clean != "" {
+	if clean := common.CleanOriginURL(o, component); clean != "" {
 		parts = append(parts, "location: "+clean)
 	}
 	if o.VCSType != "" {
@@ -34,10 +33,10 @@ func sourceDescription(o model.Origin) string {
 	return strings.Join(parts, "; ")
 }
 
-func packageSourceInfo(origins []model.Origin) string {
+func packageSourceInfo(origins []model.Origin, component model.Component) string {
 	set := map[string]bool{}
 	for _, o := range origins {
-		set[sourceDescription(o)] = true
+		set[sourceDescription(o, component)] = true
 	}
 	rows := make([]string, 0, len(set))
 	for row := range set {
@@ -47,8 +46,8 @@ func packageSourceInfo(origins []model.Origin) string {
 	return strings.Join(rows, "\n")
 }
 
-func packageDownloadLocation(origins []model.Origin) string {
-	downloads := common.UniqueSourceLocations(origins)
+func packageDownloadLocation(origins []model.Origin, component model.Component) string {
+	downloads := common.UniqueSourceLocations(origins, component)
 	if len(downloads) == 1 {
 		return downloads[0]
 	}
@@ -72,8 +71,8 @@ func packageDownloadLocation(origins []model.Origin) string {
 	return "NOASSERTION"
 }
 
-func originReference(o model.Origin) (reference, bool) {
-	clean := safeurl.Clean(o.SafeURL)
+func originReference(o model.Origin, component model.Component) (reference, bool) {
+	clean := common.CleanOriginURL(o, component)
 	if clean == "" {
 		return reference{}, false
 	}
@@ -93,5 +92,5 @@ func originReference(o model.Origin) (reference, bool) {
 	default:
 		typ = "other"
 	}
-	return reference{Type: typ, URL: clean, Comment: sourceDescription(o)}, true
+	return reference{Type: typ, URL: clean, Comment: sourceDescription(o, component)}, true
 }

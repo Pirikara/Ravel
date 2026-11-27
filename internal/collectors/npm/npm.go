@@ -344,8 +344,8 @@ func addOrigin(doc *model.Document, ref, name, version, raw string, ev model.Evi
 		}
 	}
 	clean := safeurl.Clean(raw)
-	if clean == "" {
-		clean = safeurl.CleanNpmTarball(raw, name, version)
+	if clean == "" && kind == "download_url" {
+		clean = safeurl.CleanNpmArtifact(raw, name, version)
 	}
 	if clean == "" {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: ref})

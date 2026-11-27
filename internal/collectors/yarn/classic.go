@@ -217,14 +217,17 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 		doc.Components = append(doc.Components, component)
 		if entry.resolved != "" {
 			raw := strings.TrimPrefix(entry.resolved, "git+")
+			kind := "download_url"
+			if strings.HasPrefix(entry.resolved, "git+") || strings.HasPrefix(entry.resolved, "git://") {
+				kind = "vcs"
+			}
 			clean := safeurl.Clean(raw)
+			if clean == "" && kind == "download_url" {
+				clean = safeurl.CleanNpmArtifact(raw, actualName, entry.version)
+			}
 			if clean == "" {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: name})
 			} else {
-				kind := "download_url"
-				if strings.HasPrefix(entry.resolved, "git+") || strings.HasPrefix(entry.resolved, "git://") {
-					kind = "vcs"
-				}
 				doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: kind, SafeURL: clean, Status: "declared", Evidence: ev})
 			}
 		} else if len(locals) == 0 {
