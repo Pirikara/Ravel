@@ -115,7 +115,7 @@ func CollectManifest(filename, project string) (model.Document, error) {
 			if url, ok := fields["repo-url"].(string); ok && url != "" {
 				if clean := safeurl.Clean(url); clean != "" {
 					rev, _ := fields["repo-rev"].(string)
-					doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "vcs", SafeURL: clean, Revision: rev, Status: "declared", Evidence: evidence})
+					doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "vcs", VCSType: "git", SafeURL: clean, Revision: rev, Status: "declared", Evidence: evidence})
 				} else {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: name})
 				}

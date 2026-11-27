@@ -1,0 +1,14 @@
+version: 2.0
+shards:
+  git_package:
+    git: https://code.example.test/team/library.git
+    version: 1.2.3
+    commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  hg_package:
+    hg: https://code.example.test/team/mercurial
+    version: 2.0.0
+    commit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  fossil_package:
+    fossil: https://code.example.test/team/fossil
+    version: 3.0.0
+    commit: cccccccccccccccccccccccccccccccccccccccc

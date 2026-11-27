@@ -40,7 +40,7 @@ func CollectFreeze(filename, project string) (model.Document, error) {
 	doc := common.NewDocument(filename, project, "cabal", data)
 	baseEvidence := common.Evidence(filename, "cabal-freeze", "", data)
 	var constraints strings.Builder
-	seenField, inConstraints := false, false
+	seenField, inConstraints, seenIndexState := false, false, false
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		line = strings.TrimSuffix(line, "\r")
@@ -50,6 +50,9 @@ func CollectFreeze(filename, project string) (model.Document, error) {
 		}
 		if fieldName.MatchString(line) {
 			field, remainder, _ := strings.Cut(line, ":")
+			if strings.EqualFold(field, "index-state") {
+				seenIndexState = true
+			}
 			inConstraints = strings.EqualFold(field, "constraints")
 			if inConstraints {
 				seenField = true
@@ -66,8 +69,11 @@ func CollectFreeze(filename, project string) (model.Document, error) {
 			constraints.WriteString(trimmed)
 		}
 	}
+	if !seenField && !seenIndexState {
+		return model.Document{}, errors.New("Cabal freeze file has neither constraints nor index-state")
+	}
 	if !seenField {
-		return model.Document{}, errors.New("Cabal freeze file has no constraints field")
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "cabal_freeze_version_pins_unavailable"})
 	}
 	seen := map[string]string{}
 	for i, raw := range strings.Split(constraints.String(), ",") {

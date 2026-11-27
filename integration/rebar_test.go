@@ -28,13 +28,13 @@ func scanRebar(t *testing.T, input string, extra ...string) model.Document {
 func TestRebarLockCLI(t *testing.T) {
 	base := filepath.Join("..", "testdata", "fixtures")
 	basic := scanRebar(t, filepath.Join(base, "rebar-basic"))
-	if basic.Coverage.Manager != "rebar" || basic.Coverage.Packages != 2 || basic.Coverage.Edges != 0 || basic.Coverage.GraphState != "partial" || basic.Coverage.OriginState != "partial" || !dotnetIssue(basic, "rebar_package_hash_unrepresented") {
+	if basic.Coverage.Manager != "rebar" || basic.Coverage.Packages != 2 || basic.Coverage.Edges != 0 || basic.Coverage.GraphState != "partial" || basic.Coverage.OriginState != "partial" || dotnetIssue(basic, "rebar_package_hash_unrepresented") {
 		t.Fatalf("rebar basic coverage: %#v", basic.Coverage)
 	}
 	for _, pkg := range basic.Components {
 		switch pkg.Name {
 		case "certifi":
-			if pkg.Version != "2.9.0" || pkg.PURL != "pkg:hex/certifi@2.9.0" || pkg.Context != "lock-depth=0" || len(pkg.Hashes) != 0 {
+			if pkg.Version != "2.9.0" || pkg.PURL != "pkg:hex/certifi@2.9.0" || pkg.Context != "lock-depth=0" || len(pkg.Hashes) != 1 || pkg.Hashes[0].Alg != "SHA-256" || pkg.Hashes[0].Content != "266da46bdb06d6c6d35fde799bcb28d36d985d424ad7c08b5bb48f5b5cdd4641" {
 				t.Fatalf("rebar Hex package: %#v", pkg)
 			}
 		case "bson":

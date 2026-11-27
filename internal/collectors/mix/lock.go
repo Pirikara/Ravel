@@ -69,6 +69,16 @@ func Collect(filename, project string) (model.Document, error) {
 				continue
 			}
 			component.Version = value.elems[2].value
+			// Hex's outer checksum is SHA-256 of the distribution tarball.
+			// The older inner checksum is a composite checksum, not a file hash.
+			if len(value.elems) >= 8 && !(value.elems[7].kind == "atom" && value.elems[7].value == "nil") {
+				if value.elems[7].kind == "string" {
+					component.Hashes = common.HexSHA256(value.elems[7].value)
+				}
+				if len(component.Hashes) == 0 {
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "mix_archive_hash_invalid", Name: key.value, Line: key.line})
+				}
+			}
 			if value.elems[1].value != key.value {
 				component.Context = "hex-package=" + value.elems[1].value
 			}
@@ -87,7 +97,7 @@ func Collect(filename, project string) (model.Document, error) {
 			}
 			component.Version = value.elems[2].value
 			if clean := safeurl.Clean(value.elems[1].value); clean != "" {
-				doc.Origins = append(doc.Origins, model.Origin{Occurrence: component.ID, Kind: "vcs", SafeURL: clean, Revision: component.Version, Status: "declared", Evidence: evidence})
+				doc.Origins = append(doc.Origins, model.Origin{Occurrence: component.ID, Kind: "vcs", VCSType: "git", SafeURL: clean, Revision: component.Version, Status: "declared", Evidence: evidence})
 			} else {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: key.value})
 			}

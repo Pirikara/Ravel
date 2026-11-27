@@ -1,0 +1,7 @@
+%{
+  "modern_alias": {:hex, :real_package, "1.2.3", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", [:mix], [], "hexpm", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"},
+  "legacy": {:hex, :legacy, "2.0.0", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", [:mix], [], "hexpm"},
+  "without_outer": {:hex, :without_outer, "3.0.0", "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", [:mix], [], "hexpm", nil},
+  "invalid_outer": {:hex, :invalid_outer, "4.0.0", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", [:mix], [], "hexpm", "invalid"},
+  "git_source": {:git, "https://code.example.test/team/library.git", "ffffffffffffffffffffffffffffffffffffffff", []}
+}

@@ -211,7 +211,13 @@ func addOrigin(doc *model.Document, id, name string, entry lockShard, evidence m
 			}
 		}
 	}
-	doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "vcs", SafeURL: clean, Revision: revision, Status: "declared", Evidence: evidence})
+	vcs := "git"
+	if entry.HG != "" {
+		vcs = "hg"
+	} else if entry.Fossil != "" {
+		vcs = "fossil"
+	}
+	doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "vcs", VCSType: vcs, SafeURL: clean, Revision: revision, Status: "declared", Evidence: evidence})
 }
 
 func readBounded(filename string, limit int64) ([]byte, error) {

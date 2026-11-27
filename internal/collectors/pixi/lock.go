@@ -342,7 +342,7 @@ func addOrigin(doc *model.Document, id string, record resolvedRecord, evidence m
 		parsed, err := url.Parse(strings.TrimPrefix(locator, "git+"))
 		if err == nil && revisionPattern.MatchString(parsed.Fragment) {
 			if clean := safeurl.Clean(locator); clean != "" {
-				doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "vcs", SafeURL: clean, Revision: strings.ToLower(parsed.Fragment), Status: "declared", Evidence: evidence})
+				doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "vcs", VCSType: "git", SafeURL: clean, Revision: strings.ToLower(parsed.Fragment), Status: "declared", Evidence: evidence})
 				return
 			}
 		}

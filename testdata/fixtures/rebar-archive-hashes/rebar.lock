@@ -1,0 +1,16 @@
+{"1.2.0",[
+ {<<"app_alias">>,{pkg,<<"real_package">>,<<"1.2.3">>},0},
+ {<<"inner_only">>,{pkg,<<"inner_only">>,<<"2.0.0">>},1},
+ {<<"conflicting">>,{pkg,<<"conflicting">>,<<"3.0.0">>},1},
+ {<<"invalid">>,{pkg,<<"invalid">>,<<"4.0.0">>},1},
+ {<<"git_source">>,{git,"https://code.example.test/team/library.git",{ref,"ffffffffffffffffffffffffffffffffffffffff"}},0}
+]}.
+[{pkg_hash,[{<<"app_alias">>,<<"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA">>},{<<"inner_only">>,<<"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC">>}]},
+ {pkg_hash_ext,[
+ {<<"app_alias">>,<<"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB">>},
+ {<<"conflicting">>,<<"DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD">>},
+ {<<"conflicting">>,<<"EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE">>},
+ {<<"conflicting">>,<<"DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD">>},
+ {<<"invalid">>,<<"not-an-archive-hash">>},
+ {<<"git_source">>,<<"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA">>}
+ ]}].

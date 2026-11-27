@@ -222,7 +222,7 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.GraphState = "partial"
 		case "stack_distribution_bytes_unverified":
 			doc.Coverage.OriginState = "partial"
-		case "cabal_freeze_graph_unavailable", "cabal_freeze_unversioned_constraint":
+		case "cabal_freeze_graph_unavailable", "cabal_freeze_unversioned_constraint", "cabal_freeze_version_pins_unavailable":
 			doc.Coverage.GraphState = "partial"
 		case "cabal_freeze_origin_unverified":
 			doc.Coverage.OriginState = "partial"
@@ -232,7 +232,7 @@ func Finalize(doc *model.Document) {
 			doc.Coverage.OriginState = "partial"
 		case "mix_direct_dependencies_unavailable", "mix_dependency_constraints_unverified", "mix_dependency_unresolved", "mix_dependency_invalid", "mix_lock_entry_invalid", "mix_source_unhandled":
 			doc.Coverage.GraphState = "partial"
-		case "mix_distribution_origin_unverified", "mix_registry_unverified":
+		case "mix_distribution_origin_unverified", "mix_registry_unverified", "mix_archive_hash_invalid":
 			doc.Coverage.OriginState = "partial"
 		case "conan_lock_selection_unverified", "conan_dependency_graph_unavailable", "conan_invalid_reference", "conan_unresolved_node":
 			doc.Coverage.GraphState = "partial"

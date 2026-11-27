@@ -108,7 +108,11 @@ func CollectLock(filename, project string) (model.Document, error) {
 				component.Context += ";subdir=" + completed.Subdir
 			}
 			if clean := safeurl.Clean(completed.Git); clean != "" {
-				doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "vcs", SafeURL: clean, Revision: completed.Commit, Status: "declared", Evidence: evidence})
+				origin := model.Origin{Occurrence: id, Kind: "vcs", VCSType: "git", SafeURL: clean, Revision: completed.Commit, Status: "declared", Evidence: evidence}
+				if completed.Subdir != "" {
+					origin.Target = "subdirectory=" + completed.Subdir
+				}
+				doc.Origins = append(doc.Origins, origin)
 			} else {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: completed.Name})
 			}

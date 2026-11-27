@@ -22,10 +22,10 @@ An HTTPS or `ssh://` Git URL with `--git-ref REF --network allow` is fetched at 
 | Rust | Cargo.lock v3/v4 | An optional `cargo metadata` resolver supplies a selected host graph. |
 | PHP | `composer.lock` | Source and distribution URLs remain separate. |
 | C/C++ | Conan 1 and 2 `conan.lock` | Conan 1 graph nodes and edges; Conan 2 locked reference candidates without an inferred selected graph. |
-| Elixir | `mix.lock` literal map | Hex, Git, and path identities; Hex dependency aliases remain conditional until version constraints and direct roots are verified. |
-| Erlang | Rebar3 `rebar.lock` v1.1/v1.2 | Hex package pins and immutable Git refs from literal Erlang terms. |
+| Elixir | `mix.lock` literal map | Hex, Git, and path identities; valid Hex outer archive SHA-256 checksums are retained. Legacy inner checksums are not archive hashes. Hex dependency aliases remain conditional until version constraints and direct roots are verified. |
+| Erlang | Rebar3 `rebar.lock` v1.1/v1.2 and the empty `[].` form | Hex package pins, archive SHA-256 from `pkg_hash_ext`, and immutable Git refs from literal Erlang terms. Legacy `pkg_hash` values are not archive hashes. Conflicting or invalid archive checksums remain unrepresented in coverage. |
 | Crystal | Shards `shard.lock` v1/v2 with optional `shard.yml` | Locked Git, Mercurial, Fossil, and local references; direct project requirements from the paired manifest. |
-| Haskell | Cabal `cabal.project.freeze` / `*.project.freeze`; Stack `stack.yaml.lock` / `*.yaml.lock` | Cabal version pins and Stack completed Hackage/Git package locations. Stack snapshot contents and selected dependencies are not inferred. |
+| Haskell | Cabal `cabal.project.freeze` / `*.project.freeze`; Stack `stack.yaml.lock` / `*.yaml.lock` | Cabal version pins and Stack completed Hackage/Git package locations, including recorded Git subdirectories. An index-state-only Cabal freeze is accepted with no package pins and explicit partial coverage. Stack snapshot contents and selected dependencies are not inferred; Cabal-file and Pantry-tree hashes are not package archive hashes. |
 | Julia | `Manifest.toml`, `JuliaManifest.toml`, versioned `Manifest-vX.Y.toml` variants, paired project file | Manifest v1/v2 package UUIDs and versions, explicit dependency links, project roots, and conditional weak dependencies. |
 | R | `renv.lock` | Snapshot package identities, declared repository/VCS/local sources, and conditional `Requirements` links when present. |
 | Conda environments | Unified `conda-lock.yml` / `.conda-lock.yml` v1 | Multi-platform Conda and Pip pins, distribution URLs and hashes, with dependency constraints kept conditional. |
