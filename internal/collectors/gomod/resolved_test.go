@@ -58,3 +58,49 @@ func TestGoResolverDoesNotEchoJSONModuleError(t *testing.T) {
 		t.Fatalf("resolver JSON error leaked credentials: %v", err)
 	}
 }
+
+func TestGoResolverReportsUnavailableMixedCasePURLs(t *testing.T) {
+	project := t.TempDir()
+	mod := filepath.Join(project, "go.mod")
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "fixtures", "go-purl-case-coverage", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mod, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	script := `#!/bin/sh
+cat <<'RAVEL_MODULES'
+{"Path":"example.com/SourceApp","Main":true}
+{"Path":"example.com/Acme/Lib","Version":"v1.0.0"}
+{"Path":"example.net/library","Version":"v1.0.0"}
+{"Path":"example.com/LOCAL","Version":"v1.0.0","Replace":{"Path":"./local"}}
+{"Path":"example.com/Fork","Version":"v1.0.0","Replace":{"Path":"fork.example/Actual","Version":"v1.1.0"}}
+RAVEL_MODULES
+`
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	doc, err := CollectResolved(mod, "case-app", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Components) != 5 || len(doc.Edges) != 5 {
+		t.Fatal(doc.Components, doc.Edges)
+	}
+	wanted := map[string]bool{"example.com/SourceApp": true, "example.com/Acme/Lib": true}
+	for _, issue := range doc.Coverage.Issues {
+		if issue.Code != "go_module_purl_unavailable" {
+			continue
+		}
+		if !wanted[issue.Name] || issue.Scope == "" {
+			t.Fatal("unexpected or unlocated PURL issue", issue)
+		}
+		delete(wanted, issue.Name)
+	}
+	if len(wanted) != 0 {
+		t.Fatal("unreported PURL limitation", wanted)
+	}
+}
