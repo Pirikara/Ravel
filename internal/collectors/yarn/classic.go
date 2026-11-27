@@ -412,17 +412,14 @@ func classicEntryName(entry classicEntry) (name, alias string, valid bool) {
 	}
 	actual := ""
 	for _, descriptor := range entry.descriptors {
-		if !classicName.MatchString(descriptorName(descriptor)) {
+		aliasName := descriptorName(descriptor)
+		if !classicName.MatchString(aliasName) {
 			return "", "", false
 		}
-		at := strings.Index(descriptor, "@npm:")
-		if at < 0 {
+		rawTarget, isAlias := strings.CutPrefix(descriptor, aliasName+"@npm:")
+		if !isAlias {
 			continue
 		}
-		if at == 0 || !classicName.MatchString(descriptor[:at]) {
-			return "", "", false
-		}
-		rawTarget := descriptor[at+len("@npm:"):]
 		target := descriptorName(rawTarget)
 		if target == "" && classicName.MatchString(rawTarget) {
 			// A bare npm alias leaves version selection to the lock record.

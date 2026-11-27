@@ -42,3 +42,11 @@ func TestClassicResolvedArtifactOverridesLocalSelectors(t *testing.T) {
 		t.Fatal(doc.Origins)
 	}
 }
+
+func TestClassicLocatorPathIsNotAnAliasProtocol(t *testing.T) {
+	entry := classicEntry{descriptors: []string{"thing@https://example.test/@npm:/archive.tgz"}, version: "1.0.0"}
+	name, alias, valid := classicEntryName(entry)
+	if !valid || name != "thing" || alias != "" {
+		t.Fatal(name, alias, valid)
+	}
+}
