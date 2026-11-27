@@ -191,12 +191,27 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 		ev := common.Evidence(file, "yarn-classic", fmt.Sprintf("/line/%d", entry.line), data)
 		ev.Line = entry.line
 		component := model.Component{ID: ref, Kind: "package", Name: name, Version: entry.version, Hashes: common.Integrity(entry.integrity), Evidence: []model.Evidence{ev}}
+		locals := classicLocalLocators(entry)
+		if entry.resolved != "" {
+			// A resolved artifact location takes precedence over selectors,
+			// which may have been overridden by Yarn resolutions.
+			locals = nil
+		}
+		for _, locator := range locals {
+			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: locator.path, Status: "declared", Evidence: ev})
+		}
+		if len(locals) == 1 && locals[0].kind == "link" && entry.resolved == "" {
+			component.Kind = "application"
+		}
+		if len(locals) > 1 {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "ambiguous_source", Name: name})
+		}
 		if name != actualName {
 			component.Context = "alias-of:" + actualName
 		} else if alias != "" && !classicHasMultipleNames(entry) {
 			component.Context = "alias:" + alias
 		}
-		if name == actualName && common.DefaultNpmRegistry(entry.resolved) {
+		if len(locals) == 0 && name == actualName && common.DefaultNpmRegistry(entry.resolved) {
 			component.PURL = common.NpmPURL(name, entry.version)
 		}
 		doc.Components = append(doc.Components, component)
@@ -212,7 +227,7 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 				}
 				doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: kind, SafeURL: clean, Status: "declared", Evidence: ev})
 			}
-		} else {
+		} else if len(locals) == 0 {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: name})
 		}
 		for name, version := range entry.deps {
@@ -347,14 +362,44 @@ func parseField(line string) (string, string) {
 }
 
 func descriptorName(descriptor string) string {
-	if at := strings.Index(descriptor, "@npm:"); at > 0 {
-		return descriptor[:at]
+	start := 0
+	if strings.HasPrefix(descriptor, "@") {
+		slash := strings.IndexByte(descriptor, '/')
+		if slash < 0 {
+			return ""
+		}
+		start = slash + 1
 	}
-	at := strings.LastIndexByte(descriptor, '@')
-	if at <= 0 {
+	separator := strings.IndexByte(descriptor[start:], '@')
+	if separator < 0 || start+separator == 0 {
 		return ""
 	}
-	return descriptor[:at]
+	return descriptor[:start+separator]
+}
+
+type classicLocalLocator struct{ kind, path string }
+
+// A link/file selector declares a local location even when the lock has no
+// resolved URL. Preserve that declaration without reading or executing it.
+func classicLocalLocators(entry classicEntry) []classicLocalLocator {
+	seen := map[classicLocalLocator]bool{}
+	var result []classicLocalLocator
+	for _, descriptor := range entry.descriptors {
+		selector, ok := strings.CutPrefix(descriptor, descriptorName(descriptor)+"@")
+		if !ok {
+			continue
+		}
+		kind, location, ok := strings.Cut(selector, ":")
+		if !ok || kind != "link" && kind != "file" || location == "" || strings.ContainsAny(location, "\x00\r\n") {
+			continue
+		}
+		locator := classicLocalLocator{kind, location}
+		if !seen[locator] {
+			result = append(result, locator)
+			seen[locator] = true
+		}
+	}
+	return result
 }
 
 func classicEntryName(entry classicEntry) (name, alias string, valid bool) {
@@ -367,17 +412,14 @@ func classicEntryName(entry classicEntry) (name, alias string, valid bool) {
 	}
 	actual := ""
 	for _, descriptor := range entry.descriptors {
-		if !classicName.MatchString(descriptorName(descriptor)) {
+		aliasName := descriptorName(descriptor)
+		if !classicName.MatchString(aliasName) {
 			return "", "", false
 		}
-		at := strings.Index(descriptor, "@npm:")
-		if at < 0 {
+		rawTarget, isAlias := strings.CutPrefix(descriptor, aliasName+"@npm:")
+		if !isAlias {
 			continue
 		}
-		if at == 0 || !classicName.MatchString(descriptor[:at]) {
-			return "", "", false
-		}
-		rawTarget := descriptor[at+len("@npm:"):]
 		target := descriptorName(rawTarget)
 		if target == "" && classicName.MatchString(rawTarget) {
 			// A bare npm alias leaves version selection to the lock record.
