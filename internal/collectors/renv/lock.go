@@ -157,7 +157,18 @@ func addOrigin(doc *model.Document, entry packageEntry, repositories map[string]
 			if remoteSHA.MatchString(record.RemoteSHA) {
 				revision = strings.ToLower(record.RemoteSHA)
 			}
-			doc.Origins = append(doc.Origins, model.Origin{Occurrence: entry.id, Kind: "vcs", SafeURL: clean, Revision: revision, Status: "declared", Evidence: evidence})
+			vcs := ""
+			remoteType := record.RemoteType
+			if remoteType == "" {
+				remoteType = record.Source
+			}
+			switch strings.ToLower(remoteType) {
+			case "git", "github", "gitlab", "bitbucket":
+				vcs = "git"
+			case "svn":
+				vcs = "svn"
+			}
+			doc.Origins = append(doc.Origins, model.Origin{Occurrence: entry.id, Kind: "vcs", VCSType: vcs, SafeURL: clean, Revision: revision, Status: "declared", Evidence: evidence})
 			return
 		}
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: entry.name})
@@ -169,7 +180,7 @@ func addOrigin(doc *model.Document, entry packageEntry, repositories map[string]
 		if remoteSHA.MatchString(record.RemoteSHA) {
 			revision = strings.ToLower(record.RemoteSHA)
 		}
-		doc.Origins = append(doc.Origins, model.Origin{Occurrence: entry.id, Kind: "vcs", SafeURL: url, Revision: revision, Status: "declared", Evidence: evidence})
+		doc.Origins = append(doc.Origins, model.Origin{Occurrence: entry.id, Kind: "vcs", VCSType: "git", SafeURL: url, Revision: revision, Status: "declared", Evidence: evidence})
 		return
 	}
 	if strings.EqualFold(record.Source, "Repository") || strings.EqualFold(record.Source, "CRAN") || repositories[record.Source] != "" {

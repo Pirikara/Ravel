@@ -17,12 +17,32 @@ func TestFreezeNoFinalNewline(t *testing.T) {
 	}
 }
 
-func TestFreezeRequiresConstraints(t *testing.T) {
+func TestFreezeIndexStateWithoutPins(t *testing.T) {
+	for _, data := range []string{"index-state: HEAD\n", "index-state: hackage.haskell.org 2026-01-02T03:04:05Z\n", "index-state:\n  hackage.haskell.org 2026-01-02T03:04:05Z\n"} {
+		filename := filepath.Join(t.TempDir(), "cabal.project.freeze")
+		if err := os.WriteFile(filename, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		doc, err := CollectFreeze(filename, "sample")
+		if err != nil || len(doc.Components) != 0 || len(doc.Edges) != 0 || doc.Coverage.GraphState != "partial" {
+			t.Fatalf("index-only freeze: %#v %v", doc, err)
+		}
+		found := false
+		for _, issue := range doc.Coverage.Issues {
+			found = found || issue.Code == "cabal_freeze_version_pins_unavailable"
+		}
+		if !found {
+			t.Fatal("index-only freeze silently presented as package inventory")
+		}
+	}
+}
+
+func TestFreezeRequiresRecognizedField(t *testing.T) {
 	filename := filepath.Join(t.TempDir(), "cabal.project.freeze")
-	if err := os.WriteFile(filename, []byte("index-state: HEAD\n"), 0o644); err != nil {
+	if err := os.WriteFile(filename, []byte("unrecognized: value\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := CollectFreeze(filename, "sample"); err == nil {
-		t.Fatal("freeze file without constraints was accepted")
+		t.Fatal("file without a recognized freeze field was accepted")
 	}
 }
