@@ -74,7 +74,7 @@ func CollectVendor(file, project string) (model.Document, error) {
 		identity := ""
 		if entry.replacement == "" {
 			identity = common.GoModulePURL(entry.path, entry.version)
-			common.RecordGoPURLLimitation(&doc, entry.path, identity, ev)
+			common.RecordGoPURLCompatibility(&doc, entry.path, identity, ev)
 		}
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: entry.path, Version: entry.version, PURL: identity, Evidence: []model.Evidence{ev}})
 		item := listedModule{Path: entry.path, Version: entry.version}

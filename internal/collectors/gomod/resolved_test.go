@@ -59,7 +59,7 @@ func TestGoResolverDoesNotEchoJSONModuleError(t *testing.T) {
 	}
 }
 
-func TestGoResolverReportsUnavailableMixedCasePURLs(t *testing.T) {
+func TestGoResolverReportsCasePreservingPURLCompatibility(t *testing.T) {
 	project := t.TempDir()
 	mod := filepath.Join(project, "go.mod")
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "fixtures", "go-purl-case-coverage", "go.mod"))
@@ -92,7 +92,7 @@ RAVEL_MODULES
 	}
 	wanted := map[string]bool{"example.com/SourceApp": true, "example.com/Acme/Lib": true}
 	for _, issue := range doc.Coverage.Issues {
-		if issue.Code != "go_module_purl_unavailable" {
+		if issue.Code != "go_module_purl_case_preserved" {
 			continue
 		}
 		if !wanted[issue.Name] || issue.Scope == "" {

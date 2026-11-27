@@ -32,6 +32,21 @@ func TestSourceQualifiedPURLs(t *testing.T) {
 	}
 }
 
+func TestGoPURLSourceQualificationPreservesCase(t *testing.T) {
+	doc := NewDocument("go.mod", "test", "go", nil)
+	doc.Components = []model.Component{{ID: "p", Kind: "package", Name: "example.com/Acme/Library", Version: "v1.0.0", PURL: GoModulePURL("example.com/Acme/Library", "v1.0.0")}}
+	doc.Origins = []model.Origin{{Occurrence: "p", Kind: "download_url", SafeURL: "https://mirror.example.test/library.zip", Status: "declared"}}
+	Finalize(&doc)
+	want := "pkg:golang/example.com/Acme/Library@v1.0.0?download_url=https:%2F%2Fmirror.example.test%2Flibrary.zip"
+	if doc.Components[0].PURL != want {
+		t.Fatal("source qualification changed module case", doc.Components[0])
+	}
+	Finalize(&doc)
+	if doc.Components[0].PURL != want {
+		t.Fatal("repeated qualification changed module case", doc.Components[0])
+	}
+}
+
 func TestDefaultUnknownAndAmbiguousPURLSources(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

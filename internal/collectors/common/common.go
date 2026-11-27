@@ -63,11 +63,11 @@ func PURLVersion(version string) string {
 }
 
 func GoMainModulePURL(path string) string {
-	if path == "" || path != strings.ToLower(path) {
+	if path == "" {
 		return ""
 	}
 	parts := strings.Split(path, "/")
-	if len(parts) < 2 {
+	if len(parts) < 2 || parts[0] != strings.ToLower(parts[0]) {
 		return ""
 	}
 	for i, part := range parts {
@@ -76,16 +76,21 @@ func GoMainModulePURL(path string) string {
 	return "pkg:golang/" + strings.Join(parts, "/")
 }
 
-// RecordGoPURLLimitation makes the mixed-case Go PURL restriction visible
-// without lowercasing a module identity or changing inventory/graph coverage.
+// RecordGoPURLCompatibility exposes the historical golang PURL lowercase
+// rule's conflict with case-sensitive Go module identities. Go paths retain
+// their spelling; consumers that lowercase PURLs can change their meaning.
 // Call only for modules eligible for a Go PURL, never for replacements whose
 // original module coordinate deliberately has no PURL.
-func RecordGoPURLLimitation(doc *model.Document, modulePath, purl string, evidence model.Evidence) {
-	if purl != "" || modulePath == strings.ToLower(modulePath) {
+func RecordGoPURLCompatibility(doc *model.Document, modulePath, purl string, evidence model.Evidence) {
+	if modulePath == strings.ToLower(modulePath) {
 		return
 	}
+	code := "go_module_purl_case_preserved"
+	if purl == "" {
+		code = "go_module_purl_unavailable"
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{
-		Code: "go_module_purl_unavailable", Name: modulePath,
+		Code: code, Name: modulePath,
 		Scope: evidence.InputPath, Line: evidence.Line,
 	})
 }

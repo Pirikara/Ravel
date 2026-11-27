@@ -65,8 +65,18 @@ func VCSLocation(o model.Origin) string {
 
 func baseOriginPURL(manager string, c model.Component) packageurl.PackageURL {
 	if c.PURL != "" {
-		p, err := packageurl.FromString(c.PURL)
+		value := c.PURL
+		// packageurl-go's golang adapter lowercases module paths. Preserve
+		// Go's case-sensitive coordinate when adding source qualifiers.
+		goModule := strings.HasPrefix(value, "pkg:golang/")
+		if goModule {
+			value = "pkg:generic/" + strings.TrimPrefix(value, "pkg:golang/")
+		}
+		p, err := packageurl.FromString(value)
 		if err == nil {
+			if goModule {
+				p.Type = "golang"
+			}
 			return p
 		}
 	}
