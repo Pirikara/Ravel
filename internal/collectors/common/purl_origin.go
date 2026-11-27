@@ -108,6 +108,9 @@ func baseOriginPURL(manager string, c model.Component) packageurl.PackageURL {
 	case "conda":
 		typ = "conda"
 	case "conda-lock", "pixi":
+		if strings.Contains(c.Context, "manager=conda_source") {
+			return packageurl.PackageURL{}
+		}
 		if strings.Contains(c.Context, "manager=pip") {
 			typ = "pypi"
 			name = originPythonSeparators.ReplaceAllString(strings.ToLower(name), "-")

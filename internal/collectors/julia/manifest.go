@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -234,15 +235,17 @@ func addDependencies(doc *model.Document, parent packageEntry, field string, wea
 		return
 	}
 	requests := map[string]string{}
+	pointers := map[string]string{}
 	switch deps := raw.(type) {
 	case []any:
-		for _, item := range deps {
+		for index, item := range deps {
 			name, ok := item.(string)
 			if !ok || !packageName.MatchString(name) {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "julia_dependency_invalid", Name: parent.name})
 				continue
 			}
 			requests[name] = ""
+			pointers[name] = strconv.Itoa(index)
 		}
 	case map[string]any:
 		for name, item := range deps {
@@ -252,6 +255,7 @@ func addDependencies(doc *model.Document, parent packageEntry, field string, wea
 				continue
 			}
 			requests[name] = strings.ToLower(uuid)
+			pointers[name] = name
 		}
 	default:
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "julia_dependency_invalid", Name: parent.name})
@@ -279,7 +283,7 @@ func addDependencies(doc *model.Document, parent packageEntry, field string, wea
 			continue
 		}
 		evidence := parent.evidence
-		evidence.Pointer += "/" + field + "/" + name
+		evidence.Pointer += "/" + field + "/" + pointers[name]
 		condition := ""
 		if weak {
 			condition = "weak dependency"

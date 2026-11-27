@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
@@ -38,10 +40,16 @@ type packageRecord struct {
 	Repository     string          `json:"Repository"`
 	RemoteURL      string          `json:"RemoteUrl"`
 	RemoteType     string          `json:"RemoteType"`
+	RemoteHost     string          `json:"RemoteHost"`
 	RemoteUsername string          `json:"RemoteUsername"`
 	RemoteRepo     string          `json:"RemoteRepo"`
 	RemoteSHA      string          `json:"RemoteSha"`
 	Requirements   json.RawMessage `json:"Requirements"`
+	Depends        json.RawMessage `json:"Depends"`
+	Imports        json.RawMessage `json:"Imports"`
+	LinkingTo      json.RawMessage `json:"LinkingTo"`
+	License        json.RawMessage `json:"License"`
+	URL            json.RawMessage `json:"URL"`
 }
 
 type packageEntry struct {
@@ -73,6 +81,7 @@ func CollectLock(filename, project string) (model.Document, error) {
 		return model.Document{}, errors.New("renv.lock has no Packages map")
 	}
 	doc := common.NewDocument(filename, project, "renv", data)
+	baseEvidence := common.Evidence(filename, "renv-lock", "", data)
 	repositories := map[string]string{}
 	for _, repository := range lock.R.Repositories {
 		if repository.Name != "" {
@@ -92,10 +101,20 @@ func CollectLock(filename, project string) (model.Document, error) {
 			continue
 		}
 		id := "renv:" + common.ID(filename+"\x00"+name+"\x00"+record.Version)
-		evidence := common.Evidence(filename, "renv-lock", "/Packages/"+name, data)
+		evidence := baseEvidence
+		evidence.Pointer = "/Packages/" + name
 		doc.Components = append(doc.Components, model.Component{ID: id, Kind: "package", Name: name, Version: record.Version, Evidence: []model.Evidence{evidence}})
 		entries[name] = packageEntry{id: id, name: name, record: record, evidence: evidence}
+		originStart := len(doc.Origins)
 		addOrigin(&doc, entries[name], repositories)
+		for _, origin := range doc.Origins[originStart:] {
+			if origin.Kind == "declared_registry" {
+				component := &doc.Components[len(doc.Components)-1]
+				component.PURL = packageurl.NewPackageURL("cran", "", name, record.Version, nil, "").ToString()
+				component.PURLBasis = "ecosystem_inferred"
+			}
+		}
+		addMetadata(&doc, &doc.Components[len(doc.Components)-1], record, evidence)
 		if len(entries) > 100000 {
 			return model.Document{}, errors.New("renv.lock has too many package records")
 		}
@@ -108,33 +127,7 @@ func CollectLock(filename, project string) (model.Document, error) {
 		if !ok {
 			continue
 		}
-		if len(entry.record.Requirements) == 0 {
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "renv_requirements_unavailable", Name: name})
-			continue
-		}
-		var requirements []any
-		if err := json.Unmarshal(entry.record.Requirements, &requirements); err != nil {
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "renv_requirements_invalid", Name: name})
-			continue
-		}
-		for _, raw := range requirements {
-			required, ok := raw.(string)
-			if !ok || !packageName.MatchString(required) {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "renv_requirements_invalid", Name: name})
-				continue
-			}
-			if required == "R" {
-				continue
-			}
-			dependency, ok := entries[required]
-			if !ok {
-				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: required, Scope: name})
-				continue
-			}
-			evidence := entry.evidence
-			evidence.Pointer += "/Requirements/" + required
-			doc.Edges = append(doc.Edges, model.Edge{From: entry.id, To: dependency.id, Kind: "requires", Condition: "dependency category unverified", Evidence: evidence})
-		}
+		addDependencies(&doc, entry, entries)
 	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues,
 		model.Issue{Code: "missing_direct_dependencies"},
@@ -152,16 +145,28 @@ func addOrigin(doc *model.Document, entry packageEntry, repositories map[string]
 	record := entry.record
 	evidence := entry.evidence
 	if record.RemoteURL != "" {
+		remoteType := record.RemoteType
+		if remoteType == "" {
+			remoteType = record.Source
+		}
+		if strings.EqualFold(remoteType, "local") {
+			if len(record.RemoteURL) <= 4096 && strings.IndexFunc(record.RemoteURL, unicode.IsControl) < 0 && !strings.Contains(record.RemoteURL, "://") {
+				doc.Origins = append(doc.Origins, model.Origin{Occurrence: entry.id, Kind: "local", LocalPath: record.RemoteURL, Status: "declared", Evidence: evidence})
+			} else {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: entry.name})
+			}
+			return
+		}
 		if clean := safeurl.Clean(record.RemoteURL); clean != "" {
+			if strings.EqualFold(remoteType, "url") {
+				doc.Origins = append(doc.Origins, model.Origin{Occurrence: entry.id, Kind: "download_url", SafeURL: clean, Status: "declared", Evidence: evidence})
+				return
+			}
 			revision := ""
 			if remoteSHA.MatchString(record.RemoteSHA) {
 				revision = strings.ToLower(record.RemoteSHA)
 			}
 			vcs := ""
-			remoteType := record.RemoteType
-			if remoteType == "" {
-				remoteType = record.Source
-			}
 			switch strings.ToLower(remoteType) {
 			case "git", "github", "gitlab", "bitbucket":
 				vcs = "git"
@@ -175,6 +180,10 @@ func addOrigin(doc *model.Document, entry packageEntry, repositories map[string]
 		return
 	}
 	if strings.EqualFold(record.Source, "GitHub") && remotePart.MatchString(record.RemoteUsername) && remotePart.MatchString(record.RemoteRepo) {
+		if record.RemoteHost != "" && !strings.EqualFold(record.RemoteHost, "api.github.com") && !strings.EqualFold(record.RemoteHost, "github.com") {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "renv_source_unverified", Name: entry.name})
+			return
+		}
 		url := "https://github.com/" + record.RemoteUsername + "/" + record.RemoteRepo
 		revision := ""
 		if remoteSHA.MatchString(record.RemoteSHA) {

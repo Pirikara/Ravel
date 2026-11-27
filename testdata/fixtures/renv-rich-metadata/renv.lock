@@ -1,0 +1,84 @@
+{
+  "R": {
+    "Version": "4.4.0",
+    "Repositories": [
+      {
+        "Name": "CRAN",
+        "URL": "https://cran.r-project.org"
+      },
+      {
+        "Name": "Private",
+        "URL": "https://r.example.test/packages"
+      }
+    ]
+  },
+  "Packages": {
+    "Analyzer": {
+      "Package": "Analyzer",
+      "Version": "2.0.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "License": "MIT",
+      "URL": "https://github.com/example/Analyzer, https://docs.example.test/analyzer",
+      "Depends": "R (>= 4.4.0), Runtime (>= 1.0)",
+      "Imports": [
+        "Runtime",
+        "Missing"
+      ],
+      "LinkingTo": [
+        "Headers (>= 2.0)"
+      ],
+      "Suggests": [
+        "Optional"
+      ],
+      "Requirements": [
+        "Runtime",
+        "Headers",
+        "Legacy"
+      ],
+      "Hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "Runtime": {
+      "Package": "Runtime",
+      "Version": "1.5.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "License": "Apache-2.0",
+      "Requirements": []
+    },
+    "Headers": {
+      "Package": "Headers",
+      "Version": "2.0.0",
+      "Source": "Repository",
+      "Repository": "Private",
+      "License": "BSD-3-Clause",
+      "Requirements": []
+    },
+    "Legacy": {
+      "Package": "Legacy",
+      "Version": "1.0.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": []
+    },
+    "Optional": {
+      "Package": "Optional",
+      "Version": "1.0.0",
+      "Source": "../optional",
+      "Requirements": []
+    },
+    "InvalidMeta": {
+      "Package": "InvalidMeta",
+      "Version": "1.0.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "License": {
+        "unexpected": true
+      },
+      "URL": [
+        8
+      ],
+      "Requirements": []
+    }
+  }
+}

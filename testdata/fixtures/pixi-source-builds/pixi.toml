@@ -1,0 +1,11 @@
+[workspace]
+name = "source-build-example"
+channels = ["https://repo.example.test"]
+platforms = ["linux-64"]
+
+[dependencies]
+alpha = { path = "." }
+libbase = ">=1.0"
+
+[environments]
+docs = []

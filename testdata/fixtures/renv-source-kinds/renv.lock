@@ -1,0 +1,47 @@
+{
+  "Packages": {
+    "archive": {
+      "Package": "archive",
+      "Version": "1.0.0",
+      "Source": "URL",
+      "RemoteType": "url",
+      "RemoteUrl": "https://files.example.test/source.tar.gz?secret=removed",
+      "Requirements": []
+    },
+    "localpkg": {
+      "Package": "localpkg",
+      "Version": "1.0.0",
+      "Source": "Local",
+      "RemoteType": "local",
+      "RemoteUrl": "../localpkg",
+      "Requirements": []
+    },
+    "publicpkg": {
+      "Package": "publicpkg",
+      "Version": "1.0.0",
+      "Source": "GitHub",
+      "RemoteHost": "api.github.com",
+      "RemoteUsername": "example",
+      "RemoteRepo": "publicpkg",
+      "RemoteSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "Requirements": []
+    },
+    "enterprise": {
+      "Package": "enterprise",
+      "Version": "1.0.0",
+      "Source": "GitHub",
+      "RemoteHost": "git.example.test/api/v3",
+      "RemoteUsername": "example",
+      "RemoteRepo": "enterprise",
+      "Requirements": []
+    },
+    "unknown": {
+      "Package": "unknown",
+      "Version": "1.0.0",
+      "Source": "Other",
+      "RemoteType": "unrecognized",
+      "RemoteUrl": "https://code.example.test/unknown",
+      "Requirements": []
+    }
+  }
+}

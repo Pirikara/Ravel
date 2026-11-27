@@ -1,0 +1,15 @@
+version: 7
+environments:
+  default:
+    packages:
+      linux-64:
+      - conda_source: local[11111111] @ ../directory with spaces
+      - conda_source: archive[22222222] @ https://files.example.test/source.tar.gz?secret=removed
+      - conda_source: gitpin[33333333] @ git+https://code.example.test/team/repo.git@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      - conda_source: branch[44444444] @ git+https://code.example.test/team/repo.git@main
+packages:
+- conda_source: local[11111111] @ ../directory with spaces
+- conda_source: archive[22222222] @ https://files.example.test/source.tar.gz?secret=removed
+- conda_source: gitpin[33333333] @ git+https://code.example.test/team/repo.git@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  version: 1.2.3
+- conda_source: branch[44444444] @ git+https://code.example.test/team/repo.git@main

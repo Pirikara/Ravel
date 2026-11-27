@@ -15,7 +15,7 @@ Collection uses the supplied metadata without contacting those repositories.
 | Ruby gem archives | `metadata.source_code_uri`; repository-shaped `homepage` fallback |
 | Cargo | Literal root `package.repository`; root and dependency `repository` values from explicit Cargo resolver output |
 | Maven | The root POM's `scm.url`, `scm.connection`, and `scm.developerConnection` |
-| Installed R packages | Repository-shaped links in the DESCRIPTION `URL` field |
+| Installed R packages and renv snapshots | Repository-shaped links in the DESCRIPTION or lock record's `URL` field |
 | Existing VCS metadata | VCS origin records also supply development candidates, including Composer and supported lockfile Git sources |
 
 npm repository strings support full URLs, SCP-style Git URLs, and explicit

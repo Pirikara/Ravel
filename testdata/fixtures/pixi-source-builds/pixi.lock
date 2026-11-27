@@ -1,0 +1,24 @@
+version: 7
+environments:
+  default:
+    packages:
+      linux-64:
+      - conda: https://repo.example.test/linux-64/libbase-1.0.0-build_0.conda
+      - conda_source: alpha[11111111] @ .
+      - conda_source: alpha[22222222] @ ../other
+  docs:
+    packages:
+      linux-64:
+      - conda_source: alpha[11111111] @ .
+packages:
+- conda: https://repo.example.test/linux-64/libbase-1.0.0-build_0.conda
+  license: MIT
+- conda_source: alpha[11111111] @ .
+  version: 1.2.3
+  depends: [libbase >=1.0]
+  license: BSD-3-Clause
+  build_packages:
+  - conda: https://repo.example.test/linux-64/build-only-9.0.0-build_0.conda
+- conda_source: alpha[22222222] @ ../other
+  depends: [libbase >=1.0]
+  license: Apache-2.0

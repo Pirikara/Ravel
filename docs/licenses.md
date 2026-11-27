@@ -15,6 +15,7 @@ registries or execute package code.
 | NuGet | `.nuspec` license expressions, license-file references, and legacy license URLs in `.nupkg` archives |
 | Cargo | The root manifest's literal `license`/`license-file`; `license`/`license_file` in explicit Cargo resolver output |
 | Maven | Names and URLs in the root POM's `licenses` section |
+| renv and Pixi | Package `License` declarations in `renv.lock`; selected package `license` declarations in `pixi.lock`, including source selections |
 | Installed systems | APK v2/v3 license fields, RPM database/archive license tags, Conda `license`, and R DESCRIPTION `License` |
 
 A format that does not record a license cannot supply one. For example,
