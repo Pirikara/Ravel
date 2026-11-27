@@ -209,10 +209,20 @@ func readGoBuildInfo(reader io.ReaderAt, digest, source, project, binaryPath str
 		outerVersion = info.Main.Version
 	}
 	context := "location=/" + binaryPath
+	mainPURL := ""
 	if info.Main.Path != "" && len(info.Main.Path) <= 255 && module.CheckPath(info.Main.Path) == nil {
 		context += ";main_module=" + info.Main.Path
+		mainPURL = common.GoMainModulePURL(info.Main.Path)
+		if outerVersion != "" {
+			mainPURL = common.GoModulePURL(info.Main.Path, outerVersion)
+		}
+		common.RecordGoPURLCompatibility(&doc, info.Main.Path, mainPURL, evidence)
 	}
-	doc.Components = append(doc.Components, model.Component{ID: outerID, Kind: "application", Name: path.Base(binaryPath), Version: outerVersion, Context: context, Hashes: []model.Hash{{Alg: "SHA-256", Content: digest}}, Evidence: []model.Evidence{evidence}})
+	mainPURLBasis := ""
+	if mainPURL != "" {
+		mainPURLBasis = "ecosystem_inferred"
+	}
+	doc.Components = append(doc.Components, model.Component{ID: outerID, Kind: "application", Name: path.Base(binaryPath), Version: outerVersion, Context: context, PURL: mainPURL, PURLBasis: mainPURLBasis, Hashes: []model.Hash{{Alg: "SHA-256", Content: digest}}, Evidence: []model.Evidence{evidence}})
 	doc.Edges = append(doc.Edges, model.Edge{From: "root", To: outerID, Kind: "installed", Evidence: evidence})
 	goVersion := strings.Fields(info.GoVersion)
 	version := ""
@@ -259,11 +269,15 @@ func readGoBuildInfo(reader io.ReaderAt, digest, source, project, binaryPath str
 		componentID := "go-binary:" + common.ID(source+"\x00"+key)
 		moduleEvidence := evidence
 		moduleEvidence.Pointer = pointer
-		purl := ""
-		if item.Replace == nil {
-			purl = common.GoModulePURL(selected.Path, selected.Version)
+		// Build information names the selected replacement, so this identifies
+		// its recorded coordinate, not the original module it replaced.
+		purl := common.GoModulePURL(selected.Path, selected.Version)
+		common.RecordGoPURLCompatibility(&doc, selected.Path, purl, moduleEvidence)
+		basis := ""
+		if purl != "" {
+			basis = "ecosystem_inferred"
 		}
-		doc.Components = append(doc.Components, model.Component{ID: componentID, Kind: "package", Name: selected.Path, Version: selected.Version, Context: moduleContext, PURL: purl, Evidence: []model.Evidence{moduleEvidence}})
+		doc.Components = append(doc.Components, model.Component{ID: componentID, Kind: "package", Name: selected.Path, Version: selected.Version, Context: moduleContext, PURL: purl, PURLBasis: basis, Evidence: []model.Evidence{moduleEvidence}})
 		doc.Edges = append(doc.Edges, model.Edge{From: outerID, To: componentID, Kind: "embedded", Evidence: moduleEvidence})
 	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "go_binary_graph_unavailable", Name: binaryPath}, model.Issue{Code: "go_binary_origin_unavailable", Name: binaryPath})

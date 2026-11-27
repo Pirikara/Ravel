@@ -1,11 +1,11 @@
 package oci
 
 import (
-	"path"
 	"strings"
 
 	packageurl "github.com/package-url/packageurl-go"
 
+	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 )
 
@@ -21,9 +21,13 @@ func setImageProductPURL(c *model.Component) {
 			if c.Name == "stdlib" && c.Version != "" {
 				c.PURL = packageurl.NewPackageURL("golang", "", "stdlib", strings.TrimPrefix(c.Version, "go"), nil, "").ToString()
 			} else if mainModule := imageContextValue(c.Context, "main_module"); c.Kind == "application" && mainModule != "" {
-				c.PURL = packageurl.NewPackageURL("golang", path.Dir(mainModule), path.Base(mainModule), c.Version, nil, "").ToString()
+				if c.Version == "" {
+					c.PURL = common.GoMainModulePURL(mainModule)
+				} else {
+					c.PURL = common.GoModulePURL(mainModule, c.Version)
+				}
 			} else if c.Kind == "package" && c.Version != "" {
-				c.PURL = packageurl.NewPackageURL("golang", path.Dir(c.Name), path.Base(c.Name), c.Version, nil, "").ToString()
+				c.PURL = common.GoModulePURL(c.Name, c.Version)
 			}
 			if c.PURL != "" {
 				c.PURLBasis = "ecosystem_inferred"

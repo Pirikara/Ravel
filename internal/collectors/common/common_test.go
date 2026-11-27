@@ -35,3 +35,19 @@ func TestPURLVersion(t *testing.T) {
 		t.Fatalf("Go PURL version is not canonical: %q", got)
 	}
 }
+
+func TestGoPURLPreservesModuleCase(t *testing.T) {
+	for _, tc := range []struct{ path, version, want string }{
+		{"example.com/Acme/Library", "v1.0.0", "pkg:golang/example.com/Acme/Library@v1.0.0"},
+		{"example.com/acme/library", "v1.0.0", "pkg:golang/example.com/acme/library@v1.0.0"},
+		{"example.com/Acme/Library", "v2.0.0+incompatible", "pkg:golang/example.com/Acme/Library@v2.0.0%2Bincompatible"},
+		{"Example.com/Acme/Library", "v1.0.0", ""},
+	} {
+		if got := GoModulePURL(tc.path, tc.version); got != tc.want {
+			t.Fatalf("GoModulePURL(%q, %q) = %q, want %q", tc.path, tc.version, got, tc.want)
+		}
+	}
+	if got := GoMainModulePURL("example.com/SourceApp"); got != "pkg:golang/example.com/SourceApp" {
+		t.Fatal("main module case lost", got)
+	}
+}
