@@ -1,0 +1,18 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    client (1.0.0)
+      wire (>= 2.0)
+      
+      syntax (>= 3.0)
+    wire (2.0.0)
+    syntax (3.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  client
+  
+BUNDLED WITH
+   2.6.9

@@ -1,0 +1,29 @@
+lockfileVersion: '6.0'
+dependencies:
+  forked: {specifier: 'https://downloads.example.test/fork.tgz', version: '@downloads.example.test/fork.tgz'}
+  local-archive: {specifier: 'file:vendor/local.tgz', version: 'file:vendor/local.tgz'}
+  local-app: {specifier: 'file:packages/site', version: 'file:packages/site'}
+  unknown: {specifier: 'https://downloads.example.test/unknown.tgz', version: '@downloads.example.test/unknown.tgz'}
+  raw: {specifier: 'https://downloads.example.test/raw.tgz', version: 'https://downloads.example.test/raw.tgz'}
+packages:
+  /tiny@1.0.0: {}
+  '@downloads.example.test/fork.tgz':
+    name: forked
+    version: 2.0.0
+    resolution: {tarball: 'https://downloads.example.test/fork.tgz'}
+    dependencies: {tiny: 1.0.0}
+  file:vendor/local.tgz:
+    name: local-archive
+    version: 3.0.0
+    resolution: {tarball: 'file:vendor/local.tgz'}
+  file:packages/site:
+    name: local-app
+    version: 4.0.0
+    resolution: {directory: packages/site, type: directory}
+    dependencies: {tiny: 1.0.0}
+  '@downloads.example.test/unknown.tgz':
+    name: unknown
+    resolution: {tarball: 'https://downloads.example.test/unknown.tgz'}
+  'https://downloads.example.test/raw.tgz':
+    name: raw
+    version: 5.0.0

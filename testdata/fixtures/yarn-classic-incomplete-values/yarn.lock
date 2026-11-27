@@ -1,0 +1,10 @@
+# yarn lockfile v1
+
+ready@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.npmjs.org/ready/-/ready-1.0.0.tgz"
+  dependencies:
+    broken "^2.0.0"
+
+broken@^2.0.0:
+  resolved "https://registry.npmjs.org/broken/-/broken-2.0.0.tgz"

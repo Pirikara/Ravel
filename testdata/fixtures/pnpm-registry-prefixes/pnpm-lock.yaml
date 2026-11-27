@@ -1,0 +1,15 @@
+lockfileVersion: '6.0'
+dependencies:
+  leaf: {specifier: '1.0.0', version: '1.0.0'}
+  '@team/leaf': {specifier: '2.0.0', version: 'packages.example.test/@team/leaf@2.0.0'}
+  plain: {specifier: '3.0.0', version: '3.0.0'}
+  collision: {specifier: '1.0.0', version: '1.0.0'}
+packages:
+  registry.npmjs.org/leaf@1.0.0: {}
+  packages.example.test/@team/leaf@2.0.0:
+    resolution: {tarball: 'https://cdn.example.test/team-leaf.tgz'}
+  mirror.example.test/plain@3.0.0: {}
+  one.example.test/collision@1.0.0:
+    resolution: {tarball: 'https://one.example.test/collision.tgz'}
+  two.example.test/collision@1.0.0:
+    resolution: {tarball: 'https://two.example.test/collision.tgz'}

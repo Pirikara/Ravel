@@ -146,7 +146,11 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 				}
 			case "download_url":
 			case "registry_identity":
-				item.Properties = append(item.Properties, property{Name: "ravel:registryIdentity", Value: o.SafeURL})
+				value := o.SafeURL
+				if value == "" {
+					value = o.Target
+				}
+				item.Properties = append(item.Properties, property{Name: "ravel:registryIdentity", Value: value})
 			case "podspec":
 				item.Properties = append(item.Properties, property{Name: "ravel:podspec", Value: o.SafeURL})
 			case "module_replacement":
