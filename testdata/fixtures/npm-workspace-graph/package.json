@@ -1,0 +1,1 @@
+{"name":"workspace-graph","version":"1.0.0","workspaces":["apps/desktop/plugins/*"],"dependencies":{"app":"file:apps/desktop/plugins/app"},"peerDependencies":{"peer":"*"}}

@@ -1,0 +1,16 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      local-app:
+        specifier: file:packages/local-app
+        version: file:packages/local-app
+packages:
+  local-app@file:packages/local-app:
+    resolution: {directory: packages/local-app, type: directory}
+  leaf@1.0.0: {}
+snapshots:
+  local-app@file:packages/local-app:
+    dependencies:
+      leaf: 1.0.0
+  leaf@1.0.0: {}

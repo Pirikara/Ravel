@@ -356,7 +356,12 @@ func classicEntryName(entry classicEntry) (name, alias string, valid bool) {
 		if at == 0 || !classicName.MatchString(descriptor[:at]) {
 			return "", "", false
 		}
-		target := descriptorName(descriptor[at+len("@npm:"):])
+		rawTarget := descriptor[at+len("@npm:"):]
+		target := descriptorName(rawTarget)
+		if target == "" && classicName.MatchString(rawTarget) {
+			// A bare npm alias leaves version selection to the lock record.
+			target = rawTarget
+		}
 		if !classicName.MatchString(target) || actual != "" && actual != target {
 			return "", "", false
 		}

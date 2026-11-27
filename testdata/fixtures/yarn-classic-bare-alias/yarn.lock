@@ -1,0 +1,9 @@
+# yarn lockfile v1
+"alias@npm:target":
+  version "2.0.0"
+  resolved "https://registry.npmjs.org/target/-/target-2.0.0.tgz"
+  dependencies:
+    leaf "1.0.0"
+leaf@1.0.0:
+  version "1.0.0"
+  resolved "https://registry.npmjs.org/leaf/-/leaf-1.0.0.tgz"

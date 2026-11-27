@@ -1,0 +1,33 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      first-alias:
+        specifier: npm:real@1
+        version: real@1.0.0(peer@1.0.0)
+      second-alias:
+        specifier: npm:real@1
+        version: real@1.0.0(peer@2.0.0)
+packages:
+  real@1.0.0: {}
+  peer@1.0.0: {}
+  peer@2.0.0: {}
+  helper@2.0.0: {}
+  binary@1.0.0-linux-x64:
+    os: [linux]
+    cpu: [x64]
+snapshots:
+  real@1.0.0(peer@1.0.0):
+    dependencies:
+      peer: 1.0.0
+      helper-alias: helper@2.0.0
+  real@1.0.0(peer@2.0.0):
+    dependencies:
+      peer: 2.0.0
+      helper-alias: helper@2.0.0
+    optionalDependencies:
+      binary-alias: binary@1.0.0-linux-x64
+  peer@1.0.0: {}
+  peer@2.0.0: {}
+  helper@2.0.0: {}
+  binary@1.0.0-linux-x64: {}

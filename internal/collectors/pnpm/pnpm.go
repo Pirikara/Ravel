@@ -45,6 +45,8 @@ type packageEntry struct {
 	Resolution struct {
 		Integrity string `yaml:"integrity"`
 		Tarball   string `yaml:"tarball"`
+		Directory string `yaml:"directory"`
+		Type      string `yaml:"type"`
 	} `yaml:"resolution"`
 	OS                   []string          `yaml:"os"`
 	CPU                  []string          `yaml:"cpu"`
@@ -210,6 +212,11 @@ func Collect(file, project string) (model.Document, error) {
 			}
 		}
 		resolve := func(name, version string) occurrence {
+			// Alias references can contain the full target locator directly,
+			// including its peer context, rather than a bare version.
+			if occ, ok := byKey[version]; ok {
+				return occ
+			}
 			key := name + "@" + version
 			if strings.HasPrefix(version, "npm:") {
 				key = strings.TrimPrefix(version, "npm:")
@@ -267,6 +274,14 @@ func Collect(file, project string) (model.Document, error) {
 
 func addPackage(doc *model.Document, file string, data []byte, documentIndex int, key, base string, pkg packageEntry, snap snapshot) occurrence {
 	name, version, ok := splitPackage(base)
+	local := false
+	if !ok {
+		at := strings.LastIndex(base, "@")
+		if at > 0 && packageName.MatchString(base[:at]) && strings.HasPrefix(base[at+1:], "file:") &&
+			pkg.Resolution.Type == "directory" && pkg.Resolution.Directory == strings.TrimPrefix(base[at+1:], "file:") {
+			name, version, ok, local = base[:at], "", true, true
+		}
+	}
 	if !ok {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "invalid package key"})
 		return occurrence{}
@@ -275,7 +290,14 @@ func addPackage(doc *model.Document, file string, data []byte, documentIndex int
 	ev := common.Evidence(file, "pnpm-lock", fmt.Sprintf("/documents/%d/packages/%s", documentIndex, key), data)
 	platform := strings.Join(append(append(append([]string{}, pkg.OS...), pkg.CPU...), pkg.Libc...), "/")
 	component := model.Component{ID: ref, Kind: "package", Name: name, Version: version, Platform: platform, Hashes: common.Integrity(pkg.Resolution.Integrity), Evidence: []model.Evidence{ev}}
-	if common.DefaultNpmRegistry(pkg.Resolution.Tarball) {
+	if local {
+		component.Kind = "application"
+		if !collectLocalIdentity(doc, file, pkg.Resolution.Directory, &component) {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "local_package_identity_unresolved", Name: name})
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "version_unresolved", Name: name})
+		}
+		doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: pkg.Resolution.Directory, Status: "declared", Evidence: ev})
+	} else if common.DefaultNpmRegistry(pkg.Resolution.Tarball) {
 		component.PURL = common.NpmPURL(name, version)
 	} else if pkg.Resolution.Tarball == "" {
 		component.PURL = common.NpmPURL(name, version)
@@ -286,6 +308,9 @@ func addPackage(doc *model.Document, file string, data []byte, documentIndex int
 	if platform != "" {
 		condition = "platform=" + platform
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: name})
+	}
+	if local {
+		return occurrence{ref: ref, key: key, condition: condition, snapshot: snap}
 	}
 	if pkg.Resolution.Tarball != "" {
 		clean := safeurl.Clean(pkg.Resolution.Tarball)
@@ -298,6 +323,47 @@ func addPackage(doc *model.Document, file string, data []byte, documentIndex int
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: name})
 	}
 	return occurrence{ref: ref, key: key, condition: condition, snapshot: snap}
+}
+
+func collectLocalIdentity(doc *model.Document, lockfile, directory string, component *model.Component) bool {
+	if !filepath.IsLocal(directory) || strings.ContainsAny(directory, "\\\x00\r\n") {
+		return false
+	}
+	root, err := os.OpenRoot(filepath.Dir(lockfile))
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	name := filepath.Join(directory, "package.json")
+	file, err := root.Open(name)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
+		return false
+	}
+	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if err != nil || len(data) > 1<<20 {
+		return false
+	}
+	var manifest struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(data, &manifest) != nil || manifest.Name != component.Name || manifest.Version == "" {
+		return false
+	}
+	component.Version = manifest.Version
+	input := filepath.Join(filepath.Dir(lockfile), name)
+	ev := common.Evidence(input, "pnpm-local-manifest", "/version", data)
+	ev.Method = "source-analysis"
+	component.Evidence = append(component.Evidence, ev)
+	component.Licenses = licensing.JSONFields(data, ev)
+	common.CollectNodeDevelopment(doc, component.ID, data, ev)
+	doc.Sources = append(doc.Sources, input)
+	return true
 }
 
 func splitPackage(key string) (string, string, bool) {
