@@ -46,3 +46,16 @@ func TestV5PeerDialectRemainsExplicitlyUnsupported(t *testing.T) {
 		t.Fatalf("unsupported format was not explicit: %v", err)
 	}
 }
+
+func TestArchiveIdentityDoesNotCoerceMetadataScalars(t *testing.T) {
+	for _, fields := range []string{"name: true\n    version: '1.0.0'", "name: item\n    version: false"} {
+		file := filepath.Join(t.TempDir(), "pnpm-lock.yaml")
+		data := "lockfileVersion: '6.0'\npackages:\n  '@downloads.example.test/item.tgz':\n    resolution: {tarball: 'https://downloads.example.test/item.tgz'}\n    " + fields + "\n"
+		if err := os.WriteFile(file, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Collect(file, "test"); err == nil {
+			t.Fatal("invalid identity metadata was converted into a package")
+		}
+	}
+}

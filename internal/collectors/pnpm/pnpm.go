@@ -58,6 +58,30 @@ type packageEntry struct {
 	OptionalDependencies map[string]string `yaml:"optionalDependencies"`
 }
 
+func (entry *packageEntry) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			field, value := node.Content[i].Value, node.Content[i+1]
+			if field != "name" && field != "version" {
+				continue
+			}
+			if value.Kind == yaml.AliasNode && value.Alias != nil {
+				value = value.Alias
+			}
+			if value.Kind != yaml.ScalarNode || value.Tag != "!!str" && value.Tag != "!!null" {
+				return fmt.Errorf("package metadata %s must be a string", field)
+			}
+		}
+	}
+	type plainEntry packageEntry
+	var decoded plainEntry
+	if err := node.Decode(&decoded); err != nil {
+		return err
+	}
+	*entry = packageEntry(decoded)
+	return nil
+}
+
 // pnpm lockfiles contain both libc: glibc and libc: [glibc]. Keep both
 // representations without silently coercing booleans, numbers, or mappings.
 type stringOrStrings []string
