@@ -76,17 +76,11 @@ func CollectVendor(file, project string) (model.Document, error) {
 			identity = common.GoModulePURL(entry.path, entry.version)
 		}
 		doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "package", Name: entry.path, Version: entry.version, PURL: identity, Evidence: []model.Evidence{ev}})
-		switch {
-		case entry.replacement == "":
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: entry.path})
-		case entry.replacementVersion == "":
-			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", Status: "declared", Evidence: ev})
-		case module.CheckPath(entry.replacement) == nil && semver.IsValid(entry.replacementVersion):
-			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "module_replacement", Target: entry.replacement + "@" + entry.replacementVersion, Status: "declared", Evidence: ev})
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "source_unresolved", Name: entry.path})
-		default:
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: entry.path})
+		item := listedModule{Path: entry.path, Version: entry.version}
+		if entry.replacement != "" {
+			item.Replace = &listedModule{Path: entry.replacement, Version: entry.replacementVersion}
 		}
+		addResolvedOrigin(&doc, ref, item, ev)
 	}
 	if _, err := os.Stat(filepath.Join(projectDir, "go.work")); err == nil {
 		doc.Sources = append(doc.Sources, filepath.Join(projectDir, "go.work"))

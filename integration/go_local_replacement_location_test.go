@@ -53,3 +53,41 @@ func TestGoLocalReplacementLocation(t *testing.T) {
 	}
 	assertDevelopmentExports(t, doc)
 }
+
+func TestGoVendorLocalReplacementLocation(t *testing.T) {
+	doc := scanDevelopmentSample(t, filepath.Join("..", "testdata", "fixtures", "go-vendor-local", "vendor", "modules.txt"))
+	local := ""
+	for _, c := range doc.Components {
+		if c.Name == "github.com/acme/alpha" {
+			local = c.ID
+			if c.PURL != "" {
+				t.Fatal("local vendor became registry identity", c)
+			}
+		}
+	}
+	if local == "" {
+		t.Fatal(doc.Components)
+	}
+	found := false
+	for _, o := range doc.Origins {
+		if o.Occurrence == local {
+			found = o.Kind == "local" && o.LocalPath == "./fork" && o.Status == "declared"
+		}
+	}
+	if !found {
+		t.Fatal("vendor local replacement directory lost", doc.Origins)
+	}
+	for _, format := range []string{"cdx", "spdx"} {
+		var data []byte
+		var err error
+		if format == "cdx" {
+			data, err = export.CycloneDX(doc)
+		} else {
+			data, err = export.SPDX23(doc)
+		}
+		if err != nil || !strings.Contains(string(data), "./fork") {
+			t.Fatalf("%s lost local vendor location: %v", format, err)
+		}
+	}
+	assertDevelopmentExports(t, doc)
+}
