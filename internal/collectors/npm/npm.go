@@ -83,8 +83,19 @@ func Collect(file, project string) (model.Document, error) {
 			continue
 		}
 		name := meta.Name
+		local := localLockLocation(location) && !strings.Contains("/"+location+"/", "/node_modules/")
+		var localData []byte
+		var localInput string
 		if name == "" {
 			name = nameFromLocation(location)
+		}
+		if name == "" && local {
+			if content, input, err := common.ReadLocalNodeManifest(file, location); err == nil {
+				var identity struct{ Name, Version string }
+				if json.Unmarshal(content, &identity) == nil && identity.Name != "" && identity.Version == meta.Version {
+					name, localData, localInput = identity.Name, content, input
+				}
+			}
 		}
 		if name == "" || meta.Version == "" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: location})
@@ -98,6 +109,16 @@ func Collect(file, project string) (model.Document, error) {
 			Licenses: append(licensing.JSON(meta.License, ev, pointer+"/license", false), licensing.JSON(meta.Licenses, ev, pointer+"/licenses", false)...),
 			Hashes:   common.Integrity(meta.Integrity),
 			Evidence: []model.Evidence{ev},
+		}
+		if local {
+			component.Kind = "application"
+		}
+		if localData != nil {
+			identityEvidence := common.Evidence(localInput, "npm-local-manifest", "/name", localData)
+			identityEvidence.Method = "source-analysis"
+			component.Evidence = append(component.Evidence, identityEvidence)
+			doc.Sources = append(doc.Sources, localInput)
+			common.CollectNodeDevelopment(&doc, ref, localData, identityEvidence)
 		}
 		if meta.Patched != nil {
 			patch, issue := inspectPatch(file, location, meta.Patched, common.Evidence(file, "npm-lock", pointer+"/patched", data))
@@ -114,7 +135,7 @@ func Collect(file, project string) (model.Document, error) {
 		}
 		entries[location] = &item{location: location, data: meta, ref: ref}
 		doc.Components = append(doc.Components, component)
-		if localLockLocation(location) && !strings.Contains("/"+location+"/", "/node_modules/") {
+		if local {
 			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: location, Status: "declared", Evidence: ev})
 		} else {
 			addOrigin(&doc, ref, name, meta.Version, meta.Resolved, ev)

@@ -1,0 +1,11 @@
+lockfileVersion: '6.0'
+dependencies:
+  demo:
+    specifier: https://downloads.example.test/demo.tgz
+    version: demo@https://downloads.example.test/demo.tgz
+packages:
+  /demo@https://downloads.example.test/demo.tgz:
+    version: 2.0.0
+    resolution: {tarball: 'https://downloads.example.test/demo.tgz'}
+    dependencies: {helper: 1.0.0}
+  /helper@1.0.0: {}

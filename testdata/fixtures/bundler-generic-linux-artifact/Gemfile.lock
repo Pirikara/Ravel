@@ -1,0 +1,18 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    generic (1.2.3-x86_64-linux)
+    native (2.0.0-x86_64-linux-musl)
+    prerelease (3.0.0.pre)
+
+PLATFORMS
+  x86_64-linux-gnu
+  x86_64-linux-musl
+
+DEPENDENCIES
+  generic
+  native
+  prerelease
+
+BUNDLED WITH
+   2.6.9

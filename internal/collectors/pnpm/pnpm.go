@@ -42,6 +42,7 @@ type imported struct {
 }
 
 type packageEntry struct {
+	Version    string `yaml:"version"`
 	Resolution struct {
 		Integrity string `yaml:"integrity"`
 		Tarball   string `yaml:"tarball"`
@@ -283,6 +284,18 @@ func addPackage(doc *model.Document, file string, data []byte, documentIndex int
 		}
 	}
 	if !ok {
+		if remoteName, location, remote := splitNamedHTTP(base); remote {
+			name, version, ok = remoteName, pkg.Version, true
+			if !packageVersion.MatchString(version) {
+				version = ""
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "version_unresolved", Name: name})
+			}
+			if pkg.Resolution.Tarball == "" {
+				pkg.Resolution.Tarball = location
+			}
+		}
+	}
+	if !ok {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: "invalid package key"})
 		return occurrence{}
 	}
@@ -326,26 +339,8 @@ func addPackage(doc *model.Document, file string, data []byte, documentIndex int
 }
 
 func collectLocalIdentity(doc *model.Document, lockfile, directory string, component *model.Component) bool {
-	if !filepath.IsLocal(directory) || strings.ContainsAny(directory, "\\\x00\r\n") {
-		return false
-	}
-	root, err := os.OpenRoot(filepath.Dir(lockfile))
+	data, input, err := common.ReadLocalNodeManifest(lockfile, directory)
 	if err != nil {
-		return false
-	}
-	defer root.Close()
-	name := filepath.Join(directory, "package.json")
-	file, err := root.Open(name)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
-		return false
-	}
-	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
-	if err != nil || len(data) > 1<<20 {
 		return false
 	}
 	var manifest struct {
@@ -356,7 +351,6 @@ func collectLocalIdentity(doc *model.Document, lockfile, directory string, compo
 		return false
 	}
 	component.Version = manifest.Version
-	input := filepath.Join(filepath.Dir(lockfile), name)
 	ev := common.Evidence(input, "pnpm-local-manifest", "/version", data)
 	ev.Method = "source-analysis"
 	component.Evidence = append(component.Evidence, ev)
@@ -376,6 +370,23 @@ func splitPackage(key string) (string, string, bool) {
 		return "", "", false
 	}
 	return name, version, true
+}
+
+// A named URL pin is a distinct occurrence even when its declared version is
+// also available from a registry. The URL itself is not a package version.
+func splitNamedHTTP(key string) (string, string, bool) {
+	if len(key) < 2 {
+		return "", "", false
+	}
+	at := strings.Index(key[1:], "@") + 1
+	if at <= 0 {
+		return "", "", false
+	}
+	name, location := key[:at], key[at+1:]
+	if !packageName.MatchString(name) || (!strings.HasPrefix(location, "https://") && !strings.HasPrefix(location, "http://")) || safeurl.Clean(location) == "" {
+		return "", "", false
+	}
+	return name, location, true
 }
 
 func appendEdge(doc *model.Document, file string, data []byte, from, to, kind, condition string) {

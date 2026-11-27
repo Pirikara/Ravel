@@ -1,0 +1,27 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      registry: {specifier: 'npm:demo@1.0.0', version: 'demo@1.0.0'}
+      first-fork: {specifier: 'https://downloads.example.test/demo.tgz', version: 'demo@https://downloads.example.test/demo.tgz(peer@1.0.0)'}
+      second-fork: {specifier: 'https://downloads.example.test/demo.tgz', version: 'demo@https://downloads.example.test/demo.tgz(peer@2.0.0)'}
+      '@scope/unversioned': {specifier: 'https://downloads.example.test/unknown.tgz', version: 'https://downloads.example.test/unknown.tgz'}
+packages:
+  demo@1.0.0: {}
+  demo@https://downloads.example.test/demo.tgz:
+    version: 1.0.0
+    resolution: {tarball: 'https://downloads.example.test/demo.tgz'}
+  '@scope/unversioned@https://downloads.example.test/unknown.tgz': {}
+  peer@1.0.0: {}
+  peer@2.0.0: {}
+  helper@2.0.0: {}
+snapshots:
+  demo@1.0.0: {}
+  demo@https://downloads.example.test/demo.tgz(peer@1.0.0):
+    dependencies: {peer: 1.0.0, helper: 2.0.0}
+  demo@https://downloads.example.test/demo.tgz(peer@2.0.0):
+    dependencies: {peer: 2.0.0, helper: 2.0.0}
+  '@scope/unversioned@https://downloads.example.test/unknown.tgz': {}
+  peer@1.0.0: {}
+  peer@2.0.0: {}
+  helper@2.0.0: {}
