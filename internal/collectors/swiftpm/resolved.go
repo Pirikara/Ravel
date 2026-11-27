@@ -80,6 +80,9 @@ func CollectResolved(manifest, project string, allowNetwork bool) (model.Documen
 		return model.Document{}, fmt.Errorf("invalid SwiftPM dependency graph")
 	}
 	doc := common.NewDocument(manifest, project, "swiftpm", manifestData)
+	// Hash the resolver output once; each record changes only its pointer.
+	graphEvidence := common.Evidence(swiftGraphEvidenceSource, "swiftpm-resolver", "", data)
+	graphEvidence.Method = "resolver-output"
 	seen := map[string]string{}
 	edges := map[string]bool{}
 	count := 0
@@ -97,8 +100,8 @@ func CollectResolved(manifest, project string, allowNetwork bool) (model.Documen
 			count++
 			ref = "swiftpm:" + common.ID(key)
 			seen[key] = ref
-			ev := common.Evidence(swiftGraphEvidenceSource, "swiftpm-resolver", pointer, data)
-			ev.Method = "resolver-output"
+			ev := graphEvidence
+			ev.Pointer = pointer
 			version := item.Version
 			if version == "unspecified" {
 				version = ""
@@ -123,8 +126,8 @@ func CollectResolved(manifest, project string, allowNetwork bool) (model.Documen
 		}
 		if !edges[parent+"\x00"+ref] {
 			edges[parent+"\x00"+ref] = true
-			ev := common.Evidence(swiftGraphEvidenceSource, "swiftpm-resolver", pointer, data)
-			ev.Method = "resolver-output"
+			ev := graphEvidence
+			ev.Pointer = pointer
 			doc.Edges = append(doc.Edges, model.Edge{From: parent, To: ref, Kind: "depends_on", Evidence: ev})
 		}
 		for index, child := range item.Dependencies {
