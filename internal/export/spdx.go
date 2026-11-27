@@ -153,8 +153,8 @@ func SPDX23(doc model.Document) ([]byte, error) {
 		}
 		item := spdxPackage{ID: id, Name: c.Name, Version: c.Version, Purpose: purpose, DownloadLocation: "NOASSERTION", LicenseConcluded: "NOASSERTION", LicenseDeclared: "NOASSERTION", CopyrightText: "NOASSERTION"}
 		applySPDXLicenses(&item, c.Licenses)
-		item.SourceInfo = packageSourceInfo(origins[c.ID])
-		item.DownloadLocation = packageDownloadLocation(origins[c.ID])
+		item.SourceInfo = packageSourceInfo(origins[c.ID], c)
+		item.DownloadLocation = packageDownloadLocation(origins[c.ID], c)
 		if c.Context != "" {
 			item.Comment = "Ravel context: " + c.Context
 		}

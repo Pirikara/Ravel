@@ -1,0 +1,9 @@
+# yarn lockfile v1
+
+"parse-tokens@1.2.3":
+  version "1.2.3"
+  resolved "https://registry.npmjs.org/parse-tokens/-/parse-tokens-1.2.3.tgz#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+"@demo/theme-tokens@1.2.3":
+  version "1.2.3"
+  resolved "https://registry.example.test/api/npm/team/@demo/theme-tokens/-/@demo/theme-tokens-1.2.3.tgz#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

@@ -47,6 +47,24 @@ func TestGoPURLSourceQualificationPreservesCase(t *testing.T) {
 	}
 }
 
+func TestNpmArtifactSourceContext(t *testing.T) {
+	const location = "https://registry.example.test/api/npm/parse-tokens/-/parse-tokens-1.2.3.tgz"
+	origin := model.Origin{Kind: "download_url", SafeURL: location}
+	component := model.Component{Name: "compat", Version: "1.2.3", Context: "alias-of:parse-tokens", Evidence: []model.Evidence{{Collector: "yarn-classic"}}}
+	if got := CleanOriginURL(origin, component); got != location {
+		t.Fatal("alias lost its recorded physical distribution location", got)
+	}
+	component.Context = ""
+	if got := CleanOriginURL(origin, component); got != "" {
+		t.Fatal("artifact name did not match the component", got)
+	}
+	component.Name, component.Evidence = "parse-tokens", nil
+	component.PURL = "pkg:pypi/parse-tokens@1.2.3"
+	if got := CleanOriginURL(origin, component); got != "" {
+		t.Fatal("npm artifact context applied to another ecosystem", got)
+	}
+}
+
 func TestDefaultUnknownAndAmbiguousPURLSources(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

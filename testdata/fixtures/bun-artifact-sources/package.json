@@ -1,0 +1,8 @@
+{
+  "name": "artifact-source-demo",
+  "version": "0.1.0",
+  "dependencies": {
+    "parse-tokens": "1.2.3",
+    "@demo/theme-tokens": "1.2.3"
+  }
+}

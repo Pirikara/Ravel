@@ -129,7 +129,7 @@ func CycloneDX(doc model.Document) ([]byte, error) {
 			item.Properties = append(item.Properties, property{Name: "ravel:context", Value: c.Context})
 		}
 		for _, o := range origins[c.ID] {
-			if ref, ok := originReference(o); ok {
+			if ref, ok := originReference(o, c); ok {
 				item.ExternalReferences = append(item.ExternalReferences, ref)
 			}
 			switch o.Kind {

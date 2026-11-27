@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -95,6 +96,43 @@ func CleanNpmTarball(raw, name, version string) string {
 	u.Fragment = ""
 	u.RawFragment = ""
 	return u.String()
+}
+
+var npmSourceName = regexp.MustCompile(`^(?:@[A-Za-z0-9_~][A-Za-z0-9._~-]*/)?[A-Za-z0-9_~][A-Za-z0-9._~-]*$`)
+var npmSourceVersion = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+
+// CleanNpmArtifact also recognizes registry tarball paths whose package name
+// contains a filtered word. Only the suffix fixed by the recorded name and
+// version is exempt; any registry prefix still passes the generic filter.
+// Recognizing a URL does not establish that its host is the default registry.
+func CleanNpmArtifact(raw, name, version string) string {
+	if clean := Clean(raw); clean != "" {
+		return clean
+	}
+	if !npmSourceName.MatchString(name) || !npmSourceVersion.MatchString(version) {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Opaque != "" || path.Clean(u.Path) != u.Path {
+		return ""
+	}
+	for _, filename := range []string{path.Base(name), name} {
+		suffix := fmt.Sprintf("/%s/-/%s-%s.tgz", name, filename, version)
+		prefix, ok := strings.CutSuffix(u.Path, suffix)
+		if !ok {
+			continue
+		}
+		parent := *u
+		parent.Path, parent.RawPath = prefix, ""
+		parent.RawQuery, parent.Fragment = "", ""
+		if Clean(parent.String()) == "" {
+			continue
+		}
+		u.RawPath, u.RawQuery, u.Fragment = "", "", ""
+		u.ForceQuery, u.RawFragment = false, ""
+		return u.String()
+	}
+	return ""
 }
 
 // CleanCondaArtifact keeps a recorded Conda archive URL only when the final

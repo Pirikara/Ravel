@@ -65,6 +65,18 @@ An HTTPS or `ssh://` Git URL with `--git-ref REF --network allow` is fetched at 
 
 OCI scans accept OCI and Docker schema 2 media types, verify available descriptor SHA-256 hashes and uncompressed layer DiffIDs. A multi-image layout requires `--platform os/architecture[/variant]`. Legacy Docker save archives must contain one image. Registry references select `linux` on the host architecture by default and download only that platform's image; use `--platform` to override. The selected manifest digest is recorded in Ravel JSON.
 
+## Recorded distribution information
+
+Recorded npm tarball locations retain their distribution URL across npm, pnpm,
+Yarn Classic/Berry, Bun, and installed Node metadata, including package names
+such as `js-tokens`. A custom registry URL remains a distinct source; recognizing
+its package-shaped path does not make it the default npm registry.
+
+For uv registry packages with multiple wheel/source distribution candidates,
+the lockfile does not select one installed artifact. Their alternative checksums
+are not combined into the component's artifact hashes. A single recorded
+distribution can supply its checksum.
+
 ## Image lockfile correlation
 
 Image scans read final-layer lockfiles and selected companion manifests as supporting evidence for packages already found in installed metadata or executable/archive metadata. They do not add lock-only packages to the image inventory or treat lockfile integrity values as hashes of installed files.

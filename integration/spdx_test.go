@@ -14,7 +14,6 @@ import (
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/Pirikara/Ravel/internal/model"
-	"github.com/Pirikara/Ravel/internal/safeurl"
 )
 
 func TestSPDX23AllFixtures(t *testing.T) {
@@ -121,7 +120,10 @@ func TestSPDX23AllFixtures(t *testing.T) {
 						continue
 					}
 					hasOrigins[id] = true
-					clean := safeurl.Clean(origin.SafeURL)
+					// Native origins already contain sanitized, contextual source
+					// locations; check their projection without reclassifying a
+					// known package filename using the generic URL filter.
+					clean := origin.SafeURL
 					if origin.Kind == "download_url" && clean != "" {
 						allowedDownloads[id][clean] = true
 					}
@@ -204,8 +206,8 @@ func TestSPDX23AllFixtures(t *testing.T) {
 			}
 		})
 	}
-	if count != 273 {
-		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 273", count)
+	if count != 278 {
+		t.Fatalf("SPDX fixture suite omitted a known fixture: got %d, want 278", count)
 	}
 }
 
