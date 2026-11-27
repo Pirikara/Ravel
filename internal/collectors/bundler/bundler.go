@@ -163,6 +163,10 @@ func Collect(path, project string) (model.Document, error) {
 			if strings.HasSuffix(platform, "-linux") {
 				variants = append(variants, platform+"-gnu", platform+"-musl")
 			}
+			// A libc-specific host can also select a generic Linux artifact.
+			if strings.HasSuffix(platform, "-linux-gnu") || strings.HasSuffix(platform, "-linux-musl") {
+				variants = append(variants, strings.TrimSuffix(strings.TrimSuffix(platform, "-gnu"), "-musl"))
+			}
 			for _, variant := range variants {
 				if len(variant) > len(matchedPlatform) && strings.HasSuffix(item.component.Version, "-"+variant) {
 					matchedPlatform = variant

@@ -339,26 +339,8 @@ func addPackage(doc *model.Document, file string, data []byte, documentIndex int
 }
 
 func collectLocalIdentity(doc *model.Document, lockfile, directory string, component *model.Component) bool {
-	if !filepath.IsLocal(directory) || strings.ContainsAny(directory, "\\\x00\r\n") {
-		return false
-	}
-	root, err := os.OpenRoot(filepath.Dir(lockfile))
+	data, input, err := common.ReadLocalNodeManifest(lockfile, directory)
 	if err != nil {
-		return false
-	}
-	defer root.Close()
-	name := filepath.Join(directory, "package.json")
-	file, err := root.Open(name)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
-		return false
-	}
-	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
-	if err != nil || len(data) > 1<<20 {
 		return false
 	}
 	var manifest struct {
@@ -369,7 +351,6 @@ func collectLocalIdentity(doc *model.Document, lockfile, directory string, compo
 		return false
 	}
 	component.Version = manifest.Version
-	input := filepath.Join(filepath.Dir(lockfile), name)
 	ev := common.Evidence(input, "pnpm-local-manifest", "/version", data)
 	ev.Method = "source-analysis"
 	component.Evidence = append(component.Evidence, ev)
