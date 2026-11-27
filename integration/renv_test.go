@@ -34,7 +34,7 @@ func TestRenvLockCLI(t *testing.T) {
 	ids := map[string]string{}
 	for _, pkg := range basic.Components {
 		ids[pkg.ID] = pkg.Name
-		if pkg.PURL != "" || len(pkg.Hashes) != 0 || len(pkg.Evidence) != 1 || pkg.Evidence[0].InputDigest == "" {
+		if (pkg.Name == "markdown" && !strings.HasPrefix(pkg.PURL, "pkg:cran/markdown@1.13?repository_url=")) || (pkg.Name != "markdown" && pkg.PURL != "") || len(pkg.Hashes) != 0 || len(pkg.Evidence) != 1 || pkg.Evidence[0].InputDigest == "" {
 			t.Fatalf("renv package evidence/hash: %#v", pkg)
 		}
 	}

@@ -228,6 +228,9 @@ func appendRootEdges(doc *model.Document, requests []directRequest, selected map
 				name = normalizePyPIName(name)
 			}
 			key := entry.record.manager + "\x00" + name
+			if entry.record.manager == "conda_source" {
+				key = "conda\x00" + name
+			}
 			index[key] = append(index[key], entry)
 		}
 	}

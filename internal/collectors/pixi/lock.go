@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
+	"github.com/Pirikara/Ravel/internal/licensing"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
 )
@@ -30,22 +31,24 @@ var revisionPattern = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
 var pythonSeparators = regexp.MustCompile(`[-_.]+`)
 
 type packageRef struct {
-	Conda string `yaml:"conda"`
-	PyPI  string `yaml:"pypi"`
+	Conda       string `yaml:"conda"`
+	PyPI        string `yaml:"pypi"`
+	CondaSource string `yaml:"conda_source"`
 }
 
 type packageRecord struct {
 	packageRef `yaml:",inline"`
-	Kind       string   `yaml:"kind"`
-	URL        string   `yaml:"url"`
-	Name       string   `yaml:"name"`
-	Version    string   `yaml:"version"`
-	Build      string   `yaml:"build"`
-	Subdir     string   `yaml:"subdir"`
-	SHA256     string   `yaml:"sha256"`
-	MD5        string   `yaml:"md5"`
-	Depends    []string `yaml:"depends"`
-	Requires   []string `yaml:"requires_dist"`
+	Kind       string    `yaml:"kind"`
+	URL        string    `yaml:"url"`
+	Name       string    `yaml:"name"`
+	Version    string    `yaml:"version"`
+	Build      string    `yaml:"build"`
+	Subdir     string    `yaml:"subdir"`
+	SHA256     string    `yaml:"sha256"`
+	MD5        string    `yaml:"md5"`
+	Depends    []string  `yaml:"depends"`
+	Requires   []string  `yaml:"requires_dist"`
+	License    yaml.Node `yaml:"license"`
 }
 
 type environment struct {
@@ -62,6 +65,7 @@ type resolvedRecord struct {
 	manager, locator, name, version, subdir string
 	fields                                  packageRecord
 	index                                   int
+	sourceLocation, sourceHash              string
 }
 
 type occurrence struct {
@@ -106,6 +110,7 @@ func CollectLock(filename, project string) (model.Document, error) {
 		return model.Document{}, errors.New("pixi.lock lacks environments or packages")
 	}
 	doc := common.NewDocument(filename, project, "pixi", data)
+	baseEvidence := common.Evidence(filename, "pixi-lock", "", data)
 	records := map[string]resolvedRecord{}
 	for index, fields := range lock.Packages {
 		manager, locator := packageLocator(fields.packageRef)
@@ -117,6 +122,15 @@ func CollectLock(filename, project string) (model.Document, error) {
 			continue
 		}
 		name, version, subdir := fields.Name, fields.Version, fields.Subdir
+		var sourceLocation, sourceHash string
+		if manager == "conda_source" {
+			sourceName, location, hash, ok := parseSourceIdentifier(locator)
+			if !ok || lock.Version != 7 || name != "" && name != sourceName {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "pixi_package_identity_unresolved", Name: fmt.Sprint(index)})
+				continue
+			}
+			name, sourceLocation, sourceHash = sourceName, location, hash
+		}
 		if manager == "conda" {
 			artifactName, artifactVersion, artifactSubdir := condaArtifact(locator)
 			if name == "" {
@@ -129,7 +143,8 @@ func CollectLock(filename, project string) (model.Document, error) {
 				subdir = artifactSubdir
 			}
 		}
-		if !namePattern.MatchString(name) || !validVersion(version) || manager == "conda" && !scopePattern.MatchString(subdir) {
+		versionValid := validVersion(version) || manager == "conda_source" && version == ""
+		if !namePattern.MatchString(name) || !versionValid || manager == "conda" && !scopePattern.MatchString(subdir) {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "pixi_package_identity_unresolved", Name: fmt.Sprint(index)})
 			continue
 		}
@@ -138,7 +153,7 @@ func CollectLock(filename, project string) (model.Document, error) {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "pixi_duplicate_package_record", Name: name})
 			continue
 		}
-		records[key] = resolvedRecord{manager: manager, locator: locator, name: name, version: version, subdir: subdir, fields: fields, index: index}
+		records[key] = resolvedRecord{manager: manager, locator: locator, name: name, version: version, subdir: subdir, fields: fields, index: index, sourceLocation: sourceLocation, sourceHash: sourceHash}
 	}
 	environmentNames := make([]string, 0, len(lock.Environments))
 	for name := range lock.Environments {
@@ -186,16 +201,38 @@ func CollectLock(filename, project string) (model.Document, error) {
 				}
 				seen[selection] = true
 				id := "pixi:" + common.ID(filename+"\x00"+selection)
-				evidence := common.Evidence(filename, "pixi-lock", fmt.Sprintf("/environments/%s/packages/%s/%d", envName, platform, index), data)
+				evidence := baseEvidence
+				evidence.Pointer = fmt.Sprintf("/environments/%s/packages/%s/%d", envName, platform, index)
 				context := "environment=" + envName + ";manager=" + manager
 				if record.subdir != "" {
 					context += ";artifact-subdir=" + record.subdir
 				}
-				component := model.Component{ID: id, Kind: "package", Name: record.name, Version: record.version, Platform: platform, Context: context, Evidence: []model.Evidence{evidence, common.Evidence(filename, "pixi-lock", fmt.Sprintf("/packages/%d", record.index), data)}}
+				recordEvidence := baseEvidence
+				recordEvidence.Pointer = fmt.Sprintf("/packages/%d", record.index)
+				component := model.Component{ID: id, Kind: "package", Name: record.name, Version: record.version, Platform: platform, Context: context, Evidence: []model.Evidence{evidence, recordEvidence}}
+				if record.manager == "conda_source" {
+					component.Context += ";source-variant=" + record.sourceHash
+					if record.version == "" {
+						component.Kind = "module"
+						doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "version_unresolved", Name: record.name, Scope: envName + "/" + platform})
+					}
+					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "pixi_source_build_graph_unavailable", Name: record.name, Scope: envName + "/" + platform})
+				}
 				if manager == "pypi" && officialPyPI(locator) {
 					component.PURL = packageurl.NewPackageURL("pypi", "", pythonSeparators.ReplaceAllString(strings.ToLower(record.name), "-"), record.version, nil, "").ToString()
 				}
-				addHashes(&doc, &component, record)
+				if record.manager != "conda_source" {
+					addHashes(&doc, &component, record)
+				}
+				if field := record.fields.License; field.Kind != 0 {
+					if field.Kind == yaml.ScalarNode && field.Tag == "!!str" {
+						e := recordEvidence
+						e.Pointer += "/license"
+						component.Licenses = licensing.Declare(field.Value, "license", e)
+					} else {
+						doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "pixi_metadata_invalid", Name: record.name, Scope: "license"})
+					}
+				}
 				addOrigin(&doc, id, record, evidence)
 				doc.Components = append(doc.Components, component)
 				occ := occurrence{record: record, id: id, env: envName, platform: platform, evidence: evidence}
@@ -217,7 +254,7 @@ func CollectLock(filename, project string) (model.Document, error) {
 		if parent.record.manager == "pypi" {
 			requirements = parent.record.fields.Requires
 		}
-		for _, spec := range requirements {
+		for dependencyIndex, spec := range requirements {
 			name := requirementName(spec)
 			if name == "" {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "pixi_requirement_invalid", Name: parent.record.name})
@@ -243,7 +280,11 @@ func CollectLock(filename, project string) (model.Document, error) {
 				continue
 			}
 			evidence := parent.evidence
-			evidence.Pointer = fmt.Sprintf("/packages/%d/depends/%s", parent.record.index, name)
+			field := "depends"
+			if parent.record.manager == "pypi" {
+				field = "requires_dist"
+			}
+			evidence.Pointer = fmt.Sprintf("/packages/%d/%s/%d", parent.record.index, field, dependencyIndex)
 			doc.Edges = append(doc.Edges, model.Edge{From: parent.id, To: matches[0].id, Kind: "requires", Condition: "environment=" + parent.env + "; platform=" + parent.platform + "; constraint unverified", Evidence: evidence})
 		}
 	}
@@ -259,11 +300,14 @@ func CollectLock(filename, project string) (model.Document, error) {
 }
 
 func packageLocator(ref packageRef) (string, string) {
-	if ref.Conda != "" && ref.PyPI == "" {
+	if ref.Conda != "" && ref.PyPI == "" && ref.CondaSource == "" {
 		return "conda", ref.Conda
 	}
-	if ref.PyPI != "" && ref.Conda == "" {
+	if ref.PyPI != "" && ref.Conda == "" && ref.CondaSource == "" {
 		return "pypi", ref.PyPI
+	}
+	if ref.CondaSource != "" && ref.Conda == "" && ref.PyPI == "" {
+		return "conda_source", ref.CondaSource
 	}
 	return "", ""
 }
@@ -334,6 +378,10 @@ func addHashes(doc *model.Document, component *model.Component, record resolvedR
 
 func addOrigin(doc *model.Document, id string, record resolvedRecord, evidence model.Evidence) {
 	locator := record.locator
+	if record.manager == "conda_source" {
+		addSourceOrigin(doc, id, record, evidence)
+		return
+	}
 	if record.manager == "pypi" && (strings.HasPrefix(locator, "./") || strings.HasPrefix(locator, "../")) && len(locator) <= 1024 && strings.IndexFunc(locator, unicode.IsControl) < 0 && !strings.ContainsAny(locator, "?#") {
 		doc.Origins = append(doc.Origins, model.Origin{Occurrence: id, Kind: "local", LocalPath: locator, Status: "declared", Evidence: evidence})
 		return
