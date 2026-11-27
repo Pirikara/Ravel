@@ -21,6 +21,20 @@ func TestClassicLocalLocatorConflictRetained(t *testing.T) {
 	if len(origins) != 2 || origins[0].path != "./first" || origins[1].path != "./second" {
 		t.Fatal(origins)
 	}
+	dir := t.TempDir()
+	lock := "# yarn lockfile v1\n\n\"tool@link:./first\", \"tool@link:./second\":\n  version \"1.0.0\"\n"
+	for name, data := range map[string]string{"yarn.lock": lock, "package.json": `{"dependencies":{"tool":"link:./first"}}`} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	doc, err := Collect(filepath.Join(dir, "yarn.lock"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Components) != 1 || doc.Components[0].PURL != "" || len(doc.Origins) != 2 || doc.Coverage.OriginState != "partial" {
+		t.Fatal(doc.Components, doc.Origins, doc.Coverage)
+	}
 }
 
 func TestClassicResolvedArtifactOverridesLocalSelectors(t *testing.T) {
