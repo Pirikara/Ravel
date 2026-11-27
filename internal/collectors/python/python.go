@@ -364,9 +364,11 @@ func addGraph(doc *model.Document, nodes []node, file string, data []byte, colle
 	for _, n := range nodes {
 		if n.root {
 			rootCount++
-		} else {
-			byName[n.name] = append(byName[n.name], n)
 		}
+		// Editable projects can be dependency targets too, including a
+		// dependency that points back to the application through an extra.
+		// Keep source/version disambiguation for local and registry records.
+		byName[n.name] = append(byName[n.name], n)
 	}
 	if rootCount == 0 {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})

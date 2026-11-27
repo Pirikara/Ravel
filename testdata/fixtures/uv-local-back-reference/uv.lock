@@ -1,0 +1,25 @@
+version = 1
+revision = 3
+requires-python = ">=3.11"
+resolution-markers = ["sys_platform == 'linux'", "sys_platform != 'linux'"]
+
+[[package]]
+name = "work-app"
+version = "1.0.0"
+source = { editable = "." }
+resolution-markers = ["sys_platform == 'linux'", "sys_platform != 'linux'"]
+dependencies = [{ name = "work-app", version = "3.0.0", source = { registry = "https://pypi.org/simple" } }]
+
+[package.optional-dependencies]
+feature = [{ name = "addon" }]
+
+[[package]]
+name = "addon"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [{ name = "work-app", version = "1.0.0", source = { editable = "." } }]
+
+[[package]]
+name = "work-app"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }

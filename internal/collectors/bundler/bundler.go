@@ -18,6 +18,7 @@ import (
 
 var specLine = regexp.MustCompile(`^ {4}([^ ()]+) \(([^()]+)\)$`)
 var revisionPattern = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
+var artifactPlatform = regexp.MustCompile(`^(?:[A-Za-z0-9_]+-)?(?:aix|cygwin|darwin|freebsd|java|jruby|dalvik|dotnet|linux|mingw32|mingw|mswin32|mswin64|netbsdelf|openbsd|solaris|wasi|macruby)[0-9.]*(?:[-_][A-Za-z0-9_.]+)*$`)
 
 type block struct {
 	kind     string
@@ -155,28 +156,15 @@ func Collect(path, project string) (model.Document, error) {
 	}
 	doc.Coverage.Platforms = platforms
 	for _, item := range entries {
-		matchedPlatform := ""
-		for _, platform := range platforms {
-			variants := []string{platform}
-			// Bundler can list the generic Linux platform while locking
-			// artifacts whose gem platform also identifies their libc.
-			if strings.HasSuffix(platform, "-linux") {
-				variants = append(variants, platform+"-gnu", platform+"-musl")
-			}
-			// A libc-specific host can also select a generic Linux artifact.
-			if strings.HasSuffix(platform, "-linux-gnu") || strings.HasSuffix(platform, "-linux-musl") {
-				variants = append(variants, strings.TrimSuffix(strings.TrimSuffix(platform, "-gnu"), "-musl"))
-			}
-			for _, variant := range variants {
-				if len(variant) > len(matchedPlatform) && strings.HasSuffix(item.component.Version, "-"+variant) {
-					matchedPlatform = variant
-				}
-			}
-		}
-		if matchedPlatform != "" {
-			item.component.Version = strings.TrimSuffix(item.component.Version, "-"+matchedPlatform)
-			item.component.Platform = matchedPlatform
-			item.component.PURL = "pkg:gem/" + url.PathEscape(item.component.Name) + "@" + common.PURLVersion(item.component.Version) + "?platform=" + url.QueryEscape(matchedPlatform)
+		// The spec record encodes version-platform independently of the host
+		// PLATFORMS section. For recognizable artifact suffixes, the first
+		// hyphen separates the version. Preserve legacy prerelease strings
+		// whose suffix is not a platform instead of inventing a platform.
+		version, platform, present := strings.Cut(item.component.Version, "-")
+		if present && version != "" && artifactPlatform.MatchString(platform) {
+			item.component.Version = version
+			item.component.Platform = platform
+			item.component.PURL = "pkg:gem/" + url.PathEscape(item.component.Name) + "@" + common.PURLVersion(version) + "?platform=" + url.QueryEscape(platform)
 		}
 	}
 	byName := map[string][]*entry{}

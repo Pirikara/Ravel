@@ -31,6 +31,7 @@ type classicManifest struct {
 	DevDependencies      map[string]string `json:"devDependencies"`
 	OptionalDependencies map[string]string `json:"optionalDependencies"`
 	Workspaces           json.RawMessage   `json:"workspaces"`
+	Private              json.RawMessage   `json:"private"`
 }
 
 var classicName = regexp.MustCompile(`^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$`)
@@ -66,10 +67,10 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 			}
 		}
 	}
-	manifestData, manifestErr := os.ReadFile(filepath.Join(filepath.Dir(file), "package.json"))
+	manifestData, manifestFile, manifestErr := common.ReadLocalNodeManifest(file, ".")
 	var manifest classicManifest
 	if manifestErr == nil {
-		doc.Sources = append(doc.Sources, filepath.Join(filepath.Dir(file), "package.json"))
+		doc.Sources = append(doc.Sources, manifestFile)
 		if err := json.Unmarshal(manifestData, &manifest); err != nil {
 			return model.Document{}, fmt.Errorf("invalid package.json: %w", err)
 		}
@@ -82,12 +83,11 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 	if manifestErr != nil {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
 	}
-	if len(manifest.Workspaces) > 0 {
-		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unreachable_graph", Name: "Yarn workspaces"})
-	}
+	workspaces := collectClassicWorkspaces(&doc, file, manifest)
 	type work struct {
 		index                            int
 		from, kind, condition, requested string
+		evidence                         model.Evidence
 	}
 	queue := []work{}
 	resolve := func(name, version string) int {
@@ -107,23 +107,48 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: code, Name: name})
 		return -1
 	}
+	enqueue := func(from, kind, condition, name, version string, evidence model.Evidence) {
+		if local, known := classicWorkspaceTarget(&doc, workspaces, name, version); local != "" {
+			doc.Edges = append(doc.Edges, model.Edge{From: from, To: local, Kind: kind, Condition: condition, Evidence: evidence})
+			if condition != "" {
+				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "conditional_graph", Name: name})
+			}
+			return
+		} else if !known {
+			return
+		}
+		if index := resolve(name, version); index >= 0 {
+			queue = append(queue, work{index: index, from: from, kind: kind, condition: condition, requested: name, evidence: evidence})
+		}
+	}
+	seedManifest := func(from string, m classicManifest, input string, content []byte) int {
+		count := 0
+		for _, group := range []struct {
+			name string
+			deps map[string]string
+		}{{"dependencies", m.Dependencies}, {"devDependencies", m.DevDependencies}, {"optionalDependencies", m.OptionalDependencies}} {
+			for name, version := range group.deps {
+				count++
+				condition := ""
+				if group.name == "optionalDependencies" {
+					condition = "optional"
+				}
+				kind := "depends_on"
+				if from == "root" {
+					kind = "direct"
+				}
+				enqueue(from, kind, condition, name, version, common.Evidence(input, "yarn-manifest", "/"+group.name+"/"+strings.ReplaceAll(strings.ReplaceAll(name, "~", "~0"), "/", "~1"), content))
+			}
+		}
+		return count
+	}
 	rootCount := 0
 	if manifestErr == nil {
-		for _, group := range []map[string]string{manifest.Dependencies, manifest.DevDependencies} {
-			for name, version := range group {
-				rootCount++
-				if index := resolve(name, version); index >= 0 {
-					queue = append(queue, work{index: index, from: "root", kind: "direct", requested: name})
-				}
-			}
+		rootCount = seedManifest("root", manifest, manifestFile, manifestData)
+		for _, workspace := range workspaces {
+			seedManifest(workspace.ref, workspace.manifest, workspace.input, workspace.data)
 		}
-		for name, version := range manifest.OptionalDependencies {
-			rootCount++
-			if index := resolve(name, version); index >= 0 {
-				queue = append(queue, work{index: index, from: "root", kind: "direct", condition: "optional", requested: name})
-			}
-		}
-		if rootCount == 0 {
+		if rootCount == 0 && len(workspaces) == 0 {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_direct_dependencies"})
 		}
 	} else {
@@ -146,9 +171,9 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 		}
 		ref := "yarn:" + common.ID(base)
 		if item.from != "" {
-			ev := common.Evidence(file, "yarn-classic", fmt.Sprintf("/line/%d", entry.line), data)
-			if item.from == "root" && manifestErr == nil {
-				ev = common.Evidence(filepath.Join(filepath.Dir(file), "package.json"), "yarn-manifest", "/dependencies", manifestData)
+			ev := item.evidence
+			if ev.Collector == "" {
+				ev = common.Evidence(file, "yarn-classic", fmt.Sprintf("/line/%d", entry.line), data)
 			}
 			doc.Edges = append(doc.Edges, model.Edge{From: item.from, To: ref, Kind: item.kind, Condition: item.condition, Evidence: ev})
 			if item.condition != "" {
@@ -191,14 +216,10 @@ func collectClassic(file, project string, data []byte) (model.Document, error) {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: name})
 		}
 		for name, version := range entry.deps {
-			if index := resolve(name, version); index >= 0 {
-				queue = append(queue, work{index: index, from: ref, kind: "depends_on", requested: name})
-			}
+			enqueue(ref, "depends_on", "", name, version, ev)
 		}
 		for name, version := range entry.optional {
-			if index := resolve(name, version); index >= 0 {
-				queue = append(queue, work{index: index, from: ref, kind: "depends_on", condition: "optional", requested: name})
-			}
+			enqueue(ref, "depends_on", "optional", name, version, ev)
 		}
 	}
 	common.Finalize(&doc)
