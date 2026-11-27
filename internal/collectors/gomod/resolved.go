@@ -183,7 +183,7 @@ func addResolvedOrigin(doc *model.Document, ref string, item listedModule, ev mo
 		return
 	}
 	if item.Replace.Version == "" {
-		doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", Status: "declared", Evidence: ev})
+		doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: item.Replace.Path, Status: "declared", Evidence: ev})
 		return
 	}
 	if module.CheckPath(item.Replace.Path) != nil || !semver.IsValid(item.Replace.Version) {
