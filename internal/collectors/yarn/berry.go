@@ -29,6 +29,7 @@ type berryEntry struct {
 
 type berryNode struct {
 	ref, name, resolution, key string
+	line                       int
 	entry                      berryEntry
 	root                       bool
 }
@@ -62,7 +63,7 @@ func collectBerry(file, project string, data []byte) (model.Document, error) {
 		if root {
 			ref = "root"
 		}
-		node := berryNode{ref: ref, name: name, resolution: entry.Resolution, key: key, entry: entry, root: root}
+		node := berryNode{ref: ref, name: name, resolution: entry.Resolution, key: key, line: raw.Line, entry: entry, root: root}
 		nodes = append(nodes, node)
 		for _, descriptor := range strings.Split(key, ", ") {
 			if prior, exists := descriptors[descriptor]; exists && prior.ref != ref {
@@ -147,6 +148,7 @@ func collectBerry(file, project string, data []byte) (model.Document, error) {
 
 func emitBerryComponent(doc *model.Document, file string, data []byte, node berryNode) {
 	ev := common.Evidence(file, "yarn-berry", "/entries/"+common.ID(node.key), data)
+	ev.Line = node.line
 	local := strings.Contains(node.resolution, "@workspace:") || node.entry.LinkType == "soft"
 	component := model.Component{ID: node.ref, Kind: "package", Name: node.name, Version: node.entry.Version, Evidence: []model.Evidence{ev}}
 	if local {

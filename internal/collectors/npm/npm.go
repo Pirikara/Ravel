@@ -68,12 +68,18 @@ func Collect(file, project string) (model.Document, error) {
 	}
 	doc := common.NewDocument(file, project, "npm", data)
 	entries := map[string]*item{}
+	links := map[string]string{}
 	for location, meta := range lock.Packages {
 		if location == "" {
 			continue
 		}
 		if meta.Link {
-			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: location})
+			// Resolve links only through records already present in this lock.
+			// No filesystem lookup or package code execution is needed.
+			links[location] = ""
+			if localLockLocation(meta.Resolved) {
+				links[location] = meta.Resolved
+			}
 			continue
 		}
 		name := meta.Name
@@ -108,7 +114,16 @@ func Collect(file, project string) (model.Document, error) {
 		}
 		entries[location] = &item{location: location, data: meta, ref: ref}
 		doc.Components = append(doc.Components, component)
-		addOrigin(&doc, ref, name, meta.Version, meta.Resolved, ev)
+		if localLockLocation(location) && !strings.Contains("/"+location+"/", "/node_modules/") {
+			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", LocalPath: location, Status: "declared", Evidence: ev})
+		} else {
+			addOrigin(&doc, ref, name, meta.Version, meta.Resolved, ev)
+		}
+	}
+	for location := range links {
+		if followLockedLink(entries, links, location) == nil {
+			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: location})
+		}
 	}
 	root, ok := lock.Packages[""]
 	if !ok {
@@ -154,14 +169,14 @@ func Collect(file, project string) (model.Document, error) {
 	seen := map[string]bool{}
 	addEdges := func(from, location, kind string, deps map[string]string) {
 		for name, required := range deps {
-			to := resolve(entries, location, name)
+			to := resolve(entries, links, location, name)
 			if to == nil {
 				if kind != "optional" && kind != "peer_requirement" {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: name})
 				}
 				continue
 			}
-			matches, verified := matchesNpmRequirement(required, to)
+			matches, verified := matchesNpmRequirementAt(required, to, location)
 			if !matches {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unresolved_dependency", Name: name})
 				continue
@@ -189,6 +204,9 @@ func Collect(file, project string) (model.Document, error) {
 	}
 	for _, entry := range entries {
 		addEdges(entry.ref, entry.location, "depends_on", entry.data.Dependencies)
+		if localLockLocation(entry.location) && !strings.Contains("/"+entry.location+"/", "/node_modules/") {
+			addEdges(entry.ref, entry.location, "direct_dev", entry.data.DevDependencies)
+		}
 		addEdges(entry.ref, entry.location, "optional", entry.data.OptionalDependencies)
 		addEdges(entry.ref, entry.location, "peer_requirement", entry.data.PeerDependencies)
 	}
@@ -232,23 +250,48 @@ func nameFromLocation(location string) string {
 	return strings.SplitN(name, "/", 2)[0]
 }
 
-func resolve(entries map[string]*item, location, name string) *item {
+func resolve(entries map[string]*item, links map[string]string, location, name string) *item {
 	base := location
 	for {
-		candidate := path.Join(base, "node_modules", name)
-		if entry := entries[candidate]; entry != nil {
-			return entry
+		if path.Base(base) != "node_modules" {
+			candidate := path.Join(base, "node_modules", name)
+			if entry := entries[candidate]; entry != nil {
+				return entry
+			}
+			if _, exists := links[candidate]; exists {
+				return followLockedLink(entries, links, candidate)
+			}
 		}
 		if base == "" {
 			return nil
 		}
-		idx := strings.LastIndex(base, "node_modules/")
-		if idx < 0 {
+		base = path.Dir(base)
+		if base == "." {
 			base = ""
-		} else {
-			base = strings.TrimSuffix(base[:idx], "/")
 		}
 	}
+}
+
+func localLockLocation(location string) bool {
+	return location != "" && location != "." && path.Clean(location) == location &&
+		!path.IsAbs(location) && location != ".." && !strings.HasPrefix(location, "../") &&
+		!strings.ContainsAny(location, ":\\\x00\r\n")
+}
+
+func followLockedLink(entries map[string]*item, links map[string]string, location string) *item {
+	seen := map[string]bool{}
+	for !seen[location] {
+		seen[location] = true
+		if entry := entries[location]; entry != nil {
+			return entry
+		}
+		target, exists := links[location]
+		if !exists || target == "" {
+			return nil
+		}
+		location = target
+	}
+	return nil
 }
 
 func addOrigin(doc *model.Document, ref, name, version, raw string, ev model.Evidence) {

@@ -1,16 +1,29 @@
 package npm
 
 import (
+	"path"
 	"strings"
 
 	semver "github.com/Masterminds/semver/v3"
 )
+
+func matchesNpmRequirementAt(required string, target *item, location string) (bool, bool) {
+	if strings.HasPrefix(required, "file:") && localLockLocation(target.location) &&
+		!strings.Contains("/"+target.location+"/", "/node_modules/") {
+		return path.Join(location, strings.TrimPrefix(required, "file:")) == target.location, true
+	}
+	return matchesNpmRequirement(required, target)
+}
 
 // matchesNpmRequirement checks ranges only when the lockfile gives enough
 // information. Unknown selectors retain their edge with partial coverage.
 func matchesNpmRequirement(required string, target *item) (matches, verified bool) {
 	if required == "" {
 		return true, false
+	}
+	// npm accepts an already locked prerelease for an explicit wildcard.
+	if strings.TrimSpace(required) == "*" {
+		return true, target.data.Version != ""
 	}
 	if strings.HasPrefix(required, "npm:") {
 		alias := strings.TrimPrefix(required, "npm:")

@@ -47,7 +47,7 @@ type uvPackage struct {
 	Dependencies []dependency            `toml:"dependencies"`
 	Optional     map[string][]dependency `toml:"optional-dependencies"`
 	Groups       map[string][]dependency `toml:"dependency-groups"`
-	Dev          []dependency            `toml:"dev-dependencies"`
+	Dev          map[string][]dependency `toml:"dev-dependencies"`
 	Sdist        artifact                `toml:"sdist"`
 	Wheels       []artifact              `toml:"wheels"`
 }
@@ -89,7 +89,6 @@ type node struct {
 	deps                               []dependency
 	optional                           map[string][]dependency
 	groups                             map[string][]dependency
-	dev                                []dependency
 	root                               bool
 }
 
@@ -146,7 +145,14 @@ func CollectUV(file, project string) (model.Document, error) {
 		if root {
 			ref = "uv-main:" + common.ID(fmt.Sprintf("%d|%s|%s", i, pkg.Name, pkg.Version))
 		}
-		nodes = append(nodes, node{ref: ref, name: normalized(pkg.Name), version: pkg.Version, marker: pkg.Marker, source: uvSourceKey(pkg.Source), deps: pkg.Dependencies, optional: pkg.Optional, groups: pkg.Groups, dev: pkg.Dev, root: root})
+		groups := map[string][]dependency{}
+		for name, deps := range pkg.Groups {
+			groups[name] = append(groups[name], deps...)
+		}
+		for name, deps := range pkg.Dev {
+			groups[name] = append(groups[name], deps...)
+		}
+		nodes = append(nodes, node{ref: ref, name: normalized(pkg.Name), version: pkg.Version, marker: pkg.Marker, source: uvSourceKey(pkg.Source), deps: pkg.Dependencies, optional: pkg.Optional, groups: groups, root: root})
 		ev := common.Evidence(file, "uv-lock", fmt.Sprintf("/package/%d", i), data)
 		if root {
 			doc.Components = append(doc.Components, model.Component{ID: ref, Kind: "application", Name: pkg.Name, Version: pkg.Version, Evidence: []model.Evidence{ev}})
@@ -409,7 +415,6 @@ func addGraph(doc *model.Document, nodes []node, file string, data []byte, colle
 		for group, deps := range n.groups {
 			add(deps, "group="+group)
 		}
-		add(n.dev, "group=dev")
 	}
 }
 

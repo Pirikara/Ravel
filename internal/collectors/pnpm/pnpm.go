@@ -210,6 +210,11 @@ func Collect(file, project string) (model.Document, error) {
 			}
 		}
 		resolve := func(name, version string) occurrence {
+			// Alias references can contain the full target locator directly,
+			// including its peer context, rather than a bare version.
+			if occ, ok := byKey[version]; ok {
+				return occ
+			}
 			key := name + "@" + version
 			if strings.HasPrefix(version, "npm:") {
 				key = strings.TrimPrefix(version, "npm:")
