@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	packageurl "github.com/package-url/packageurl-go"
+
 	"github.com/Pirikara/Ravel/internal/collectors/common"
 	"github.com/Pirikara/Ravel/internal/model"
 	"github.com/Pirikara/Ravel/internal/safeurl"
@@ -77,21 +79,21 @@ func Collect(file, project string) (model.Document, error) {
 		if !revisionPattern.MatchString(revision) {
 			revision = ""
 		}
-		if clean != "" && p.State.Version != "" {
-			component.PURL = swiftPURL(name, p.State.Version, clean)
-		}
-		doc.Components = append(doc.Components, component)
 		kind := p.Kind
 		if lock.Version == 1 {
 			kind = "remoteSourceControl"
 		}
+		if clean != "" && (p.State.Version != "" || kind == "remoteSourceControl" && revision != "") {
+			component.PURL = swiftPURL(name, p.State.Version, clean)
+		}
+		doc.Components = append(doc.Components, component)
 		switch kind {
 		case "remoteSourceControl":
 			if clean == "" {
 				doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: name})
 				continue
 			}
-			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", SafeURL: clean, Revision: revision, Status: "declared", Evidence: ev})
+			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", VCSType: "git", SafeURL: clean, Revision: revision, Status: "declared", Evidence: ev})
 		case "localSourceControl":
 			doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", Status: "declared", Evidence: ev})
 		case "registry":
@@ -118,8 +120,10 @@ func swiftPURL(name, version, source string) string {
 		return ""
 	}
 	namespace := u.Host
-	for _, segment := range segments[:len(segments)-1] {
-		namespace += "/" + url.PathEscape(segment)
+	if len(segments) > 1 {
+		namespace += "/" + strings.Join(segments[:len(segments)-1], "/")
 	}
-	return "pkg:swift/" + namespace + "/" + url.PathEscape(name) + "@" + common.PURLVersion(version)
+	// SwiftPM's identity is normalized, while the Swift PURL name is the
+	// case-sensitive repository name recorded in the source URL.
+	return packageurl.NewPackageURL("swift", namespace, segments[len(segments)-1], version, nil, "").ToString()
 }
