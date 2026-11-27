@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "pins": [
+    {
+      "identity": "branchonly",
+      "kind": "remoteSourceControl",
+      "location": "https://code.example.test/Acme/BranchOnly.git",
+      "state": {"branch": "stable", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    },
+    {
+      "identity": "released",
+      "kind": "remoteSourceControl",
+      "location": "https://code.example.test/Acme/Released.git",
+      "state": {"version": "1.2.3", "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+    },
+    {
+      "identity": "unresolved",
+      "kind": "remoteSourceControl",
+      "location": "https://code.example.test/Acme/Unresolved.git",
+      "state": {"branch": "main", "revision": "not-a-commit"}
+    }
+  ]
+}

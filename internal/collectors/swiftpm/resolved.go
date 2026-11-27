@@ -18,6 +18,8 @@ import (
 
 const maxSwiftGraphBytes = 64 << 20
 
+const swiftGraphEvidenceSource = "swift package show-dependencies --format json"
+
 type resolvedPackage struct {
 	Identity     string            `json:"identity"`
 	Name         string            `json:"name"`
@@ -95,13 +97,14 @@ func CollectResolved(manifest, project string, allowNetwork bool) (model.Documen
 			count++
 			ref = "swiftpm:" + common.ID(key)
 			seen[key] = ref
-			ev := common.Evidence(manifest, "swiftpm-resolver", pointer, manifestData)
+			ev := common.Evidence(swiftGraphEvidenceSource, "swiftpm-resolver", pointer, data)
 			ev.Method = "resolver-output"
 			version := item.Version
 			if version == "unspecified" {
 				version = ""
 			}
 			kind := "package"
+			identity := ""
 			if item.URL == "" || filepath.IsAbs(item.URL) || strings.HasPrefix(item.URL, "file:") || !strings.Contains(item.URL, "://") {
 				kind = "application"
 				doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "local", Status: "declared", Evidence: ev})
@@ -110,14 +113,17 @@ func CollectResolved(manifest, project string, allowNetwork bool) (model.Documen
 				if clean == "" {
 					doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "unsafe_or_invalid_source", Name: item.Name})
 				} else {
-					doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", SafeURL: clean, Status: "declared", Evidence: ev})
+					doc.Origins = append(doc.Origins, model.Origin{Occurrence: ref, Kind: "vcs", VCSType: "git", SafeURL: clean, Status: "declared", Evidence: ev})
+					if version != "" {
+						identity = swiftPURL(item.Identity, version, clean)
+					}
 				}
 			}
-			doc.Components = append(doc.Components, model.Component{ID: ref, Kind: kind, Name: item.Name, Version: version, Evidence: []model.Evidence{ev}})
+			doc.Components = append(doc.Components, model.Component{ID: ref, Kind: kind, Name: item.Name, Version: version, PURL: identity, Evidence: []model.Evidence{ev}})
 		}
 		if !edges[parent+"\x00"+ref] {
 			edges[parent+"\x00"+ref] = true
-			ev := common.Evidence(manifest, "swiftpm-resolver", pointer, manifestData)
+			ev := common.Evidence(swiftGraphEvidenceSource, "swiftpm-resolver", pointer, data)
 			ev.Method = "resolver-output"
 			doc.Edges = append(doc.Edges, model.Edge{From: parent, To: ref, Kind: "depends_on", Evidence: ev})
 		}
