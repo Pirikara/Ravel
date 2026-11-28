@@ -276,6 +276,8 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	rDescriptions := map[string]databaseState{}
 	wordpressHeaders := map[string]databaseState{}
 	projectFiles := map[string]imageProjectFile{}
+	systemFiles := map[string]imageSystemFile{}
+	systemBytes, systemLimited := 0, false
 	projectBytes := 0
 	projectLimited := false
 	rStartupFiles := map[string]databaseState{}
@@ -303,6 +305,14 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	var nodeRuntimeHeader *nodeRuntimeHeaderState
 	for i, layer := range choice.layers {
 		relevantPaths := map[string]bool{}
+		for name := range systemFiles {
+			for current := name; ; current = path.Dir(current) {
+				relevantPaths[current] = true
+				if current == "." {
+					break
+				}
+			}
+		}
 		for name := range projectFiles {
 			for current := name; ; current = path.Dir(current) {
 				relevantPaths[current] = true
@@ -471,6 +481,12 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			}
 		}
 		for _, removed := range change.whiteouts {
+			for name, state := range systemFiles {
+				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
+					systemBytes -= len(state.data)
+					delete(systemFiles, name)
+				}
+			}
 			for name, state := range projectFiles {
 				if name == removed || strings.HasPrefix(name, removed+"/") || removed == "." {
 					projectBytes -= len(state.data)
@@ -597,6 +613,27 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 					delete(rubyPlatformConfigs, name)
 				}
 			}
+		}
+		systemLimited = systemLimited || change.systemLimited
+		systemNames := make([]string, 0, len(change.systemFiles))
+		for name := range change.systemFiles {
+			systemNames = append(systemNames, name)
+		}
+		sort.Strings(systemNames)
+		for _, name := range systemNames {
+			state := change.systemFiles[name]
+			systemBytes -= len(systemFiles[name].data)
+			if _, exists := systemFiles[name]; !exists && len(systemFiles) >= maxImageSystemFiles {
+				systemLimited = true
+				continue
+			}
+			if systemBytes+len(state.data) > maxImageSystemTotal {
+				state.data, state.status = nil, "limited"
+				systemLimited = true
+			}
+			systemBytes += len(state.data)
+			state.layer = layer.Digest
+			systemFiles[name] = state
 		}
 		projectLimited = projectLimited || change.projectLimited
 		projectNames := make([]string, 0, len(change.projectFiles))
@@ -938,12 +975,20 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 			installedDatabases++
 		}
 	}
+	if _, hasStatus := databases[statusPath]; !hasStatus {
+		for name := range systemFiles {
+			if isDPKGStatusFragment(name) {
+				installedDatabases++
+				break
+			}
+		}
+	}
 	nodeMetadataPaths := map[string]bool{}
 	for name := range nodeMetadata {
 		nodeMetadataPaths[name] = true
 	}
 	nodeAliases, nodeLinkIssues := resolveNodePackageLinks(nodePackageLinks, nodeMetadataPaths)
-	if installedDatabases == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(condaMetadata) == 0 && len(dotnetDeps) == 0 && len(dotnetAssemblies) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(rDescriptions) == 0 && len(wordpressHeaders) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && micromambaBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
+	if installedDatabases == 0 && len(systemFiles) == 0 && len(pythonMetadata) == 0 && len(setuptoolsVendor) == 0 && len(pipVendor) == 0 && len(composerInstalled) == 0 && len(condaMetadata) == 0 && len(dotnetDeps) == 0 && len(dotnetAssemblies) == 0 && len(nodeMetadata) == 0 && len(rubySpecs) == 0 && len(rDescriptions) == 0 && len(wordpressHeaders) == 0 && len(javaArchives) == 0 && len(goBinaries) == 0 && len(rustBinaries) == 0 && len(pythonRuntimes) == 0 && len(rubyRuntimes) == 0 && nodeRuntimeBinary == nil && nodeRuntimeHeader == nil && bunBinary == nil && denoBinary == nil && httpdBinary == nil && haproxyBinary == nil && memcachedBinary == nil && micromambaBinary == nil && phpCLIBinary == nil && phpFPMBinary == nil && postgresBinary == nil && redisBinary == nil {
 		doc := common.NewDocument(layout, project, "oci", nil)
 		doc.Sources = sources
 		doc.Coverage.Platforms = []string{platform}
@@ -977,6 +1022,13 @@ func Collect(layout, project, requestedPlatform string) (model.Document, error) 
 	doc := common.NewDocument(layout, project, "oci", nil)
 	doc.Sources = sources
 	doc.Coverage.Platforms = []string{platform}
+	_, hasMainStatus := databases[statusPath]
+	if err := collectImageSystemMetadata(&doc, systemFiles, hasMainStatus, osReleases, choice.config.Architecture); err != nil {
+		return model.Document{}, err
+	}
+	if systemLimited {
+		doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "image_system_metadata_scan_limited"})
+	}
 	doc.Coverage.Issues = append(doc.Coverage.Issues, nodeLinkIssues...)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, rLibraryIssues...)
 	if goScanLimited {
@@ -1832,6 +1884,8 @@ func setOSPackagePURL(component *model.Component, database string, release osRel
 }
 
 type layerChange struct {
+	systemFiles              map[string]imageSystemFile
+	systemLimited            bool
 	projectFiles             map[string]imageProjectFile
 	projectLimited           bool
 	files                    map[string]databaseChange
@@ -1913,6 +1967,8 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 	reader := tar.NewReader(stream)
 	change := layerChange{files: map[string]databaseChange{}, osReleases: map[string]osReleaseChange{}, dpkgNodeLists: map[string]dpkgNodeFileListState{}, python: map[string][]byte{}, setuptoolsVendor: map[string][]byte{}, pythonEggRequirements: map[string]pythonEggRequirementsState{}, pipVendor: map[string][]byte{}, composerInstalled: map[string]composerInstalledState{}, condaMetadata: map[string]condaMetadataState{}, composerPackageManifests: map[string]composerPackageManifestState{}, dotnetDeps: map[string]dotnetDepsState{}, dotnetAssemblies: map[string]dotnetAssemblyState{}, node: map[string][]byte{}, nodeLinks: map[string]string{}, rubySpecs: map[string][]byte{}, rDescriptions: map[string][]byte{}, wordpressHeaders: map[string][]byte{}, rStartup: map[string][]byte{}, java: map[string]javaArchiveState{}, goBinaries: map[string]goBinaryState{}, rustBinaries: map[string]rustAuditableState{}, pythonRuntimes: map[string]pythonRuntimeState{}, rubyRuntimes: map[string]rubyRuntimeState{}, rubyPlatformConfigs: map[string]rubyPlatformConfigState{}}
 	change.projectFiles = map[string]imageProjectFile{}
+	change.systemFiles = map[string]imageSystemFile{}
+	systemBytes := 0
 	projectBytes := 0
 	seenDatabase := map[string]bool{}
 	seenDPKGLists := map[string]bool{}
@@ -2031,6 +2087,35 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 			}
 		}
 		if trackedRelease {
+			continue
+		}
+		if isImageSystemFile(name) {
+			fileLimit := imageSystemFileLimit(name)
+			if relevantLanguagePaths[name] {
+				change.whiteouts = append(change.whiteouts, name)
+			}
+			if _, duplicate := change.systemFiles[name]; duplicate {
+				return layerChange{}, "", fmt.Errorf("duplicate OCI system metadata: %s", name)
+			}
+			if len(change.systemFiles) >= maxImageSystemFiles {
+				change.systemLimited = true
+				continue
+			}
+			state := imageSystemFile{}
+			switch {
+			case header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA:
+				state.status = "unsupported"
+			case header.Size < 0 || header.Size > fileLimit || int64(systemBytes)+header.Size > maxImageSystemTotal:
+				state.status = "limited"
+				change.systemLimited = true
+			default:
+				state.data, err = io.ReadAll(io.LimitReader(reader, fileLimit+1))
+				if err != nil || len(state.data) != int(header.Size) {
+					return layerChange{}, "", errors.New("invalid OCI system metadata size")
+				}
+				systemBytes += len(state.data)
+			}
+			change.systemFiles[name] = state
 			continue
 		}
 		if isImageProjectFile(name) {
@@ -2897,6 +2982,13 @@ func scanLayer(layout string, item descriptor, diffID string, relevantLanguagePa
 		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
 			if nonDirectoryPaths[ancestor] {
 				return layerChange{}, "", fmt.Errorf("OCI layer contains project file beneath a non-directory entry: %s", ancestor)
+			}
+		}
+	}
+	for name := range change.systemFiles {
+		for ancestor := path.Dir(name); ancestor != "."; ancestor = path.Dir(ancestor) {
+			if nonDirectoryPaths[ancestor] {
+				return layerChange{}, "", fmt.Errorf("OCI system metadata beneath a non-directory entry: %s", ancestor)
 			}
 		}
 	}
