@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Beta tag to publish (for example v0.1.0-beta.4)
+        description: Release tag to publish (v0.1.0 or v0.2.0-beta.1)
         required: true
         type: string
 
@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF" == refs/heads/main ]]
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.(0|[1-9][0-9]*))?$ ]]
           git fetch origin main --tags
           source_commit="$(git rev-parse HEAD)"
           test "$source_commit" = "$(git rev-parse origin/main)"
@@ -98,7 +98,7 @@ jobs:
         run: |
           test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 6
           (cd dist && shasum -a 256 -c SHA256SUMS)
-      - name: Publish tag and GitHub prerelease
+      - name: Publish tag and GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/publish-release.sh "$RELEASE_TAG" "$SOURCE_COMMIT"
@@ -122,7 +122,7 @@ jobs:
       - name: Update Homebrew tap
         run: |
           set -euo pipefail
-          python3 scripts/render-homebrew-formula.py "$RELEASE_TAG" dist/SHA256SUMS tap/Formula/ravel.rb
+          python3 scripts/render-homebrew-formula.py "$RELEASE_TAG" dist/SHA256SUMS tap/Formula/ravel.rb --update-existing
           ruby -c tap/Formula/ravel.rb
           git -C tap diff --check
           if ! git -C tap diff --quiet; then

@@ -5,7 +5,7 @@ RUN apk add --no-cache ca-certificates curl
 ARG RELEASE_TAG
 ARG TARGETARCH
 RUN set -eu; \
-    case "$RELEASE_TAG" in v[0-9]*-beta.[0-9]*) ;; *) exit 1 ;; esac; \
+    printf '%s\n' "$RELEASE_TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.(0|[1-9][0-9]*))?$'; \
     case "$TARGETARCH" in amd64|arm64) ;; *) exit 1 ;; esac; \
     archive="ravel_${RELEASE_TAG}_linux_${TARGETARCH}.tar.gz"; \
     base="https://github.com/Pirikara/Ravel/releases/download/${RELEASE_TAG}"; \

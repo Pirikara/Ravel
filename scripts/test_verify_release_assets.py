@@ -11,22 +11,33 @@ SPEC.loader.exec_module(MODULE)
 
 
 class VerifyReleaseAssetsTests(unittest.TestCase):
-    def test_matching_release(self):
-        tag = "v0.1.0-beta.4"
+    def metadata(self, tag):
         entries = [("a" * 64, f"ravel_{tag}_{target}.{'zip' if target.startswith('windows') else 'tar.gz'}") for target in MODULE.TARGETS]
         checksums = "".join(f"{digest}  {name}\n" for digest, name in entries).encode()
         assets = [{"name": name, "digest": "sha256:" + digest, "size": 42} for digest, name in entries]
         assets.append({"name": "SHA256SUMS", "digest": "sha256:" + hashlib.sha256(checksums).hexdigest(), "size": len(checksums)})
-        metadata = {"isDraft": False, "isPrerelease": True, "assets": assets}
-        MODULE.verify(tag, checksums, metadata)
-        metadata["isDraft"] = True
-        with self.assertRaises(ValueError):
-            MODULE.verify(tag, checksums, metadata)
-        MODULE.verify(tag, checksums, metadata, allow_draft=True)
-        metadata["isDraft"] = False
-        metadata["assets"][0]["digest"] = "sha256:" + "b" * 64
-        with self.assertRaises(ValueError):
-            MODULE.verify(tag, checksums, metadata)
+        return checksums, {"isDraft": False, "isPrerelease": "-beta." in tag, "assets": assets}
+
+    def test_matching_release(self):
+        for tag in ["v0.1.0-beta.4", "v0.1.0"]:
+            with self.subTest(tag=tag):
+                checksums, metadata = self.metadata(tag)
+                MODULE.verify(tag, checksums, metadata)
+                metadata["isDraft"] = True
+                with self.assertRaises(ValueError):
+                    MODULE.verify(tag, checksums, metadata)
+                MODULE.verify(tag, checksums, metadata, allow_draft=True)
+                metadata["isDraft"] = False
+                metadata["assets"][0]["digest"] = "sha256:" + "b" * 64
+                with self.assertRaises(ValueError):
+                    MODULE.verify(tag, checksums, metadata)
+
+    def test_release_channel_must_match_tag(self):
+        for tag in ["v0.1.0-beta.4", "v0.1.0"]:
+            checksums, metadata = self.metadata(tag)
+            metadata["isPrerelease"] = not metadata["isPrerelease"]
+            with self.subTest(tag=tag), self.assertRaisesRegex(ValueError, "status does not match"):
+                MODULE.verify(tag, checksums, metadata)
 
 
 if __name__ == "__main__":
