@@ -6,8 +6,8 @@ from pathlib import Path
 import re
 from string import Template
 
+from release_version import TAG, should_update_formula
 
-TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 TARGETS = ("darwin_arm64", "darwin_amd64", "linux_arm64", "linux_amd64", "windows_amd64")
 
@@ -37,9 +37,17 @@ def main() -> None:
     parser.add_argument("tag")
     parser.add_argument("checksums", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--update-existing", action="store_true", help="preserve a newer formula or the stable channel")
     args = parser.parse_args()
     template = Path(__file__).resolve().parents[1] / "packaging" / "homebrew" / "ravel.rb.in"
     result = render(args.tag, args.checksums.read_text(), template.read_text())
+    if args.update_existing and args.output.exists():
+        versions = re.findall(r'^\s*version "([^"]+)"\s*$', args.output.read_text(), re.MULTILINE)
+        if len(versions) != 1:
+            raise ValueError("existing formula must declare one release version")
+        if not should_update_formula("v" + versions[0], args.tag):
+            print(f"Keeping Homebrew {versions[0]}; not replacing it with {args.tag}")
+            return
     args.output.write_text(result)
 
 

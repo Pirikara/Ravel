@@ -9,7 +9,7 @@ without arguments for command syntax.
 `ravel version` (or `ravel --version`) prints the build version. Local source
 builds report Go's embedded module or commit version when available, falling
 back to `dev`. Release binaries and versioned `go install` builds report their
-tagged prerelease version.
+tagged version. See the [compatibility policy](compatibility.md) for CLI and JSON guarantees.
 
 ## Update Ravel
 
@@ -21,7 +21,7 @@ ravel update
 ravel update --channel stable
 ```
 
-`--check` reports the newest published version without changing files. By default, a beta build follows beta releases and a stable build follows stable releases; `--channel stable|beta` overrides that choice. Directly installed macOS and Linux release binaries download the matching archive, verify its GitHub asset SHA-256 digest and the release's `SHA256SUMS`, check the new binary's version, then replace the executable. A failed download or version check leaves the old executable in place. A Homebrew installation runs `brew upgrade pirikara/tap/ravel` and verifies the installed version. Go/source builds print a versioned `go install` command; container builds print a versioned `docker pull` command. Windows builds show the verified archive URL for manual installation. `update` needs network access and does not run during `scan`.
+`--check` reports the newest published version without changing files. By default, a beta build considers beta and stable releases, so it can graduate to the stable release of the same version; a stable build follows stable releases. `--channel stable|beta` overrides that choice. Directly installed macOS and Linux release binaries download the matching archive, verify its GitHub asset SHA-256 digest and the release's `SHA256SUMS`, check the new binary's version, then replace the executable. A failed download or version check leaves the old executable in place. A Homebrew installation runs `brew upgrade pirikara/tap/ravel` and verifies the installed version. Go/source builds print a versioned `go install` command; container builds print a versioned `docker pull` command. Windows builds show the verified archive URL for manual installation. `update` needs network access and does not run during `scan`.
 
 ## Local paths and remote repositories
 

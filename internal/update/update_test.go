@@ -49,6 +49,46 @@ func TestLatestSelectsChannelBySemver(t *testing.T) {
 	}
 }
 
+func TestBetaGraduatesToStableRelease(t *testing.T) {
+	// API ordering is not version ordering. Stable supersedes the betas of the
+	// same version, while a newer beta must not divert a stable installation.
+	releases := []Release{
+		{Tag: "v0.1.0-beta.45", Prerelease: true},
+		{Tag: "v0.1.0"},
+		{Tag: "v0.1.1-beta.1", Prerelease: true},
+		{Tag: "v0.1.1", Draft: true},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewEncoder(w).Encode(releases); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+	client := NewClient("v0.1.0-beta.45")
+	client.APIURL = server.URL
+	stable, err := client.Latest(context.Background(), "stable")
+	if err != nil || stable.Tag != "v0.1.0" {
+		t.Fatalf("stable channel: %+v, %v", stable, err)
+	}
+	if comparison, err := Compare("v0.1.0-beta.45", stable.Tag); err != nil || comparison >= 0 {
+		t.Fatalf("beta to stable: %d, %v", comparison, err)
+	}
+	beta, err := client.Latest(context.Background(), "beta")
+	if err != nil || beta.Tag != "v0.1.1-beta.1" {
+		t.Fatalf("beta channel: %+v, %v", beta, err)
+	}
+	// With only the current release series published, the beta channel also
+	// selects its stable release, so existing beta installations can graduate.
+	releases = releases[:2]
+	beta, err = client.Latest(context.Background(), "beta")
+	if err != nil || beta.Tag != stable.Tag {
+		t.Fatalf("beta graduation: %+v, %v", beta, err)
+	}
+	if name, err := ArchiveName(stable.Tag, "darwin", "arm64"); err != nil || name != "ravel_v0.1.0_darwin_arm64.tar.gz" {
+		t.Fatalf("stable archive: %q, %v", name, err)
+	}
+}
+
 func TestDownloadArchiveRequiresMatchingDigests(t *testing.T) {
 	const tag = "v0.1.0-beta.4"
 	name := "ravel_" + tag + "_linux_amd64.tar.gz"

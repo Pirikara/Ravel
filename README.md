@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/Pirikara/Ravel/actions/workflows/ci.yml/badge.svg)](https://github.com/Pirikara/Ravel/actions/workflows/ci.yml)
 
-**Beta** · Binaries for macOS, Linux, and Windows · Go 1.27+ for source builds
+Binaries for macOS, Linux, and Windows · Go 1.27+ for source builds
 
 Ravel is a command-line SBOM generator for project lockfiles, package archives, installed systems, and container images. It produces CycloneDX or SPDX, and lets you trace package and dependency claims back to the input that supports them.
 
@@ -195,11 +195,13 @@ ravel merge --name my-app --output combined.cdx.json \
 
 Standard SBOM formats contain the relationships Ravel can assert unconditionally for the scan. Keep Ravel JSON when you need to inspect conditional edges or the evidence for a claim. The [evidence model](docs/concepts.md) explains the distinction.
 
-## Beta status
+## Scope and compatibility
 
 Ravel's results are scoped to the input it scanned. A report marked `complete_for_scope` means no known gap in that dimension **within that scope**; it does not certify an entire application or image. Use `--strict` in automation if a recorded coverage issue should fail the job.
 
 The project has a source-backed integration suite across the [supported inputs](docs/supported-inputs.md). Bug reports and pull requests are welcome; see [contributing](CONTRIBUTING.md) for how to report a scan error and [development](docs/development.md) for test commands.
+
+Stable releases preserve documented CLI behavior and JSON field meanings within a minor release series. New detections and corrections can change the inventory and coverage. See the [compatibility policy](docs/compatibility.md) before integrating Ravel output into automation.
 
 ## License
 

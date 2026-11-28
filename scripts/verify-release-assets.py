@@ -7,12 +7,14 @@ import json
 from pathlib import Path
 import re
 
+from release_version import is_prerelease
 
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 TARGETS = ("linux_amd64", "linux_arm64", "darwin_amd64", "darwin_arm64", "windows_amd64")
 
 
 def verify(tag: str, checksum_bytes: bytes, metadata: dict, allow_draft: bool = False) -> None:
+    prerelease = is_prerelease(tag)
     lines = [line.split() for line in checksum_bytes.decode().splitlines()]
     if len(lines) != 5 or any(len(line) != 2 for line in lines):
         raise ValueError("SHA256SUMS must contain five archives")
@@ -20,8 +22,10 @@ def verify(tag: str, checksum_bytes: bytes, metadata: dict, allow_draft: bool = 
     names = {f"ravel_{tag}_{target}.{'zip' if target.startswith('windows') else 'tar.gz'}" for target in TARGETS}
     if set(expected) != names or not all(SHA256.fullmatch(digest) for digest in expected.values()):
         raise ValueError("invalid or duplicate checksum entries")
-    if (metadata.get("isDraft") and not allow_draft) or not metadata.get("isPrerelease"):
-        raise ValueError("release is not a published prerelease")
+    if metadata.get("isDraft") is not False and not (allow_draft and metadata.get("isDraft") is True):
+        raise ValueError("release is not published")
+    if metadata.get("isPrerelease") is not prerelease:
+        raise ValueError("release prerelease status does not match its tag")
     assets = metadata.get("assets", [])
     if len(assets) != 6 or {asset.get("name") for asset in assets} != set(expected) | {"SHA256SUMS"}:
         raise ValueError("release assets differ from expected archives")
