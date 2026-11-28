@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Pirikara/Ravel/internal/collectors/common"
@@ -29,6 +30,15 @@ type statusPackage struct {
 	depends, preDepends, provides          string
 	line, dependsLine, preDependsLine      int
 	ref                                    string
+	source, digest, collector              string
+}
+
+func (p statusPackage) evidence(line int) model.Evidence {
+	method := "installed-database"
+	if p.collector == "dpkg-status-fragment" {
+		method = "installed-metadata"
+	}
+	return model.Evidence{Collector: p.collector, InputPath: p.source, InputDigest: p.digest, Line: line, Method: method}
 }
 
 type dependency struct {
@@ -70,9 +80,50 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 	}
 	hash := sha256.Sum256(data)
 	digest := "sha256:" + hex.EncodeToString(hash[:])
-	evidence := func(line int) model.Evidence {
-		return model.Evidence{Collector: "dpkg-status", InputPath: source, InputDigest: digest, Line: line, Method: "installed-database"}
+	for i := range packages {
+		packages[i].source, packages[i].digest, packages[i].collector = source, digest, "dpkg-status"
 	}
+	return collectPackages(packages, source, project)
+}
+
+// CollectFragments reads package control records kept by stripped images under
+// dpkg/status.d. Unlike the active status database, these records may omit
+// Status. Evidence always identifies the original fragment, never a fabricated
+// combined status file. Dependencies can reference packages in other fragments.
+func CollectFragments(fragments map[string][]byte, source, project string) (model.Document, error) {
+	if len(fragments) > 4096 {
+		return model.Document{}, errors.New("too many dpkg status fragments")
+	}
+	names := make([]string, 0, len(fragments))
+	for name := range fragments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var packages []statusPackage
+	total := 0
+	for _, name := range names {
+		data := fragments[name]
+		total += len(data)
+		if len(data) > 1<<20 || total > 64<<20 {
+			return model.Document{}, errors.New("dpkg status fragments exceeded size limit")
+		}
+		rows, err := readStatusMode(data, true)
+		if err != nil {
+			return model.Document{}, fmt.Errorf("invalid dpkg status fragment %s: %w", name, err)
+		}
+		hash := sha256.Sum256(data)
+		for i := range rows {
+			rows[i].source, rows[i].digest, rows[i].collector = name, "sha256:"+hex.EncodeToString(hash[:]), "dpkg-status-fragment"
+		}
+		if len(packages)+len(rows) > 200000 {
+			return model.Document{}, errors.New("dpkg fragments have too many stanzas")
+		}
+		packages = append(packages, rows...)
+	}
+	return collectPackages(packages, source, project)
+}
+
+func collectPackages(packages []statusPackage, source, project string) (model.Document, error) {
 	doc := common.NewDocument(source, project, "dpkg", nil)
 	doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "missing_source", Name: "dpkg status database"})
 	byName := map[string][]int{}
@@ -85,10 +136,14 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 		}
 		seen[key] = true
 		p.ref = "dpkg:" + common.ID(key+"\x00"+p.version)
-		doc.Components = append(doc.Components, model.Component{ID: p.ref, Kind: "package", Name: p.name, Version: p.version, Platform: p.arch, Context: "status=installed", Evidence: []model.Evidence{evidence(p.line)}})
-		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: p.ref, Kind: "installed", Evidence: evidence(p.line)})
+		context := "status=installed"
+		if p.status == "" {
+			context = "metadata=dpkg-status-fragment"
+		}
+		doc.Components = append(doc.Components, model.Component{ID: p.ref, Kind: "package", Name: p.name, Version: p.version, Platform: p.arch, Context: context, Evidence: []model.Evidence{p.evidence(p.line)}})
+		doc.Edges = append(doc.Edges, model.Edge{From: "root", To: p.ref, Kind: "installed", Evidence: p.evidence(p.line)})
 		byName[p.name] = append(byName[p.name], i)
-		if strings.Fields(p.status)[1] != "ok" {
+		if p.status != "" && strings.Fields(p.status)[1] != "ok" {
 			doc.Coverage.Issues = append(doc.Coverage.Issues, model.Issue{Code: "dpkg_package_unhealthy", Name: p.name})
 		}
 	}
@@ -181,7 +236,7 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 						continue
 					}
 					seenEdges[key] = true
-					doc.Edges = append(doc.Edges, model.Edge{From: p.ref, To: to, Kind: kind, Condition: condition, Evidence: evidence(field.line)})
+					doc.Edges = append(doc.Edges, model.Edge{From: p.ref, To: to, Kind: kind, Condition: condition, Evidence: p.evidence(field.line)})
 				}
 			}
 		}
@@ -191,6 +246,10 @@ func CollectBytes(data []byte, source, project string) (model.Document, error) {
 }
 
 func readStatus(data []byte) ([]statusPackage, error) {
+	return readStatusMode(data, false)
+}
+
+func readStatusMode(data []byte, fragment bool) ([]statusPackage, error) {
 	var packages []statusPackage
 	var current statusPackage
 	seen := map[string]bool{}
@@ -206,10 +265,11 @@ func readStatus(data []byte) ([]statusPackage, error) {
 			return errors.New("dpkg status file has too many stanzas")
 		}
 		state := strings.Fields(current.status)
-		if len(state) != 3 {
+		missingState := fragment && current.status == ""
+		if len(state) != 3 && !missingState {
 			return fmt.Errorf("invalid dpkg Status field near line %d", current.line)
 		}
-		if state[2] == "installed" {
+		if missingState || state[2] == "installed" {
 			if !packageName.MatchString(current.name) || !architecture.MatchString(current.arch) || current.version == "" || strings.ContainsAny(current.version, " \t\r\n") {
 				return fmt.Errorf("installed dpkg package has invalid identity near line %d", current.line)
 			}
